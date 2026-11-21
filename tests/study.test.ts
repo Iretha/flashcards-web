@@ -41,15 +41,16 @@ describe('study transitions', () => {
   });
 
   it('pauses and resumes the remaining duration, expires once, and completes', () => {
-    const state = startStudy(queue.slice(0, 1), defaults, 0);
-    const paused = advance(state, defaults, 'pause', 5_000).state;
+    const timed = { ...defaults, timer: true };
+    const state = startStudy(queue.slice(0, 1), timed, 0);
+    const paused = advance(state, timed, 'pause', 5_000).state;
     expect(paused).toMatchObject({ remainingMs: 25_000, deadline: null });
-    const resumed = advance(paused, defaults, 'resume', 20_000).state;
+    const resumed = advance(paused, timed, 'resume', 20_000).state;
     expect(resumed.deadline).toBe(45_000);
-    expect(advance(resumed, defaults, 'timeout', 44_999).shown).toBeNull();
-    const expired = advance(resumed, defaults, 'timeout', 45_000);
+    expect(advance(resumed, timed, 'timeout', 44_999).shown).toBeNull();
+    const expired = advance(resumed, timed, 'timeout', 45_000);
     expect(expired).toMatchObject({ outcome: 'TIMEOUT', shown: null, state: { deadline: null, revealed: true } });
-    expect(advance(expired.state, defaults, 'learn', 45_001).state.current).toBeNull();
+    expect(advance(expired.state, timed, 'learn', 45_001).state.current).toBeNull();
     expect(startStudy(queue, { ...defaults, timer: false }, 0).deadline).toBeNull();
   });
 });

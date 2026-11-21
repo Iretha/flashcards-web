@@ -16,7 +16,8 @@ h1, h2, p { margin: 0; }
 h1 { font-size: clamp(1.65rem, 4vw, 2.65rem); line-height: 1.18; font-weight: 730; }
 h2 { font-size: 1.3rem; font-weight: 700; }
 strong { overflow-wrap: anywhere; }
-.shell { max-width: 1420px; margin: auto; padding: 0 4vw 3rem; }
+.shell { max-width: 1420px; min-height: 100vh; margin: auto; padding: 0 4vw 1rem; display: flex; flex-direction: column; }
+.version-footer { margin-top: auto; padding-top: 1.5rem; text-align: right; }
 .top { padding: 1.3rem 0; border-bottom: 1px solid var(--line); display: flex; align-items: center; justify-content: space-between; gap: .8rem; flex-wrap: wrap; }
 .brand { font-size: 1.4rem; font-weight: 750; white-space: nowrap; color: inherit; text-decoration: none; }
 .build-version { margin-left: auto; color: var(--muted); font-size: .75rem; white-space: nowrap; font-variant-numeric: tabular-nums; }

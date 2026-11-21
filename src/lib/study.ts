@@ -4,7 +4,7 @@ import type { Language, Section } from './translations';
 
 export type Ordering = 'SEQUENTIAL' | 'RANDOM';
 export interface Settings { order: Ordering; timer: boolean; seconds: number; onlyUnlearned: boolean; language: Language }
-export const defaults: Settings = { order: 'SEQUENTIAL', timer: true, seconds: 30, onlyUnlearned: false, language: 'en' };
+export const defaults: Settings = { order: 'SEQUENTIAL', timer: false, seconds: 30, onlyUnlearned: false, language: 'en' };
 export interface QueueCard { id: string; failed: number; visits: number }
 export interface StudyState {
   cycles?: CycleState;

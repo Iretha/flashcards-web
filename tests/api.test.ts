@@ -179,7 +179,7 @@ describe('Workers API with real local D1', () => {
     expect((await guest.home()).decks).toHaveLength(0);
     expect((await guest.request('cards?deck=' + first)).response.status).toBe(404);
 
-    const initial = await owner.ok<Session>('study/start', { decks: [first, second], settings: defaults, version: 0 });
+    const initial = await owner.ok<Session>('study/start', { decks: [first, second], settings: { ...defaults, timer: true }, version: 0 });
     expect(initial.remaining).toBe(41);
     expect(initial.card?.question).toBe('Question 1');
     expect(await otherDevice.study()).toEqual(initial);
@@ -247,7 +247,7 @@ describe('Workers API with real local D1', () => {
     const mockClock = vi.spyOn(Date, 'now').mockReturnValue(now);
     try {
       const current = await owner.study();
-      let single = await owner.ok<Session>('study/start', { decks: [second], settings: { ...defaults, seconds: 1 }, version: current.version });
+      let single = await owner.ok<Session>('study/start', { decks: [second], settings: { ...defaults, timer: true, seconds: 1 }, version: current.version });
       expect(single.card?.question).toBe('Locks');
       mockClock.mockReturnValue(now + 1000);
       single = await owner.action(single, 'timeout');

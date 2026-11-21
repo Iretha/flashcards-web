@@ -273,9 +273,6 @@ export default function App() {
         <a className="button" href="/api/replacement-report">Reload impact report</a>
 
       </div>}
-      <time className="build-version" dateTime={buildTimestamp} title="Дата и час на изграждане • Europe/Sofia">
-        v{buildVersion}
-      </time>
       {home && screen !== 'study' && <button className="sign-out" disabled={busy} onClick={() => void run(async () => {
           await api('logout', {});
           setHome(null);
@@ -283,7 +280,7 @@ export default function App() {
           setSelected([]);
           setCreate(false);
           setScreen('library');
-        })}>{home.username} ? Switch user / Sign out</button>}
+        })}>Sign out {home.username}</button>}
     </header>
     <main aria-busy={busy}>
       {error && <p className="error" role="alert">{error}</p>}
@@ -426,5 +423,10 @@ export default function App() {
         </>}
       </section>}
     </main>
+    <footer className="version-footer">
+      <time className="build-version" dateTime={buildTimestamp} title="Дата и час на изграждане • Europe/Sofia">
+        v{buildVersion}
+      </time>
+    </footer>
   </div>;
 }
