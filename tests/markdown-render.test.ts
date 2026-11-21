@@ -12,7 +12,7 @@ it('renders Markdown and code without executing HTML or unsafe URLs', () => {
     children: '**bold**\n\n<script>alert(1)</script>\n\n<img src=x onerror=alert(1)>\n\n[bad](javascript:alert%281%29)\n\n~~~html\n<script>literal</script>\n~~~',
   }));
   expect(html).toContain('<strong>bold</strong>');
-  expect(html).toContain('&lt;script&gt;literal&lt;/script&gt;');
+  expect(html.replace(/<[^>]+>/g, '')).toContain('&lt;script&gt;literal&lt;/script&gt;');
   expect(html).not.toMatch(/<script|<img|onerror|javascript:/i);
 });
 
@@ -24,14 +24,22 @@ it('highlights Java generics, annotations, lambdas, comments and strings without
   expect(html).toContain('class="token operator">-&gt;</span>');
   expect(html).toContain('class="token string">&quot;&lt;tag&gt;&quot;</span>');
   expect(html).toContain('class="token comment">// keep this comment</span>');
-  expect(html.replace(/<[^>]+>/g, '')).toBe(source.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') + '\n');
+  expect(html).toContain('<span class="code-language">JAVA</span>');
+  expect(html.match(/<code[^>]*>([\s\S]*)<\/code>/)?.[1].replace(/<[^>]+>/g, ''))
+    .toBe(source.replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;') + '\n');
 });
 
 it.each([
   ['sql', "SELECT 'name' FROM users;", 'keyword', 'SELECT'],
   ['javascript', 'const value = 42;', 'keyword', 'const'],
+  ['ts', 'interface Value { name: string }', 'keyword', 'interface'],
   ['json', '{"value": 42}', 'number', '42'],
   ['bash', 'echo "$HOME"', 'builtin class-name', 'echo'],
+  ['shell', 'echo "$HOME"', 'builtin class-name', 'echo'],
+  ['xml', '<note id="1"/>', 'attr-name', 'id'],
+  ['html', '<div id="x"></div>', 'attr-name', 'id'],
+  ['css', 'div { color: red; }', 'property', 'color'],
+  ['yml', 'enabled: true', 'boolean important', 'true'],
 ])('highlights %s code', (language, source, token, value) => {
   expect(render(`~~~${language}\n${source}\n~~~`)).toContain(`class="token ${token}">${value}</span>`);
 });
@@ -40,13 +48,21 @@ it('renders inline code within ordinary text', () => {
   expect(render('Call `List<String>` first.')).toBe('<p>Call <code>List&lt;String&gt;</code> first.</p>');
 });
 
+it('renders GFM tables in a horizontally scrollable wrapper', () => {
+  const html = render('| Type | Example |\n| --- | --- |\n| Java | `List<String>` |');
+  expect(html).toContain('<div class="markdown-table"><table>');
+  expect(html).toContain('<td><code>List&lt;String&gt;</code></td>');
+});
+
 it('puts long lines in a focusable code block without inserting breaks', () => {
   const line = 'x'.repeat(500);
-  expect(render(`~~~\n${line}\n~~~`)).toBe(`<pre class="code-block" tabindex="0"><code>${line}\n</code></pre>`);
+  expect(render(`~~~\n${line}\n~~~`)).toBe(`<div class="code-frame"><pre class="code-block" tabindex="0"><code>${line}\n</code></pre></div>`);
 });
 
 it.each(['', 'unknown', 'constructor'])('preserves plain code for the fence language "%s"', language => {
   const html = render(`~~~${language}\n  <tag>\n\n    value\n~~~`);
   expect(html).toContain('>  &lt;tag&gt;\n\n    value\n</code>');
-  expect(html).not.toContain('<span');
+  expect(html).not.toContain('class="token');
+  if (language) expect(html).toContain(`<span class="code-language">${language.toUpperCase()}</span>`);
+  else expect(html).not.toContain('code-language');
 });

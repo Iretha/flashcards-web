@@ -5,6 +5,17 @@ export type Section = typeof sections[number];
 export type Translation = { question: string; answer: string } & Partial<Record<Section, string>>;
 export type Translations = Partial<Record<Language, Translation>>;
 
+export const studyControlLabels = {
+  en: {
+    controls: 'Study controls', actions: 'Study actions', previous: 'Previous',
+    show: 'Show answer', hide: 'Hide answer', learn: 'Learned', repeat: 'Repeat', next: 'Next',
+  },
+  bg: {
+    controls: 'Управление на обучението', actions: 'Действия за учене', previous: 'Предишна',
+    show: 'Покажи отговора', hide: 'Скрий отговора', learn: 'Научена', repeat: 'Повтори', next: 'Следваща',
+  },
+} satisfies Record<Language, Record<string, string>>;
+
 export function isLanguage(value: unknown): value is Language {
   return value === 'bg' || value === 'en';
 }

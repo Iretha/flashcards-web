@@ -215,6 +215,7 @@ export default function App() {
   const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
   const explanation = session?.explanation && selectExplanation(translations, selectedLanguage.language, session.explanation);
   const answerVisible = Boolean(session?.revealed && hiddenAnswer !== session);
+  const toggleStudyAnswer = () => answerVisible ? setHiddenAnswer(session) : studyAction('show');
 
   return <div className="shell">
     <header className="top">
@@ -325,8 +326,8 @@ export default function App() {
             setSession(await api<Session>('study'));
             setNow(Date.now());
           })}>Reload session</button>}
-          <p className="muted">{session.card.title}</p>
-          {selectedLanguage.fallback && <p className="muted" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
+          <p className="muted study-note">{session.card.title}</p>
+          {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <div className="study-question markdown" role="heading" aria-level={1} lang={selectedLanguage.language}>
             <MarkdownContent>{selectedLanguage.translation?.question}</MarkdownContent>
           </div>
@@ -341,20 +342,19 @@ export default function App() {
                 </button>;
               })}
             </div>
-            {explanation && explanation.content && <div className="answer markdown" lang={explanation.language}>
+            {explanation && explanation.content && <div className="answer study-explanation markdown" lang={explanation.language}>
               <MarkdownContent>{explanation.content}</MarkdownContent>
             </div>}
           </>}
           <div className="row actions">
             <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Previous</button>
-            <button className="primary" disabled={busy || answerVisible} onClick={() => studyAction('show')}>Show answer</button>
+            <button className="primary" disabled={busy || answerVisible} onClick={toggleStudyAnswer}>Show answer</button>
             <button disabled={busy || session.historical} onClick={() => studyAction('learn')}>Learned</button>
             <button disabled={busy || session.historical} onClick={() => studyAction('repeat')}>Repeat</button>
             <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
           </div>
-          <StudySidebar busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
-            answerVisible={answerVisible} onAction={studyAction}
-            onToggleAnswer={() => answerVisible ? setHiddenAnswer(session) : studyAction('show')} />
+          <StudySidebar language={session.language} busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
+            answerVisible={answerVisible} onAction={studyAction} onToggleAnswer={toggleStudyAnswer} />
         </> : <>
           <h1>{session?.status === 'COMPLETE' ? 'Session complete' : 'Session unavailable'}</h1>
           <button onClick={exitStudy}>Back to library</button>

@@ -20,3 +20,5 @@ declare module 'prismjs/components/prism-java.js';
 declare module 'prismjs/components/prism-sql.js';
 declare module 'prismjs/components/prism-json.js';
 declare module 'prismjs/components/prism-bash.js';
+declare module 'prismjs/components/prism-typescript.js';
+declare module 'prismjs/components/prism-yaml.js';
