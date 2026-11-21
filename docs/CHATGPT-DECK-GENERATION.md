@@ -12,9 +12,9 @@ This file describes how to ask ChatGPT to generate a ready-to-import Markdown de
 >
 > Изисквания:
 > - Един файл представлява един дек.
-> - В началото постави YAML frontmatter с `deckId`, `title` и `description`.
+> - В началото постави YAML frontmatter с `deckId`, `title`, `description` и `formatVersion: 2`.
 > - Използвай стабилен `deckId` с малки латински букви, цифри и тирета. **При допълване на съществуващ дек запази същия deckId**.
-> - Всяка карта започва с `## ` и един конкретен въпрос; отговорът е Markdown текст под него.
+> - Всяка карта започва с `## card: <key>`. Във всеки заявен езиков блок (`### bg` или `### en`) включи `#### question` и `#### answer`. За допълнителни обяснения използвай `#### simple`, `#### example` и `#### details`.
 > - Отделяй картите с ред `---`, извън code blocks.
 > - Не поставяй въпроси в YAML, таблици или кодови блокове.
 > - Не добавяй въведение, заключение, съдържание или инструкции в самия импортен файл.
@@ -28,25 +28,7 @@ This file describes how to ask ChatGPT to generate a ready-to-import Markdown de
 
 ## File structure
 
-```md
----
-deckId: unique-deck-id
-title: Human-readable deck title
-description: Short description
----
-
-## First question?
-
-Answer in Markdown.
-
----
-
-## Second question?
-
-Answer in Markdown, optionally including lists or fenced code blocks.
-```
-
-**Important:** `deckId` is a stable logical deck identifier, not a generated UUID for each card. The application creates card identities. The `---` separating cards must appear on its own line outside fenced code blocks.
+Use the [canonical v2 template](FLASHCARDS-IMPORT-TEMPLATE.md). Preserve card keys when adding translations or updating an existing card.
 
 ## Examples of requests
 
@@ -68,4 +50,4 @@ Answer in Markdown, optionally including lists or fenced code blocks.
 
 ## Compatibility
 
-This template follows the format agreed for Flashcards MVP v1.0. The coding agent must ensure the importer accepts this structure; actual implementation compatibility should be verified after the importer is available.
+The app accepts existing Markdown v1 files. Generate new files in v2 using the [Flashcards Deck Generator skill](../skills/flashcards-deck-generator/SKILL.md).

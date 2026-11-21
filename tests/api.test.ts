@@ -39,8 +39,10 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  const bilingual = readFileSync(new URL('../migrations/0003_bilingual.sql', import.meta.url), 'utf8');
-  await db.batch(bilingual.split(';').filter(statement => statement.trim()).map(statement => db.prepare(statement)));
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql']) {
+    const sql = readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8');
+    await db.batch(sql.split(';').filter(statement => statement.trim()).map(statement => db.prepare(statement)));
+  }
 });
 afterAll(async () => { await runtime?.dispose(); });
 
@@ -221,6 +223,7 @@ describe('Workers API with real local D1', () => {
     await browser.login('Migrated');
     expect((await browser.cards('old-deck'))[0]).toMatchObject({
       id: 'old-card', translations: { bg: { question: 'Въпрос?', answer: 'Отговор.' } }, times_shown: 1,
+      interview_priority: null, difficulty: null,
     });
     expect(await browser.study()).toMatchObject({
       id: 'old-session', version: 7, revealed: true, language: 'en', card: { id: 'old-card' },
@@ -234,7 +237,7 @@ describe('Workers API with real local D1', () => {
     const [legacy] = await browser.cards(deck);
     const active = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
     await browser.action(active, 'learn');
-    const partial = v2('## card: lock\n' + en);
+    const partial = v2('## card: lock\n### interviewPriority: 5\n### difficulty: 2\n' + en);
     const needsLink = await browser.ok<Preview>('import/preview', { source: partial });
     expect(needsLink.rows[0]).toMatchObject({ kind: 'link', candidates: [{ id: legacy.id }] });
     const denied = await browser.request('import/apply', {
@@ -242,11 +245,12 @@ describe('Workers API with real local D1', () => {
     });
     expect(denied.response.status).toBe(400);
     const result = await browser.import(partial, '', {}, { 0: legacy.id });
-    expect(result.preview.rows[0].kind).toBe('translation');
+    expect(result.preview.rows.map(row => row.kind)).toEqual(['metadata', 'translation']);
     const updated = await browser.cards(deck);
     expect(updated).toHaveLength(1);
     expect(updated[0]).toMatchObject({
       id: legacy.id, import_key: 'lock', times_shown: 1, times_learned: 1, status: 'LEARNED',
+      interview_priority: 5, difficulty: 2,
       translations: { bg: { answer: 'Ограничава достъпа.' }, en: { answer: 'It restricts access.' } },
     });
     expect((await browser.import(partial)).preview.rows[0].kind).toBe('duplicate');
@@ -254,6 +258,26 @@ describe('Workers API with real local D1', () => {
     const changed = await browser.import(changedParts, '', { '0:bg': 'update' });
     expect(changed.preview.rows.map(row => row.kind)).toEqual(['conflict', 'duplicate']);
     expect((await browser.cards(deck))[0].translations.bg?.simple).toBe('Един по един.');
+    expect((await browser.cards(deck))[0]).toMatchObject({ interview_priority: 5, difficulty: 2 });
+  });
+
+  it('imports the canonical template, skips exact reimports and applies rating-only changes to the same card', async () => {
+    const browser = new Browser();
+    await browser.login('Canonical deck');
+    const source = readFileSync(new URL('../docs/FLASHCARDS-IMPORT-TEMPLATE.md', import.meta.url), 'utf8');
+    const { id } = await browser.import(source);
+    const cards = await browser.cards(id);
+    expect(cards).toHaveLength(2);
+    const [first] = cards;
+    expect(first).toMatchObject({ import_key: 'volatile-atomicity', interview_priority: 5, difficulty: 3 });
+    const repeated = await browser.import(source);
+    expect(repeated.preview.rows.map(row => row.kind)).toEqual(Array(4).fill('duplicate'));
+    expect(await browser.cards(id)).toEqual(cards);
+    const revised = await browser.import(source.replace('### difficulty: 3', '### difficulty: 4'));
+    expect(revised.preview.rows.filter(row => row.kind === 'metadata')).toHaveLength(1);
+    expect((await browser.cards(id))[0]).toMatchObject({ id: first.id, difficulty: 4 });
+    const backup = await browser.ok<{ cards: Card[] }>('export');
+    expect(backup.cards.find(card => card.id === first.id)).toMatchObject({ difficulty: 4, interview_priority: 5 });
   });
 
   it('preserves the timer, revealed content, open section and preference across language switches and devices', async () => {

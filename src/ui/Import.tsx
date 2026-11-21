@@ -51,7 +51,7 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
           })}>Preview import</button>
           {preview && <>
             <p>Target: {preview.deck?.title ?? preview.metadata.title ?? file.filename}</p>
-            <p>{count('new')} new cards · {preview.existing} existing cards · {count('translation')} additional translations · {preview.rows.filter(row => file.choices[row.index] === 'update').length} translation updates · {count('duplicate')} duplicates · {count('conflict')} conflicts · {count('invalid')} invalid</p>
+            <p>{count('new')} new cards · {preview.existing} existing cards · {count('translation')} additional translations · {preview.rows.filter(row => file.choices[row.index] === 'update').length} translation updates · {count('metadata')} rating updates · {count('duplicate')} duplicates · {count('conflict')} conflicts · {count('invalid')} invalid</p>
             {preview.rows.filter(row => row.kind === 'invalid').map(row => <p key={row.index}>Invalid card {Number(row.index) + 1}: {row.question || row.key || '(empty question)'} {row.message}</p>)}
             {preview.rows.filter(row => row.kind === 'link').map(row => <fieldset className="stack" key={row.index}>
               <legend>{row.key} · {row.question}</legend>
@@ -81,7 +81,8 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
               })}><option value="">Choose a translation</option><option value="keep">Keep existing</option><option value="update">Use incoming</option></select></label>
             </fieldset>)}
             {Object.keys(file.links).length > 0 && <button disabled={busy} onClick={() => patch(file.key, { links: {}, choices: {}, preview: undefined })}>Clear card matches</button>}
-            <button className="primary" disabled={busy || preview.rows.some(row => row.kind === 'link' || (row.kind === 'conflict' && !file.choices[row.index]))}
+            <button className="primary" disabled={busy || preview.rows.every(row => row.kind === 'invalid') ||
+              preview.rows.some(row => row.kind === 'link' || (row.kind === 'conflict' && !file.choices[row.index]))}
               onClick={() => void run(async () => {
                 await api('import/apply', {
                   source: file.source, filename: file.filename, target: file.target, visibility: file.visibility,

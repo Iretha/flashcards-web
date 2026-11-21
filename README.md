@@ -37,7 +37,9 @@ npm run build
 
 ## Cloudflare Workers
 
-Sign in with `npx wrangler login` and run `npx wrangler d1 list` to find the UUID of the existing `flashcards-db` database. In `wrangler.jsonc`, replace the all-zero `database_id` under `d1_databases[0]` in your local checkout. The Worker uses the `DB` binding.
+The target Worker is `flashcards-api`. In Cloudflare Dashboard, open D1 → `flashcards-db` and copy its Database ID. Paste it in `wrangler.jsonc` at `d1_databases[0].database_id`, replacing the all-zero placeholder before deployment. The `DB` binding uses local D1 during development (`remote: false`) and the configured UUID identifies the database in production.
+
+Sign in with `npx wrangler login` to the account that owns both resources.
 
 Run a read-only query to check the remote connection. A successful result contains `connected: 1`.
 
@@ -52,18 +54,21 @@ npx wrangler d1 migrations list DB --remote
 npx wrangler d1 migrations apply DB --remote
 ```
 
-Set the shared access code and deploy when ready.
+Verify that the existing `flashcards-api` Worker has an `ACCESS_CODE` secret. Set it only if missing. To validate the build without publishing, run `npm run build` followed by `npx wrangler deploy --dry-run`. Deploy when the production schema and secret are ready.
 
 ```sh
-npx wrangler secret put ACCESS_CODE
 npm run deploy
 ```
 
-Enter the shared access code interactively. Keep it out of Git. For the first deployment, Wrangler may prompt to create the Worker when setting the secret. Open the resulting HTTPS Workers URL on each device.
+Open the resulting HTTPS Worker URL and verify sign-in.
 
 ## Markdown
 
-Each `## Question` starts a card. Use `---` between cards. The optional YAML frontmatter fields are `deckId`, `title`, and `description`. Keep `deckId` stable across revisions, or select an existing target deck in the import form.
+Use the [Markdown v2 template](docs/FLASHCARDS-IMPORT-TEMPLATE.md) for new decks and the [Flashcards Deck Generator skill](skills/flashcards-deck-generator/README.md) to generate import files. In v2, a stable `## card: key` links BG and EN content to one card and its progress. Keep both `deckId` and existing card keys when sending revisions or additional translations. Reuse an existing v1 card through the import preview when its translation needs an explicit match.
+
+Legacy v1 files still use `## Question` followed by a Markdown answer, with optional `deckId`, `title`, and `description` frontmatter. For a file without a deck ID, select the existing target deck when re-importing.
+
+The deck's card list filters by optional interview priority and difficulty ratings from v2. The Hardest first and Easiest first sorts use the presentation count from your study history.
 
 ## Study controls
 

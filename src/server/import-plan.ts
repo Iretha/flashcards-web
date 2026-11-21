@@ -8,10 +8,12 @@ export interface ImportTarget {
   import_key: string | null;
   primary_language: Language;
   translations: Translations;
+  interview_priority: number | null;
+  difficulty: number | null;
 }
 interface PreviewRow {
   index: string;
-  kind: 'new' | 'translation' | 'duplicate' | 'conflict' | 'invalid' | 'link';
+  kind: 'new' | 'translation' | 'duplicate' | 'conflict' | 'invalid' | 'link' | 'metadata';
   question: string;
   answer?: string;
   language?: Language;
@@ -87,9 +89,15 @@ export function planImport(
     const next: ImportTarget = {
       id, import_key: key ?? target?.import_key ?? null,
       primary_language: target?.primary_language ?? primary, translations: { ...target?.translations },
+      interview_priority: (bilingual ? draft.interviewPriority : undefined) ?? target?.interview_priority ?? null,
+      difficulty: (bilingual ? draft.difficulty : undefined) ?? target?.difficulty ?? null,
     };
     if (bilingual) claimed.add(id);
     let dirty = isNew || next.import_key !== target?.import_key;
+    if (target && (next.interview_priority !== target.interview_priority || next.difficulty !== target.difficulty)) {
+      rows.push({ index: prefix + ':metadata', kind: 'metadata', question, key: key ?? undefined });
+      dirty = true;
+    }
     let first = true;
     for (const language of languages) {
       const value = incoming[language];

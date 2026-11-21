@@ -57,6 +57,8 @@ function CardEditor({ card, busy, save, close }: { card?: Card; busy: boolean; s
 export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; busy: boolean; run: Run; reload: () => Promise<unknown>; close: () => void }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [sort, setSort] = useState('position');
+  const [priority, setPriority] = useState('');
+  const [difficulty, setDifficulty] = useState('');
   const [editor, setEditor] = useState<string | null>(null);
   const [editingDeck, setEditingDeck] = useState(false);
   const load = async () => setCards(await api<Card[]>('cards?deck=' + encodeURIComponent(deck.id)));
@@ -71,7 +73,10 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
     });
   }
 
-  const sorted = [...(cards ?? [])].sort((a, b) => {
+  const sorted = (cards ?? []).filter(card =>
+    (!priority || String(card.interview_priority) === priority) &&
+    (!difficulty || String(card.difficulty) === difficulty)
+  ).sort((a, b) => {
     if (sort === 'hard') return b.times_shown - a.times_shown;
     if (sort === 'easy') return a.times_shown - b.times_shown;
     if (sort === 'status') return a.status.localeCompare(b.status);
@@ -101,10 +106,24 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
       <option value="position">Deck order</option><option value="hard">Hardest first</option>
       <option value="easy">Easiest first</option><option value="status">Learned first</option><option value="recent">Recently shown</option>
     </select></label>
+    <div className="row">
+      <label>Interview priority<select value={priority} onChange={event => setPriority(event.target.value)}>
+        <option value="">All priorities</option><option value="null">Unrated</option>
+        {[1, 2, 3, 4, 5].map(value => <option key={value}>{value}</option>)}
+      </select></label>
+      <label>Difficulty rating<select value={difficulty} onChange={event => setDifficulty(event.target.value)}>
+        <option value="">All difficulties</option><option value="null">Unrated</option>
+        {[1, 2, 3, 4, 5].map(value => <option key={value}>{value}</option>)}
+      </select></label>
+    </div>
     {cards === null && <p role="status">Loading cards…</p>}
     {cards?.length === 0 && <p>No cards in this deck yet.</p>}
+    {cards && cards.length > 0 && sorted.length === 0 && <p>No cards match these filters.</p>}
     {sorted.map(card => <article className="item stack" key={card.id}>
       <h2>{card.question}</h2>
+      {(card.interview_priority !== null || card.difficulty !== null) && <p className="muted">
+        Interview priority {card.interview_priority ?? '—'} · Difficulty {card.difficulty ?? '—'}
+      </p>}
       <p className="muted">{card.status === 'LEARNED' ? 'Learned' : 'Unlearned'} · {card.times_shown} shown · {card.times_failed} failed · {card.times_learned} learned</p>
       <p className="muted">Explanations opened · {card.simple_opens} simple · {card.example_opens} example · {card.details_opens} detailed</p>
       {languages.map(language => {

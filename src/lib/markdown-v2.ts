@@ -4,6 +4,8 @@ import type { Language, Translation, Translations } from './translations';
 export interface BilingualDraft {
   key: string;
   translations: Translations;
+  interviewPriority?: number;
+  difficulty?: number;
   error?: string;
 }
 
@@ -66,6 +68,11 @@ export function parseBilingual(lines: string[]): BilingualDraft[] {
       seenKeys.add(key);
     } else if (/^ {0,3}---\s*$/.test(line) && endsCard(lines, index)) {
       saveCard();
+    } else if (card && !language && header?.[1] === '###' && /^(interviewPriority|difficulty)\s*:/.test(label)) {
+      const rating = /^(interviewPriority|difficulty)\s*:\s*([1-5])$/.exec(label);
+      const name = label.startsWith('difficulty') ? 'difficulty' : 'interviewPriority';
+      if (!rating || card[name] !== undefined) card.error ??= 'Specify each card rating at most once, using an integer from 1 to 5.';
+      else card[name] = Number(rating[2]);
     } else if (card && header?.[1] === '###' && isLanguage(label)) {
       saveField();
       language = label;

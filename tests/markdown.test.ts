@@ -63,3 +63,16 @@ it('keeps the documented v1 and v2 examples importable', () => {
   expect(old.version).toBe(1);
   expect(old.cards).toHaveLength(2);
 });
+
+it('preserves horizontal rules within legacy answers', () => {
+  expect(parseMarkdown('## First\n\nOne\n\n---\n\nTwo\n\n---\n\n## Second\n\nThree').cards)
+    .toEqual([{ question: 'First', answer: 'One\n\n---\n\nTwo' }, { question: 'Second', answer: 'Three' }]);
+});
+
+it('rejects invalid and repeated ratings', () => {
+  const language = '\n### en\n#### question\nQuestion?\n#### answer\nAnswer.';
+  for (const metadata of ['### difficulty: 0', '### interviewPriority: 1.5', '### difficulty: 2\n### difficulty: 3']) {
+    const parsed = parseMarkdown('---\nformatVersion: 2\n---\n## card: test\n' + metadata + language);
+    expect(parsed.cards[0]).toHaveProperty('error');
+  }
+});

@@ -1,6 +1,6 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
-  "name": "flashcards-web",
+  "name": "flashcards-api",
   "main": "@astrojs/cloudflare/entrypoints/server",
   "compatibility_date": "2026-04-01",
   "compatibility_flags": ["nodejs_compat"],
@@ -8,7 +8,9 @@
     {
       "binding": "DB",
       "database_name": "flashcards-db",
-      "database_id": "00000000-0000-0000-0000-000000000000",
+      // Replace this placeholder locally with the Database ID for flashcards-db from Cloudflare Dashboard.
+      "database_id": "5c34da3b-c2af-4f58-96ae-b3e34e46f075",
+      "remote": false,
       "migrations_dir": "migrations"
     }
   ]

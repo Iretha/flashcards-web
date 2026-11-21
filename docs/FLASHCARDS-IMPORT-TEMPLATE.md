@@ -6,11 +6,17 @@ formatVersion: 2
 # This file can be imported directly. Keep deckId and card keys stable.
 # Each card may include bg, en, or both. Each language needs question and answer.
 # simple, example, and details are optional. Omitted sections and languages stay stored on re-import.
+# Optional card ratings go before the first language. Use integers 1–5 (1 = lowest/easiest, 5 = highest/hardest).
+# Omitted ratings stay stored on re-import. A supplied rating replaces the previous one.
 # For a partial translation, keep the deckId and card key and include just the new language.
 # Legacy v1 files with unkeyed H2 questions remain supported.
 ---
 
 ## card: volatile-atomicity
+
+### interviewPriority: 5
+
+### difficulty: 3
 
 ### bg
 
@@ -73,6 +79,10 @@ If both read `5`, both may write `6` rather than the expected `7`.
 ---
 
 ## card: happens-before
+
+### interviewPriority: 4
+
+### difficulty: 5
 
 ### bg
 

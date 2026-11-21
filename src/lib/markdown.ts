@@ -33,7 +33,7 @@ export function parseMarkdown(source: string) {
     question = undefined;
     answer = [];
   }
-  for (const line of lines) {
+  for (const [index, line] of lines.entries()) {
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (fence) {
       answer.push(line);
@@ -42,7 +42,9 @@ export function parseMarkdown(source: string) {
     }
     if (marker) fence = marker[1];
     const heading = /^ {0,3}##(?:\s+|$)(.*)$/.exec(line);
-    if (heading || /^ {0,3}---\s*$/.test(line)) {
+    const separator = /^ {0,3}---\s*$/.test(line) &&
+      lines.slice(index + 1).find(next => next.trim())?.match(/^ {0,3}##(?:\s+|$)/);
+    if (heading || separator) {
       finish();
       if (heading) question = heading[1].replace(/\s+#+\s*$/, '').trim();
     } else if (question !== undefined) answer.push(line);

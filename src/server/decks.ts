@@ -124,7 +124,8 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     }
     const primary = current?.primary_language ?? languages.find(language => translations[language]);
     check(primary, 'Add at least one translation.');
-    const next = { id, primary_language: primary, import_key: current?.import_key ?? null, translations };
+    const next = { id, primary_language: primary, import_key: current?.import_key ?? null, translations,
+      interview_priority: current?.interview_priority ?? null, difficulty: current?.difficulty ?? null };
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
@@ -166,14 +167,16 @@ function writeCards(db: D1Database, deck: string, mutation: string, now: number,
     return { ...card, ...content, position, questionKey: questionKey(content.question) };
   });
   return db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, question, answer, position,
-    created_at, updated_at, import_key, primary_language, translations)
+    created_at, updated_at, import_key, primary_language, translations, interview_priority, difficulty)
     SELECT value ->> 'id', ?, value ->> 'id', value ->> 'questionKey', value ->> 'question', value ->> 'answer',
       (SELECT coalesce(max(position), -1) + 1 FROM cards WHERE deck_id = ?) + (value ->> 'position'),
-      ?, ?, value ->> 'import_key', value ->> 'primary_language', value -> 'translations'
+      ?, ?, value ->> 'import_key', value ->> 'primary_language', value -> 'translations',
+      value ->> 'interview_priority', value ->> 'difficulty'
     FROM json_each(?) WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)
     ON CONFLICT(id) DO UPDATE SET question_key = excluded.question_key, question = excluded.question,
       answer = excluded.answer, updated_at = excluded.updated_at, import_key = excluded.import_key,
-      primary_language = excluded.primary_language, translations = excluded.translations`)
+      primary_language = excluded.primary_language, translations = excluded.translations,
+      interview_priority = excluded.interview_priority, difficulty = excluded.difficulty`)
     .bind(deck, deck, now, now, JSON.stringify(values), deck, mutation);
 }
 
@@ -190,7 +193,8 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
     if (row.kind === 'conflict') check(['keep', 'update'].includes(String(updates[row.index])), 'Resolve every content conflict.');
   }
   check(uniqueQuestions(cards), 'A matching question already exists.', 409);
-  check(deck || changed.length, 'There are no valid cards to import.');
+  check(rows.some(row => row.kind !== 'invalid'), 'There are no valid cards to import.');
+  if (deck && !changed.length && deck.visibility === scope) return { id: deck.id, imported: 0, updatedTranslations: 0 };
   const id = deck?.id ?? crypto.randomUUID();
   const mutation = crypto.randomUUID();
   const now = Date.now();

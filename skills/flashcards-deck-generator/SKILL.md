@@ -9,27 +9,30 @@ Generate a **real downloadable UTF-8 .md file** for import into the Flashcards a
 
 ## Canonical format
 
-Read the repository's `docs/FLASHCARDS-IMPORT-TEMPLATE.md` before generating. The required format is:
+Read the repository's `docs/FLASHCARDS-IMPORT-TEMPLATE.md` before generating. For new decks, additions and translations, use Markdown v2:
 
 ```md
 ---
 deckId: example-topic
 title: Example Topic
 description: Short description
+formatVersion: 2
 ---
 
-## First question?
+## card: stable-card-key
+
+### en
+
+#### question
+
+First question?
+
+#### answer
 
 Concise, correct Markdown answer.
-
----
-
-## Second question?
-
-Answer, optionally with a fenced code block.
 ```
 
-Do not introduce incompatible metadata or per-card identifiers. One file is one deck. Every question is an H2 heading; use a standalone `---` line between cards outside code fences. Do not include commentary, table of contents, or introductions in the import file.
+One file is one deck. Each card has one stable key, one or both language blocks (`### bg`, `### en`), and a nonempty question and answer per language. Use `#### simple`, `#### example`, and `#### details` for optional explanations. Put optional `### interviewPriority: 5` and `### difficulty: 3` before the language blocks, using ratings from 1 to 5. Use a standalone `---` line between cards outside code fences. Keep introductions and commentary outside the import file.
 
 ## Workflow
 
@@ -38,7 +41,7 @@ Do not introduce incompatible metadata or per-card identifiers. One file is one 
 3. If adding cards to an existing deck, inspect provided existing questions/deck files to avoid both exact and semantic duplicates. If the existing cards are unavailable, do not claim complete deduplication; generate distinct questions and note that the importer will detect exact duplicates.
 4. Select useful, non-overlapping questions appropriate to the requested level. Prioritize accurate, understandable answers over length. For interview preparation, include practical nuances and short code examples only when they help.
 5. Produce exactly the requested number of valid cards where feasible. Ensure every card has one nonempty question and one nonempty answer.
-6. Validate the generated file: frontmatter present, stable deckId, expected question count, no duplicated normalized questions, properly closed fenced code blocks, standalone separators outside code fences, and no unrelated content.
+6. Validate frontmatter, stable deck ID and card keys, expected card count, unique normalized questions per language, closed code fences, separators and permitted fields. When adding a translation, reuse the card's existing key and include the new language with its question and answer. For an unkeyed v1 card, tell the user to check the existing-card match in the import preview.
 7. Save the file as `<deck-id>.md` for a new deck or `<deck-id>-extra.md` for additions, unless the user specifies a filename. Provide a **download link to the actual generated file**.
 8. Summarize in one sentence the deck, card count and whether it is a new deck or an addition.
 
