@@ -273,14 +273,20 @@ export default function App() {
         <a className="button" href="/api/replacement-report">Reload impact report</a>
 
       </div>}
-      {home && screen !== 'study' && <button className="sign-out" disabled={busy} onClick={() => void run(async () => {
+      {home && screen !== 'study' && <div className="row account-actions">
+        <button type="button" disabled={busy} title="Reload decks, cards and the interface" onClick={() => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('_reload', Date.now().toString());
+          window.location.replace(url.toString());
+        }}>↻ Reload</button>
+        <button className="sign-out" disabled={busy} onClick={() => void run(async () => {
           await api('logout', {});
           setHome(null);
           setSession(null);
           setSelected([]);
           setCreate(false);
           setScreen('library');
-        })}>Sign out {home.username}</button>}
+        })}>Sign out {home.username}</button></div>}
     </header>
     <main aria-busy={busy}>
       {error && <p className="error" role="alert">{error}</p>}
