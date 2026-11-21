@@ -420,9 +420,6 @@ export default function App() {
             {activeCard.metadata && <span className="question-occurrences" title="Independent interview occurrences">({activeCard.metadata.provenance.type === 'generated' ? 0 : activeCard.metadata.occurrenceCount})</span>}
           </div>
           </div>
-          {activeCard.metadata ? <CardSources key={activeCard.id} metadata={activeCard.metadata}>
-            {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
-          </CardSources> : selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
           {answerVisible && <>
             <div className="answer-divider" aria-hidden="true"><span /></div>
             <div id="study-answer" className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>
@@ -446,6 +443,9 @@ export default function App() {
               <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
             </div>
           </div>
+          {activeCard.metadata ? <CardSources key={activeCard.id} metadata={activeCard.metadata}>
+            {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
+          </CardSources> : selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
           <StudySidebar language={session.language} busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
             repeat={session.repeat} answerVisible={answerVisible} onAction={studyAction} onToggleAnswer={toggleStudyAnswer} />
         </> : <>
