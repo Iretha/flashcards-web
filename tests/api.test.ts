@@ -109,6 +109,47 @@ describe('Workers API with real local D1', () => {
     expect((await browser.request('home')).response.status).toBe(401);
   });
 
+  it('logs only the authentication diagnostic fields for login and home', async () => {
+    const log = vi.spyOn(console, 'info').mockImplementation(() => {});
+    const browser = new Browser();
+    try {
+      expect((await browser.request('login', { username: 'Diagnostic user', code: accessCode }, 'https://other.example')).response.status).toBe(403);
+      expect((await browser.request('login', { username: 'Diagnostic user', code: 'wrong' })).response.status).toBe(401);
+      await browser.login('Diagnostic user');
+      await browser.home();
+      await browser.request('study');
+      const issuedCookie = browser.cookie;
+      browser.cookie = 'other_cookie=flashcards_session';
+      await browser.request('home');
+      browser.cookie = 'flashcards_session=malformed';
+      await browser.request('home');
+      browser.cookie = issuedCookie;
+      await db.prepare('UPDATE auth_sessions SET expires_at = 0 WHERE user_id = (SELECT id FROM users WHERE username = ?)')
+        .bind('Diagnostic user').run();
+      await browser.request('home');
+      await db.prepare('DELETE FROM auth_sessions WHERE user_id = (SELECT id FROM users WHERE username = ?)')
+        .bind('Diagnostic user').run();
+      await browser.request('home');
+      expect((await handle(new Request(origin + '/api/home', { method: 'DELETE' }), db)).status).toBe(405);
+
+      const login = { event: 'flashcards.auth', method: 'POST', endpoint: '/api/login', cookieReceived: false, sessionFound: null, sessionExpired: null };
+      const home = { event: 'flashcards.auth', method: 'GET', endpoint: '/api/home', status: 401, cookieIssued: false, cookieReceived: true, sessionFound: false, sessionExpired: null };
+      expect(log.mock.calls).toEqual([
+        [{ ...login, status: 403, cookieIssued: false }],
+        [{ ...login, status: 401, cookieIssued: false }],
+        [{ ...login, status: 200, cookieIssued: true }],
+        [{ ...home, status: 200, sessionFound: true, sessionExpired: false }],
+        [{ ...home, cookieReceived: false }],
+        [home],
+        [{ ...home, sessionExpired: true }],
+        [home],
+        [{ ...home, method: 'DELETE', status: 405, cookieReceived: false, sessionFound: null }],
+      ]);
+    } finally {
+      log.mockRestore();
+    }
+  });
+
   it('rejects missing sessions, cross-origin posts and excessive invalid codes', async () => {
     const browser = new Browser();
     expect((await browser.request('home')).response.status).toBe(401);

@@ -8,6 +8,15 @@ const token = (request: Request) => request.headers.get('Cookie')?.match(/(?:^|;
 const cookieHeader = (value: string, age: number) =>
   cookie + '=' + value + '; Path=/; Max-Age=' + age + '; HttpOnly; Secure; SameSite=Lax';
 
+export interface SessionDiagnostics {
+  sessionFound: boolean | null;
+  sessionExpired: boolean | null;
+}
+
+export function hasSessionCookie(request: Request) {
+  return /(?:^|;\s*)flashcards_session=/.test(request.headers.get('Cookie') ?? '');
+}
+
 async function digest(value: string) {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
@@ -20,12 +29,33 @@ async function equalCode(a: string, b: string) {
   return difference === 0;
 }
 
-export async function authenticate(db: D1Database, request: Request) {
+export async function authenticate(db: D1Database, request: Request, diagnostics?: SessionDiagnostics) {
   const value = token(request);
-  if (!value) return null;
-  return db.prepare(`SELECT users.id, username, settings FROM auth_sessions
+  if (!value) {
+    if (diagnostics) diagnostics.sessionFound = false;
+    return null;
+  }
+  const hash = await digest(value);
+  const now = Date.now();
+  const user = await db.prepare(`SELECT users.id, username, settings FROM auth_sessions
     JOIN users ON users.id = user_id WHERE token_hash = ? AND expires_at > ?`)
-    .bind(await digest(value), Date.now()).first<User>();
+    .bind(hash, now).first<User>();
+  if (diagnostics) {
+    diagnostics.sessionFound = user !== null;
+    if (user) {
+      diagnostics.sessionExpired = false;
+    } else {
+      // This lookup is diagnostic only. Its failure must preserve the original 401.
+      try {
+        const expiresAt = await db.prepare('SELECT expires_at FROM auth_sessions WHERE token_hash = ?')
+          .bind(hash).first<number>('expires_at');
+        if (expiresAt !== null) diagnostics.sessionExpired = expiresAt <= now;
+      } catch {
+        // Leave expiration unknown.
+      }
+    }
+  }
+  return user;
 }
 
 export async function login(db: D1Database, secret: string | undefined, request: Request, input: Record<string, unknown>) {

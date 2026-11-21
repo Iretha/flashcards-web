@@ -1,4 +1,5 @@
-import { authenticate, login, logout } from './auth';
+import { authenticate, hasSessionCookie, login, logout } from './auth';
+import type { SessionDiagnostics } from './auth';
 import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, saveDeck } from './decks';
 import { check, HttpError, json, object, string } from './http';
 import { act, reset, startSession, studyView } from './sessions';
@@ -8,9 +9,31 @@ import type { Translations } from '../lib/translations';
 export async function handle(request: Request, db: D1Database, secret?: string) {
   const url = new URL(request.url);
   const route = url.pathname.replace(/^\/api\//, '');
+  const endpoint = url.pathname;
+  if (endpoint !== '/api/login' && endpoint !== '/api/home') return dispatch(request, db, secret, url, route);
+
+  // Temporary diagnostics for the LG webOS session issue.
+  const diagnostics: SessionDiagnostics = { sessionFound: null, sessionExpired: null };
+  const response = await dispatch(request, db, secret, url, route, diagnostics);
+  console.info({
+    event: 'flashcards.auth',
+    method: request.method,
+    endpoint,
+    status: response.status,
+    cookieIssued: endpoint === '/api/login' && response.headers.has('Set-Cookie'),
+    cookieReceived: hasSessionCookie(request),
+    ...diagnostics,
+  });
+  return response;
+}
+
+async function dispatch(
+  request: Request, db: D1Database, secret: string | undefined, url: URL, route: string,
+  diagnostics?: SessionDiagnostics,
+) {
   try {
     if (request.method === 'GET') {
-      const user = await authenticate(db, request);
+      const user = await authenticate(db, request, diagnostics);
       check(user, 'Sign in to continue.', 401);
       if (route === 'home') return json({
         username: user.username, settings: { ...defaults, ...JSON.parse(user.settings) },
@@ -45,8 +68,8 @@ export async function handle(request: Request, db: D1Database, secret?: string) 
     let decoded: unknown;
     try { decoded = JSON.parse(raw); } catch { throw new HttpError(400, 'Invalid JSON.'); }
     const input = object(decoded);
-    if (route === 'login') return login(db, secret, request, input).catch(errorResponse);
-    const user = await authenticate(db, request);
+    if (route === 'login') return await login(db, secret, request, input);
+    const user = await authenticate(db, request, diagnostics);
     check(user, 'Sign in to continue.', 401);
     if (route === 'logout') return await logout(db, request);
     if (route === 'deck') return json(await saveDeck(db, user.id, input));
@@ -67,15 +90,15 @@ export async function handle(request: Request, db: D1Database, secret?: string) 
     }
     throw new HttpError(404, 'Unknown endpoint.');
   } catch (error) {
-    return errorResponse(error);
+    return errorResponse(error, diagnostics !== undefined);
   }
 }
 
-function errorResponse(error: unknown) {
+function errorResponse(error: unknown, authDiagnostic: boolean) {
   if (error instanceof HttpError) return json({ error: error.message }, error.status);
   if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
     return json({ error: 'A matching deck or question already exists. Refresh and try again.' }, 409);
   }
-  console.error('Flashcards API error', error);
+  if (!authDiagnostic) console.error('Flashcards API error', error);
   return json({ error: 'Something went wrong. Try again.' }, 500);
 }
