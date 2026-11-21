@@ -73,6 +73,7 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(defaults);
   const [session, setSession] = useState<Session | null>(null);
   const [hiddenAnswer, setHiddenAnswer] = useState<Session | null>(null);
+  const [hiddenExplanation, setHiddenExplanation] = useState<Session | null>(null);
   const [answerSize, setAnswerSize] = useState(readAnswerSize);
   const [now, setNow] = useState(Date.now);
   const stage = useRef<HTMLElement>(null);
@@ -235,6 +236,14 @@ export default function App() {
   const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
   const explanation = session?.explanation && selectExplanation(translations, selectedLanguage.language, session.explanation);
   const answerVisible = Boolean(session?.revealed && hiddenAnswer !== session);
+  const explanationVisible = Boolean(answerVisible && explanation && hiddenExplanation !== session);
+  const toggleExplanation = (section: Section) => {
+    if (session?.explanation === section) {
+      setHiddenExplanation(current => current === session ? null : session);
+    } else {
+      studyAction('explanation', { section });
+    }
+  };
   const sizeLabels = answerSizeLabels[session?.language ?? settings.language];
   const activeCard = session?.status === 'ACTIVE' && session.card;
   const toggleStudyAnswer = () => answerVisible ? setHiddenAnswer(session) : studyAction('show');
@@ -373,19 +382,19 @@ export default function App() {
             <div className="row" role="group" aria-label="Explanations">
               {sections.map(section => {
                 const available = selectExplanation(translations, selectedLanguage.language, section);
-                return available.content && <button key={section} aria-disabled={busy} aria-expanded={session.explanation === section}
-                  onClick={() => studyAction('explanation', { section })}>
-                  {explanationLabels[section][selectedLanguage.language]}{available.language !== selectedLanguage.language ? ' · ' + available.language.toUpperCase() : ''}
+                return available.content && <button key={section} aria-disabled={busy} aria-expanded={Boolean(explanationVisible && session.explanation === section)}
+                  onClick={() => toggleExplanation(section)}>
+                  {explanationVisible && session.explanation === section ? (selectedLanguage.language === 'bg' ? 'Скрий' : 'Hide') : explanationLabels[section][selectedLanguage.language]}{available.language !== selectedLanguage.language ? ' · ' + available.language.toUpperCase() : ''}
                 </button>;
               })}
             </div>
-            {explanation && explanation.content && <div className="answer study-explanation markdown" lang={explanation.language}>
+            {explanationVisible && explanation && explanation.content && <div className="answer study-explanation markdown" lang={explanation.language}>
               <MarkdownContent>{explanation.content}</MarkdownContent>
             </div>}
           </>}
           <div className="row actions">
             <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Previous</button>
-            <button className="primary" disabled={busy || answerVisible} onClick={toggleStudyAnswer}>Show answer</button>
+            <button className="primary" disabled={busy} aria-expanded={answerVisible} onClick={toggleStudyAnswer}>{answerVisible ? 'Hide answer' : 'Show answer'}</button>
             <button disabled={busy || session.historical} onClick={() => studyAction('learn')}>Learned</button>
             <button disabled={busy || session.historical} onClick={() => studyAction('repeat')}>Repeat</button>
             <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
