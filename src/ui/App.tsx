@@ -18,6 +18,11 @@ const defaultAnswerSize = 100;
 const minAnswerSize = 60;
 const maxAnswerSize = 180;
 const answerSizeStep = 10;
+const buildTimestamp = import.meta.env.PUBLIC_BUILD_TIMESTAMP;
+const buildVersion = new Intl.DateTimeFormat('bg-BG', {
+  timeZone: 'Europe/Sofia', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+}).format(new Date(buildTimestamp));
 
 function readAnswerSize() {
   try {
@@ -241,6 +246,9 @@ export default function App() {
           setScreen('library');
         })}>Switch user / Sign out</button>
       </div>}
+      <time className="build-version" dateTime={buildTimestamp} title="Дата и час на изграждане • Europe/Sofia">
+        v{buildVersion}
+      </time>
     </header>
     <main aria-busy={busy}>
       {error && <p className="error" role="alert">{error}</p>}
