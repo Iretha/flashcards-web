@@ -267,3 +267,8 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
 }
 @media (min-width: 1450px) { :root { font-size: 20px; } button, .button { min-height: 58px; } }
 @media (max-width: 420px) { .shell { padding-left: .75rem; padding-right: .75rem; } }
+
+/* Keep study controls together while allowing narrow screens to wrap. */
+.study .actions { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.study .actions .check { width: auto; margin: 0; }
+.question-details, .card-sources { min-width: 0; overflow-wrap: anywhere; }

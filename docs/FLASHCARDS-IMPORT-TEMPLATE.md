@@ -3,7 +3,7 @@ deckId: java-memory-model
 title: Java Memory Model
 description: Senior Java interview preparation — bilingual, structured flashcards
 formatVersion: 3
-# PROPOSED v3 CONTRACT — not importable until the application parser, validation and rendering support v3.
+# Markdown v3 — supported by parser, validation, persistence, API and Study UI.
 # One stable card key connects BG and EN variants. One file represents one deck.
 # Required per card: provenance; at least one language with question and answer.
 # Required: cardType (question | coding_task), topic, occurrenceCount (integer >= 0), provenance.type.
@@ -16,7 +16,25 @@ formatVersion: 3
 # occurrenceCount must equal the number of independently evidenced interview occurrences in provenance.sources; other references do not count; deduplicate reposts.
 # generated cards without documented occurrences use occurrenceCount: 0. Never invent sources, dates, or locations.
 # answerReferences verify answer claims and are NOT evidence of the question's origin.
-# This document is a format proposal; field syntax must be aligned with the parser before activation.
+# id is serialized as the unique ASCII key in `## card: id` (1-100 letters/digits/_/-).
+# Metadata precedes language sections. Each scalar heading appears at most once.
+# provenance and answerReferences bodies are YAML, with no YAML aliases.
+# YAML: quote dates as strings. sourceName/sourceUrl are required on every supplied source.
+# A source without occurrenceId explains the origin/adaptation, NOT an interview occurrence.
+# occurrenceId is optional stable text identifying one independently documented interview.
+# Assign the SAME occurrenceId to reposts/accounts of that same interview; omit it on technical docs.
+# occurrenceCount equals the number of DISTINCT nonempty occurrenceId values, not source count.
+# Only use occurrenceId after reviewing real interview evidence at that source URL.
+# Syntax validation does not verify external claims; human/content review remains required.
+# Lists of answerReferences use {title, url}; HTTP(S) links only, without credentials.
+# Each language has question (max 2000 chars), answer (max 20000 chars), questionDetails (max 20000 chars).
+# coding_task requires nonempty questionDetails in every supplied language; starter code goes there.
+# Omitted languages are preserved on reimport. Supplied language fields merge; metadata replaces as a unit.
+# Reserved headings: ## card:, ### bg/en, #### question/questionDetails/answer; put literal forms in fences.
+# Code fences can use backticks or tildes. Other Markdown headings/tables/lists are content.
+# Examples and solution explanations belong inside answer, with no separate explanation controls.
+# Import validation errors identify card key, field and reason; v3 apply rejects any invalid card.
+# No import migrates old cards; see FLASHCARDS-V3-RELOAD.md for deliberate recreation.
 ---
 
 ## card: volatile-atomicity

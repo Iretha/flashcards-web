@@ -1,10 +1,13 @@
+import { startCycles, toggleRepeat, nextCycleCard, previousCycleCard } from './study-cycles';
+import type { CycleState } from './study-cycles';
 import type { Language, Section } from './translations';
 
 export type Ordering = 'SEQUENTIAL' | 'RANDOM';
 export interface Settings { order: Ordering; timer: boolean; seconds: number; onlyUnlearned: boolean; language: Language }
-export const defaults: Settings = { order: 'SEQUENTIAL', timer: true, seconds: 30, onlyUnlearned: true, language: 'en' };
+export const defaults: Settings = { order: 'SEQUENTIAL', timer: true, seconds: 30, onlyUnlearned: false, language: 'en' };
 export interface QueueCard { id: string; failed: number; visits: number }
 export interface StudyState {
+  cycles?: CycleState;
   queue: QueueCard[];
   history: string[];
   cursor: number;
@@ -19,97 +22,63 @@ export interface StudyState {
 export type StudyAction = 'show' | 'learn' | 'repeat' | 'next' | 'previous' | 'forward' | 'timeout' | 'pause' | 'resume' | 'language' | 'explanation';
 export type Outcome = 'LEARNED' | 'REPEAT' | 'TIMEOUT' | 'NEXT';
 
-// One ticket for every card, plus one per failure up to seven extra tickets.
-export const weight = (failed: number) => 1 + Math.min(7, Math.max(0, failed));
-
-export function choose(queue: QueueCard[], history: string[], order: Ordering, random = Math.random) {
-  const cooldown = Math.min(2, Math.max(0, queue.length - 1));
-  const recent = new Set(cooldown ? history.slice(-cooldown) : []);
-  const eligible = queue.filter(card => !recent.has(card.id));
-  const choices = eligible.length ? eligible : queue;
-  const fresh = choices.find(card => card.visits === 0);
-  const repeats = choices.filter(card => card.visits > 0);
-  let pool = choices;
-  if (order === 'SEQUENTIAL' && fresh) {
-    if (!repeats.length || random() >= 0.3) return fresh;
-    pool = repeats;
-  }
-  let ticket = random() * pool.reduce((total, card) => total + weight(card.failed), 0);
-  for (const card of pool) {
-    ticket -= weight(card.failed);
-    if (ticket < 0) return card;
-  }
-  return pool.at(-1);
-}
-
-function present(state: StudyState, settings: Settings, now: number, random: () => number) {
-  const next = choose(state.queue, state.history, settings.order, random);
-  state.current = next?.id ?? null;
-  state.revealed = false;
-  state.explanation = null;
-  state.historyRevealed = false;
-  state.remainingMs = null;
-  state.deadline = next && settings.timer ? now + settings.seconds * 1000 : null;
-  if (next) {
-    next.visits++;
-    state.history.push(next.id);
-    if (state.history.length > 2000) state.history.shift();
-  }
-  state.cursor = state.history.length - 1;
-  return state.current;
-}
-
 export function startStudy(queue: QueueCard[], settings: Settings, now: number, random = Math.random) {
   const state: StudyState = {
     queue: queue.map(card => ({ ...card })), history: [], cursor: -1, current: null,
     deadline: null, remainingMs: null, revealed: false, language: settings.language,
   };
-  present(state, settings, now, random);
+  const ids = state.queue.map(card => card.id);
+  if (settings.order === 'RANDOM') for (let i = ids.length - 1; i > 0; i--) {
+    const j = Math.floor(random() * (i + 1)); [ids[i], ids[j]] = [ids[j], ids[i]];
+  }
+  state.cycles = startCycles(ids);
+  state.current = ids[0] ?? null;
+  state.history = state.cycles.history;
+  state.cursor = 0;
+  state.deadline = state.current && settings.timer ? now + settings.seconds * 1000 : null;
   return state;
 }
 
-export function advance(original: StudyState, settings: Settings, action: StudyAction, now: number, random = Math.random) {
+export function advance(original: StudyState, settings: Settings, action: StudyAction, now: number, _random = Math.random) {
   const state = structuredClone(original);
   const card = state.current;
   let outcome: Outcome | null = null;
   let shown: string | null = null;
   if (!card) return { state, outcome, shown };
-  const historical = state.cursor < state.history.length - 1;
-
-  if (action === 'pause') {
-    if (state.deadline !== null) state.remainingMs = Math.max(0, state.deadline - now);
-    state.deadline = null;
-  } else if (action === 'resume') {
-    if (state.remainingMs !== null) state.deadline = now + state.remainingMs;
-    state.remainingMs = null;
-  } else if (action === 'previous') {
-    if (state.cursor > 0) {
-      state.cursor--;
-      state.historyRevealed = false;
-      state.explanation = null;
+  if (state.cycles) {
+    const cycles = state.cycles;
+    if (action === 'repeat') state.cycles = toggleRepeat(cycles);
+    else if (action === 'previous') state.cycles = previousCycleCard(cycles);
+    else if (action === 'next' || action === 'forward' || action === 'learn') {
+      state.cycles = nextCycleCard(cycles);
+      outcome = action === 'learn' ? 'LEARNED' : 'NEXT';
+    } else if (action === 'show') {
+      state.revealed = !state.revealed;
+      state.deadline = null; state.remainingMs = null;
+    } else if (action === 'timeout' && state.deadline !== null && state.deadline <= now) {
+      // Expiry reveals the answer; it never changes repeat membership or navigates.
+      state.revealed = true; state.deadline = null; state.remainingMs = null;
+      outcome = 'TIMEOUT';
+    } else if (action === 'pause') {
+      if (state.deadline !== null) state.remainingMs = Math.max(0, state.deadline - now);
+      state.deadline = null;
+    } else if (action === 'resume') {
+      if (state.remainingMs !== null) state.deadline = now + state.remainingMs;
+      state.remainingMs = null;
     }
-  } else if (historical && (action === 'next' || action === 'forward')) {
-    state.cursor++;
-    state.historyRevealed = false;
-    state.explanation = null;
-  } else if (action === 'show' && historical) {
-    state.historyRevealed = true;
-  } else if (action === 'show' && !historical && (state.deadline === null || state.deadline > now)) {
-    state.revealed = true;
-    state.deadline = null;
-    state.remainingMs = null;
-  } else if (
-    (action === 'timeout' && state.deadline !== null && state.deadline <= now) ||
-    (!historical && ['learn', 'repeat', 'next'].includes(action))
-  ) {
-    const expired = state.deadline !== null && state.deadline <= now;
-    outcome = expired ? 'TIMEOUT' : action === 'learn' ? 'LEARNED' : action === 'repeat' ? 'REPEAT' : 'NEXT';
-    if (outcome === 'LEARNED') state.queue = state.queue.filter(item => item.id !== card);
-    if (outcome === 'REPEAT' || outcome === 'TIMEOUT') {
-      const entry = state.queue.find(item => item.id === card);
-      if (entry) entry.failed++;
+    const moved = state.cycles.cursor !== cycles.cursor || state.cycles.complete !== cycles.complete;
+    state.history = state.cycles.history;
+    state.cursor = state.cycles.cursor;
+    state.current = state.cycles.complete ? null : state.history[state.cursor] ?? null;
+    if (moved) {
+      state.revealed = false; state.historyRevealed = false; state.explanation = null;
+      state.remainingMs = null;
+      state.deadline = state.current && settings.timer ? now + settings.seconds * 1000 : null;
+      if (state.history.length > cycles.history.length) shown = state.current;
     }
-    shown = present(state, settings, now, random);
+    state.historyRevealed = state.revealed;
+    return { state, outcome, shown };
   }
+  // Pre-v3 sessions are exposed as invalidated by the API and must be restarted.
   return { state, outcome, shown };
 }

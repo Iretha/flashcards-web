@@ -20,11 +20,12 @@ function Icon({ name }: { name: keyof typeof icons }) {
   </svg>;
 }
 
-export default function StudySidebar({ language, busy, hasPrevious, historical, answerVisible, onAction, onToggleAnswer }: {
+export default function StudySidebar({ language, busy, hasPrevious, repeat = false, answerVisible, onAction, onToggleAnswer }: {
   language: Language;
   busy: boolean;
   hasPrevious: boolean;
   historical: boolean;
+  repeat?: boolean;
   answerVisible: boolean;
   onAction: (action: StudyAction) => void;
   onToggleAnswer: () => void;
@@ -85,8 +86,6 @@ export default function StudySidebar({ language, busy, hasPrevious, historical, 
   const actions: { icon: keyof typeof icons; label: string; disabled?: boolean; run: () => void }[] = [
     { icon: 'arrow-left', label: labels.previous, disabled: !hasPrevious, run: () => onAction('previous') },
     { icon: answerVisible ? 'eye-off' : 'eye', label: answerVisible ? labels.hide : labels.show, run: onToggleAnswer },
-    { icon: 'check', label: labels.learn, disabled: historical, run: () => onAction('learn') },
-    { icon: 'repeat-2', label: labels.repeat, disabled: historical, run: () => onAction('repeat') },
     { icon: 'arrow-right', label: labels.next, run: () => onAction('next') },
   ];
 
@@ -109,6 +108,7 @@ export default function StudySidebar({ language, busy, hasPrevious, historical, 
     <div id="study-sidebar-actions" className="study-sidebar-actions" role="group" aria-label={labels.actions}
       hidden={!open} onFocus={event => setFocused(event.target.matches(':focus-visible'))}
       onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
+      <label className="check"><input type="checkbox" aria-label={labels.repeat} checked={repeat} disabled={busy} onChange={() => onAction('repeat')} />{labels.repeat}</label>
       {actions.map(({ icon, label, disabled, run }) => <button key={icon === 'eye-off' ? 'eye' : icon} type="button"
         className="study-sidebar-action" aria-label={label} aria-disabled={busy || Boolean(disabled)}
         onClick={() => { if (!busy && !disabled) run(); }}>

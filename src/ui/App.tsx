@@ -8,14 +8,8 @@ import { DeckDetail, DeckEditor } from './Decks';
 import Import from './Import';
 import { defaults } from '../lib/study';
 import type { Settings, StudyAction } from '../lib/study';
-import { answerSizeLabels, languages, sections, selectExplanation, selectTranslation } from '../lib/translations';
-import type { Section } from '../lib/translations';
-
-const explanationLabels: Record<Section, { en: string; bg: string }> = {
-  simple: { en: 'Explain Simply', bg: 'Обясни просто' },
-  example: { en: 'Show Example', bg: 'Дай пример' },
-  details: { en: 'More Details', bg: 'По-подробно' },
-};
+import { answerSizeLabels, languages, selectTranslation } from '../lib/translations';
+import CardSources from './CardSources';
 
 type Screen = 'library' | 'import' | 'detail' | 'study';
 
@@ -72,8 +66,6 @@ export default function App() {
   const [create, setCreate] = useState(false);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [session, setSession] = useState<Session | null>(null);
-  const [hiddenAnswer, setHiddenAnswer] = useState<Session | null>(null);
-  const [hiddenExplanation, setHiddenExplanation] = useState<Session | null>(null);
   const [answerSize, setAnswerSize] = useState(readAnswerSize);
   const [now, setNow] = useState(Date.now);
   const stage = useRef<HTMLElement>(null);
@@ -136,10 +128,6 @@ export default function App() {
 
   function studyAction(action: StudyAction, values?: object) {
     if (session?.status !== 'ACTIVE' || inFlight.current) return;
-    if (action === 'show' && hiddenAnswer === session) {
-      setHiddenAnswer(null);
-      return;
-    }
     void run(async () => { await send(action, session, values); });
   }
 
@@ -187,15 +175,14 @@ export default function App() {
       }
       if (screen === 'study' && session?.status === 'ACTIVE') {
         let action: StudyAction | undefined;
-        const interactive = element?.closest('button, a, summary, pre.code-block');
+        const interactive = element?.closest('button, input, a, summary, pre.code-block');
         if ((event.key === ' ' || event.key === 'Enter') && !interactive) action = 'show';
         if (event.key === 'ArrowRight' && !interactive) action = 'next';
         if (event.key === 'ArrowLeft' && !interactive) action = 'previous';
-        if (event.key.toLowerCase() === 'l' && !session.historical) action = 'learn';
-        if (event.key.toLowerCase() === 'r' && !session.historical) action = 'repeat';
+        if (event.key.toLowerCase() === 'r') action = 'repeat';
         if (action) {
           event.preventDefault();
-          if (!event.repeat) studyAction(action);
+          if (!event.repeat) { if (action === 'show') toggleStudyAnswer(); else studyAction(action); }
           return;
         }
       }
@@ -231,22 +218,12 @@ export default function App() {
 
   const selectedDecks = home?.decks.filter(item => selected.includes(item.id)) ?? [];
   const total = selectedDecks.reduce((sum, item) => sum + item.total, 0);
-  const learned = selectedDecks.reduce((sum, item) => sum + item.learned, 0);
   const translations = session?.card?.translations ?? {};
   const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
-  const explanation = session?.explanation && selectExplanation(translations, selectedLanguage.language, session.explanation);
-  const answerVisible = Boolean(session?.revealed && hiddenAnswer !== session);
-  const explanationVisible = Boolean(answerVisible && explanation && hiddenExplanation !== session);
-  const toggleExplanation = (section: Section) => {
-    if (session?.explanation === section) {
-      setHiddenExplanation(current => current === session ? null : session);
-    } else {
-      studyAction('explanation', { section });
-    }
-  };
+  const answerVisible = Boolean(session?.revealed);
   const sizeLabels = answerSizeLabels[session?.language ?? settings.language];
   const activeCard = session?.status === 'ACTIVE' && session.card;
-  const toggleStudyAnswer = () => answerVisible ? setHiddenAnswer(session) : studyAction('show');
+  const toggleStudyAnswer = () => studyAction('show');
 
   return <div className="shell">
     <header className="top">
@@ -254,6 +231,7 @@ export default function App() {
       {home && screen !== 'study' && <div className="row account">
         <span>{home.username}</span>
         <a className="button" href="/api/export">Export backup</a>
+        <a className="button" href="/api/replacement-report">Reload impact report</a>
         <button disabled={busy} onClick={() => void run(async () => {
           await api('logout', {});
           setHome(null);
@@ -302,15 +280,14 @@ export default function App() {
               <button onClick={() => { setDetail(item.id); setScreen('detail'); }}>View deck</button>
             </div>
             {item.description && <p>{item.description}</p>}
-            <p className="muted">{item.visibility === 'PRIVATE' ? 'Private' : 'Shared'} · {item.learned}/{item.total} learned · {item.total - item.learned} remaining</p>
-            <progress max={Math.max(1, item.total)} value={item.learned} aria-label={'Progress for ' + item.title} />
+            <p className="muted">{item.visibility === 'PRIVATE' ? 'Private' : 'Shared'} · {item.total} cards · {item.presentations} presentations</p>
           </article>)}
         </section>
         <section className="panel stack">
           <h2>Study setup</h2>
           {session?.status === 'ACTIVE' && <button className="primary" disabled={busy} onClick={resume}>Resume session</button>}
-          {session?.status === 'INVALIDATED' && <p className="muted">The previous session ended after a deck or progress change.</p>}
-          <p>{total} cards selected · {learned} learned · {total - learned} remaining</p>
+          {session?.status === 'INVALIDATED' && <p className="muted">The previous session needs a restart after an application, deck or progress change.</p>}
+          <p>{total} cards selected. Every selected card appears in the first cycle.</p>
           <div className="row" role="group" aria-label="Study language">
             {languages.map(language => <button key={language} aria-pressed={settings.language === language}
               onClick={() => setSettings({ ...settings, language })}>{language === 'bg' ? 'Български' : 'English'}</button>)}
@@ -318,10 +295,10 @@ export default function App() {
           <label>Question order<select value={settings.order} onChange={event => setSettings({ ...settings, order: event.target.value as Settings['order'] })}>
             <option value="SEQUENTIAL">Deck order</option><option value="RANDOM">Random</option>
           </select></label>
-          <label className="check"><input type="checkbox" checked={settings.onlyUnlearned} onChange={event => setSettings({ ...settings, onlyUnlearned: event.target.checked })} />Only unlearned cards</label>
+
           <label className="check"><input type="checkbox" checked={settings.timer} onChange={event => setSettings({ ...settings, timer: event.target.checked })} />Enable timer</label>
           <label>Seconds per question<input type="number" min={1} max={3600} value={settings.seconds || ''} disabled={!settings.timer} onChange={event => setSettings({ ...settings, seconds: Number(event.target.value) })} /></label>
-          <button className="primary" disabled={busy || !total || (settings.onlyUnlearned && total === learned)} onClick={() => {
+          <button className="primary" disabled={busy || !total} onClick={() => {
             if (session?.status === 'ACTIVE' && !window.confirm('Replace the current study session?')) return;
             void run(async () => {
               const next = await api<Session>('study/start', {
@@ -377,30 +354,21 @@ export default function App() {
           <div className="study-question markdown" role="heading" aria-level={1} lang={selectedLanguage.language}>
             <MarkdownContent>{selectedLanguage.translation?.question}</MarkdownContent>
           </div>
-          {answerVisible && <>
-            <div className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent></div>
-            <div className="row" role="group" aria-label="Explanations">
-              {sections.map(section => {
-                const available = selectExplanation(translations, selectedLanguage.language, section);
-                return available.content && <button key={section} aria-disabled={busy} aria-expanded={Boolean(explanationVisible && session.explanation === section)}
-                  onClick={() => toggleExplanation(section)}>
-                  {explanationVisible && session.explanation === section ? (selectedLanguage.language === 'bg' ? 'Скрий' : 'Hide') : explanationLabels[section][selectedLanguage.language]}{available.language !== selectedLanguage.language ? ' · ' + available.language.toUpperCase() : ''}
-                </button>;
-              })}
-            </div>
-            {explanationVisible && explanation && explanation.content && <div className="answer study-explanation markdown" lang={explanation.language}>
-              <MarkdownContent>{explanation.content}</MarkdownContent>
-            </div>}
-          </>}
+          {activeCard.metadata && <CardSources metadata={activeCard.metadata} />}
+          {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
           <div className="row actions">
             <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Previous</button>
             <button className="primary" disabled={busy} aria-expanded={answerVisible} onClick={toggleStudyAnswer}>{answerVisible ? 'Hide answer' : 'Show answer'}</button>
-            <button disabled={busy || session.historical} onClick={() => studyAction('learn')}>Learned</button>
-            <button disabled={busy || session.historical} onClick={() => studyAction('repeat')}>Repeat</button>
+            <label className="check"><input type="checkbox" checked={session.repeat} disabled={busy} onChange={() => studyAction('repeat')} />Repeat</label>
             <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
           </div>
+          {answerVisible && <>
+            <div className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>
+              {activeCard.metadata?.answerReferences?.length ? <details><summary>Answer references</summary>{activeCard.metadata.answerReferences.map((reference, index) => <p key={index}><a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a></p>)}</details> : null}
+            </div>
+          </>}
           <StudySidebar language={session.language} busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
-            answerVisible={answerVisible} onAction={studyAction} onToggleAnswer={toggleStudyAnswer} />
+            repeat={session.repeat} answerVisible={answerVisible} onAction={studyAction} onToggleAnswer={toggleStudyAnswer} />
         </> : <>
           <h1>{session?.status === 'COMPLETE' ? 'Session complete' : 'Session unavailable'}</h1>
           <button onClick={exitStudy}>Back to library</button>

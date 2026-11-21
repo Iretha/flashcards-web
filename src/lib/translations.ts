@@ -2,7 +2,7 @@ export const languages = ['bg', 'en'] as const;
 export type Language = typeof languages[number];
 export const sections = ['simple', 'example', 'details'] as const;
 export type Section = typeof sections[number];
-export type Translation = { question: string; answer: string } & Partial<Record<Section, string>>;
+export type Translation = { question: string; answer: string; questionDetails?: string } & Partial<Record<Section, string>>;
 export type Translations = Partial<Record<Language, Translation>>;
 
 export const studyControlLabels = {
@@ -58,5 +58,5 @@ export function selectExplanation(translations: Translations, language: Language
 
 export function validTranslation(value: Translation) {
   return Boolean(value.question.trim() && value.answer.trim() && value.question.length <= 2000 &&
-    value.answer.length <= 20000 && sections.every(section => (value[section]?.length ?? 0) <= 20000));
+    value.answer.length <= 20000 && (value.questionDetails?.length ?? 0) <= 20000 && sections.every(section => (value[section]?.length ?? 0) <= 20000));
 }

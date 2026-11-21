@@ -1,3 +1,4 @@
+import CardSources from './CardSources';
 import { useState } from 'react';
 import type { Deck, Preview } from './api';
 import { api } from './api';
@@ -50,8 +51,10 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
             patch(file.key, { preview: result, choices: {}, visibility: result.deck && !file.target && !file.preview ? result.deck.visibility : file.visibility });
           })}>Preview import</button>
           {preview && <>
+            {preview.impact && <details><summary>Replacement impact report (read only)</summary><p>{preview.impact.cards} cards; {preview.impact.progressRecords} progress records would be lost; {preview.impact.activeSessions} active sessions would be invalidated. {preview.impact.retainedHistoricalEvents} historical events would remain. Normal import does not delete these records. See the reload runbook for separately approved replacement.</p></details>}
             <p>Target: {preview.deck?.title ?? preview.metadata.title ?? file.filename}</p>
-            <p>{count('new')} new cards · {preview.existing} existing cards · {count('translation')} additional translations · {preview.rows.filter(row => file.choices[row.index] === 'update').length} translation updates · {count('metadata')} rating updates · {count('duplicate')} duplicates · {count('conflict')} conflicts · {count('invalid')} invalid</p>
+            <p>{count('new')} new cards · {preview.existing} existing cards · {count('translation')} additional translations · {preview.rows.filter(row => file.choices[row.index] === 'update').length} translation updates · {count('metadata')} metadata updates · {count('duplicate')} duplicates · {count('conflict')} conflicts · {count('invalid')} invalid</p>
+            {preview.rows.filter(row => row.metadata).filter((row, index, all) => all.findIndex(other => other.key === row.key) === index).map(row => <div key={'metadata-' + row.index}>{row.metadata && <CardSources metadata={row.metadata} />}</div>)}
             {preview.rows.filter(row => row.kind === 'invalid').map(row => <p key={row.index}>Invalid card {Number(row.index) + 1}: {row.question || row.key || '(empty question)'} {row.message}</p>)}
             {preview.rows.filter(row => row.kind === 'link').map(row => <fieldset className="stack" key={row.index}>
               <legend>{row.key} · {row.question}</legend>
@@ -73,7 +76,7 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
             {preview.rows.filter(row => row.kind === 'conflict').map(row => <fieldset key={row.index} className="stack">
               <legend>{row.language?.toUpperCase()} · {row.question}</legend>
               <details><summary>Compare translation</summary>
-                {(['question', 'answer', 'simple', 'example', 'details'] as const).filter(field => row.incoming?.[field] !== undefined && row.incoming[field] !== row.existingTranslation?.[field]).map(field =>
+                {(['question', 'questionDetails', 'answer'] as const).filter(field => row.incoming?.[field] !== undefined && row.incoming[field] !== row.existingTranslation?.[field]).map(field =>
                   <div key={field}><p>{field} · Existing</p><pre>{row.existingTranslation?.[field] || '—'}</pre><p>{field} · Incoming</p><pre>{row.incoming?.[field] || '—'}</pre></div>)}
               </details>
               <label>Resolution<select value={file.choices[row.index] ?? ''} disabled={busy} onChange={event => patch(file.key, {
@@ -81,7 +84,7 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
               })}><option value="">Choose a translation</option><option value="keep">Keep existing</option><option value="update">Use incoming</option></select></label>
             </fieldset>)}
             {Object.keys(file.links).length > 0 && <button disabled={busy} onClick={() => patch(file.key, { links: {}, choices: {}, preview: undefined })}>Clear card matches</button>}
-            <button className="primary" disabled={busy || preview.rows.every(row => row.kind === 'invalid') ||
+            <button className="primary" disabled={busy || preview.rows.some(row => row.kind === 'invalid') ||
               preview.rows.some(row => row.kind === 'link' || (row.kind === 'conflict' && !file.choices[row.index]))}
               onClick={() => void run(async () => {
                 await api('import/apply', {

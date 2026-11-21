@@ -10,25 +10,28 @@ function render(props: Partial<Parameters<typeof StudySidebar>[0]> = {}) {
   }));
 }
 
-it('starts collapsed and renders accessible names for all five actions', () => {
+it('starts collapsed and renders accessible names for navigation and repeat checkbox', () => {
   const html = render();
   expect(html).toContain('aria-controls="study-sidebar-actions" aria-expanded="false"');
   expect(html).toContain('aria-label="Study actions" hidden=""');
   expect(html).toContain('aria-label="Previous" aria-disabled="true"');
-  for (const label of ['Show answer', 'Learned', 'Repeat', 'Next']) {
+  for (const label of ['Show answer', 'Next']) {
     expect(html).toContain(`aria-label="${label}" aria-disabled="false"`);
   }
+  expect(html).not.toContain('aria-label="Learned"');
+  expect(html).toContain('type="checkbox" aria-label="Repeat"');
 });
 
 it('localizes the revealed and historical actions using the selected study language', () => {
-  const html = render({ language: 'bg', answerVisible: true, historical: true, hasPrevious: true });
+  const html = render({ language: 'bg', answerVisible: true, historical: true, hasPrevious: true, repeat: true });
+  expect(html).toContain('type="checkbox"');
+  expect(html).toContain('checked=""');
   expect(html).toContain('aria-label="Скрий отговора" aria-disabled="false"');
   expect(html).toContain('role="tooltip" aria-hidden="true">Скрий отговора</span>');
   expect(html).toContain('aria-label="Предишна" aria-disabled="false"');
-  expect(html).toContain('aria-label="Научена" aria-disabled="true"');
-  expect(html).toContain('aria-label="Повтори" aria-disabled="true"');
 });
 
 it('marks every action unavailable during a pending request', () => {
-  expect(render({ busy: true, hasPrevious: true }).match(/aria-disabled="true"/g)).toHaveLength(5);
+  expect(render({ busy: true, hasPrevious: true }).match(/aria-disabled="true"/g)).toHaveLength(3);
+  expect(render({ busy: true })).toContain('type="checkbox" aria-label="Repeat" disabled=""');
 });

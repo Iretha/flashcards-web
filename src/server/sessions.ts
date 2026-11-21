@@ -1,3 +1,4 @@
+import type { CardMetadata } from '../lib/metadata';
 import { advance, defaults, startStudy } from '../lib/study';
 import type { Settings, StudyAction, StudyState } from '../lib/study';
 import type { User } from './auth';
@@ -14,22 +15,22 @@ const actions = ['show', 'learn', 'repeat', 'next', 'previous', 'forward', 'time
 
 function settings(input: Record<string, unknown>): Settings {
   check(input.order === 'SEQUENTIAL' || input.order === 'RANDOM', 'Choose an ordering mode.');
-  check(typeof input.timer === 'boolean' && typeof input.onlyUnlearned === 'boolean', 'Invalid study settings.');
+  check(typeof input.timer === 'boolean', 'Invalid study settings.');
   const seconds = input.seconds;
   check(typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600, 'Timer must be between 1 and 3600 seconds.');
   const language = input.language ?? defaults.language;
   check(isLanguage(language), 'Choose BG or EN.');
-  return { order: input.order, timer: input.timer, seconds, onlyUnlearned: input.onlyUnlearned, language };
+  return { order: input.order, timer: input.timer, seconds, onlyUnlearned: false, language };
 }
 
 const read = (db: D1Database, user: string) =>
   db.prepare('SELECT * FROM study_sessions WHERE user_id = ?').bind(user).first<SessionRow>();
 
 async function studyCard(db: D1Database, user: string, id: string) {
-  const card = await db.prepare(`SELECT c.id, c.question, c.answer, c.translations, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
+  const card = await db.prepare(`SELECT c.id, c.question, c.answer, c.translations, c.metadata, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
     WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED')`).bind(id, user)
-    .first<{ id: string; question: string; answer: string; title: string; translations: string }>();
-  return card && { ...card, translations: JSON.parse(card.translations) as Translations };
+    .first<{ id: string; question: string; answer: string; title: string; metadata: string | null; translations: string }>();
+  return card && { ...card, metadata: card.metadata ? JSON.parse(card.metadata) as CardMetadata : null, translations: JSON.parse(card.translations) as Translations };
 }
 
 export async function studyView(db: D1Database, user: string) {
@@ -38,13 +39,15 @@ export async function studyView(db: D1Database, user: string) {
   const deckIds: string[] = JSON.parse(row.selected_deck_ids);
   const state: StudyState = JSON.parse(row.session_state);
   const language = state.language ?? defaults.language;
-  if (row.status !== 'ACTIVE') return { id: row.id, version: row.version, status: row.status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds, language, explanation: null };
+  const status = row.status === 'ACTIVE' && !state.cycles ? 'INVALIDATED' as const : row.status;
+  if (status !== 'ACTIVE') return { id: row.id, version: row.version, status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds, language, repeat: false, explanation: null };
   const historical = state.cursor < state.history.length - 1;
   const id = state.history[state.cursor];
   const card = await studyCard(db, user, id);
   return {
     id: row.id, version: row.version, status: card ? row.status : 'INVALIDATED' as const, card,
-    remaining: state.queue.length, historical, hasPrevious: state.cursor > 0,
+    repeat: state.cycles?.repeat.includes(id) ?? false,
+    remaining: state.cycles ? state.cycles.pending.length + (state.current ? 1 : 0) : state.queue.length, historical, hasPrevious: state.cursor > 0,
     revealed: historical ? Boolean(state.historyRevealed) : state.revealed,
     deadline: state.deadline, paused: state.remainingMs !== null, seconds: row.timer_seconds, deckIds,
     language, explanation: state.explanation ?? null,
@@ -60,7 +63,7 @@ function event(db: D1Database, user: string, mutation: string, card: string, kin
 export async function startSession(db: D1Database, user: User, input: Record<string, unknown>) {
   check(Array.isArray(input.decks) && input.decks.length > 0 && input.decks.length <= 30, 'Select 1 to 30 decks.');
   const deckIds = [...new Set(input.decks.map(id => string(id, 'deck ID', 80)))];
-  const config = settings(object(input.settings));
+  const config = { ...settings(object(input.settings)), onlyUnlearned: false };
   const prior = await read(db, user.id);
   check((prior?.version ?? 0) === input.version, 'The session changed on another device.', 409);
   const serialized = JSON.stringify(deckIds);
@@ -71,10 +74,10 @@ export async function startSession(db: D1Database, user: User, input: Record<str
     coalesce(p.times_failed, 0) AS times_failed FROM json_each(?) selection
     JOIN cards c ON c.deck_id = selection.value JOIN decks d ON d.id = c.deck_id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
-    WHERE (d.owner_id = ? OR d.visibility = 'SHARED') AND (? = 0 OR p.status IS NULL OR p.status = 'UNLEARNED')
+    WHERE (d.owner_id = ? OR d.visibility = 'SHARED')
     ORDER BY selection.key, c.position, c.id LIMIT 5001`)
-    .bind(serialized, user.id, user.id, Number(config.onlyUnlearned)).all<{ id: string; status: string; times_failed: number }>()).results;
-  const eligible = cards.filter(card => !config.onlyUnlearned || card.status === 'UNLEARNED');
+    .bind(serialized, user.id, user.id).all<{ id: string; status: string; times_failed: number }>()).results;
+  const eligible = cards;
   check(eligible.length <= 5000, 'Select at most 5000 cards in one study session.');
   const now = Date.now();
   const state = startStudy(eligible.map(card => ({ id: card.id, visits: 0, failed: card.times_failed })), config, now);
@@ -111,6 +114,7 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
   const row = await read(db, user.id);
   check(row?.status === 'ACTIVE' && row.id === input.id && row.version === input.version, 'The session changed on another device.', 409);
   const previous: StudyState = JSON.parse(row.session_state);
+  check(previous.cycles, 'This pre-v3 session must be restarted.', 409);
   const now = Date.now();
   const { state, outcome, shown } = advance(previous, {
     ...defaults, order: row.ordering_mode, timer: Boolean(row.timer_enabled), seconds: row.timer_seconds,

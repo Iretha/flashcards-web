@@ -1,30 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { advance, choose, defaults, startStudy, weight } from '../src/lib/study';
+import { advance, defaults, startStudy } from '../src/lib/study';
 
 const queue = ['a', 'b', 'c'].map(id => ({ id, failed: 0, visits: 0 }));
 
 describe('study transitions', () => {
-  it('keeps first presentations in deck order and cools down repeats', () => {
-    let state = startStudy(queue, defaults, 0, () => 0);
+  it('keeps navigation independent of repeat membership', () => {
+    let state = startStudy(queue, defaults, 0);
+    state = advance(state, defaults, 'repeat', 1).state;
     expect(state.current).toBe('a');
-    ({ state } = advance(state, defaults, 'repeat', 100, () => 0));
+    expect(state.cycles?.repeat).toEqual(['a']);
+    state = advance(state, defaults, 'next', 2).state;
     expect(state.current).toBe('b');
-    expect(state.queue.find(card => card.id === 'a')?.failed).toBe(1);
-    ({ state } = advance(state, defaults, 'next', 200, () => 0));
-    expect(state.current).toBe('c');
-    ({ state } = advance(state, defaults, 'learn', 300, () => 0));
-    expect(state.current).toBe('a');
+    state = advance(state, defaults, 'previous', 3).state;
+    state = advance(state, defaults, 'repeat', 4).state;
+    expect(state.cycles?.repeat).toEqual([]);
   });
 
-  it('uses capped weighting and gives new cards a nonzero chance', () => {
-    const cards = [queue[0], { ...queue[1], failed: 100 }];
-    expect(weight(100)).toBe(8);
-    const choices = Array.from({ length: 90 }, (_, i) => choose(cards, [], 'RANDOM', () => (i + 0.5) / 90)?.id);
-    expect(choices.filter(id => id === 'a')).toHaveLength(10);
-    expect(choices.filter(id => id === 'b')).toHaveLength(80);
-    expect(choose(cards, ['b'], 'RANDOM', () => 0.99)?.id).toBe('a');
-    expect(choose(cards.slice(1), ['b'], 'RANDOM', () => 0)?.id).toBe('b');
-    expect(startStudy(queue, { ...defaults, order: 'RANDOM' }, 0, () => 0.99).current).toBe('c');
+  it('shuffles a complete initial pass without inserting marked cards early', () => {
+    let state = startStudy(queue, { ...defaults, order: 'RANDOM' }, 0, () => 0);
+    expect(state.current).toBe('b');
+    state = advance(state, defaults, 'repeat', 1).state;
+    state = advance(state, defaults, 'next', 2).state;
+    expect(state.current).toBe('c');
+    state = advance(state, defaults, 'next', 3).state;
+    expect(state.current).toBe('a');
+    state = advance(state, defaults, 'next', 4).state;
+    expect(state.current).toBe('b');
   });
 
   it('preserves reveals, stops timer on show, and records no presentation when browsing history', () => {
@@ -36,7 +37,7 @@ describe('study transitions', () => {
     const peek = advance(next, defaults, 'previous', 110);
     expect(peek).toMatchObject({ shown: null, outcome: null, state: { cursor: 0 } });
     expect(peek.state.queue).toEqual(next.queue);
-    expect(advance(peek.state, defaults, 'learn', 120).state).toEqual(peek.state);
+    expect(advance(peek.state, defaults, 'repeat', 120).state.cycles?.repeat).toEqual(['a']);
   });
 
   it('pauses and resumes the remaining duration, expires once, and completes', () => {
@@ -47,7 +48,7 @@ describe('study transitions', () => {
     expect(resumed.deadline).toBe(45_000);
     expect(advance(resumed, defaults, 'timeout', 44_999).shown).toBeNull();
     const expired = advance(resumed, defaults, 'timeout', 45_000);
-    expect(expired).toMatchObject({ outcome: 'TIMEOUT', shown: 'a', state: { deadline: 75_000 } });
+    expect(expired).toMatchObject({ outcome: 'TIMEOUT', shown: null, state: { deadline: null, revealed: true } });
     expect(advance(expired.state, defaults, 'learn', 45_001).state.current).toBeNull();
     expect(startStudy(queue, { ...defaults, timer: false }, 0).deadline).toBeNull();
   });

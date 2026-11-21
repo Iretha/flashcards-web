@@ -1,6 +1,6 @@
 import { authenticate, hasSessionCookie, login, logout } from './auth';
 import type { SessionDiagnostics } from './auth';
-import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, saveDeck } from './decks';
+import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, replacementImpact, saveDeck } from './decks';
 import { check, HttpError, json, object, string } from './http';
 import { act, reset, startSession, studyView } from './sessions';
 import { defaults } from '../lib/study';
@@ -44,6 +44,12 @@ async function dispatch(
         await getDeck(db, user.id, id);
         return json(await listCards(db, user.id, id));
       }
+      if (route === 'replacement-report') {
+        const owned = (await listDecks(db, user.id)).filter(deck => deck.owned);
+        const decks = await Promise.all(owned.map(async deck => ({ id: deck.id, title: deck.title, revision: deck.revision, ...await replacementImpact(db, deck.id) })));
+        return json({ generatedAt: new Date().toISOString(), destructive: false, decks }, 200,
+          { 'Content-Disposition': 'attachment; filename="flashcards-replacement-report.json"' });
+      }
       if (route === 'study') return json(await studyView(db, user.id));
       if (route === 'export') {
         const decks = await listDecks(db, user.id);
@@ -53,7 +59,7 @@ async function dispatch(
           db.prepare('SELECT * FROM study_events WHERE user_id = ? ORDER BY created_at, rowid').bind(user.id),
         ]);
         return json({ version: 1, username: user.username, exportedAt: new Date().toISOString(), decks,
-          cards: cards.results.map(card => ({ ...card, translations: JSON.parse(String(card.translations)) as Translations })),
+          cards: cards.results.map(card => ({ ...card, metadata: card.metadata ? JSON.parse(String(card.metadata)) : null, translations: JSON.parse(String(card.translations)) as Translations })),
           progress: progress.results, history: history.results,
         }, 200, { 'Content-Disposition': 'attachment; filename="flashcards-backup.json"' });
       }

@@ -1,3 +1,4 @@
+import { v3Fixture } from './fixtures/v3';
 import { readFileSync } from 'node:fs';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
@@ -39,7 +40,7 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql']) {
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql']) {
     const sql = readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8');
     await db.batch(sql.split(';').filter(statement => statement.trim()).map(statement => db.prepare(statement)));
   }
@@ -201,6 +202,9 @@ describe('Workers API with real local D1', () => {
     active = await otherDevice.action(paused, 'resume');
     expect(active.deadline).toBeGreaterThan(Date.now());
     active = await owner.action(active, 'repeat');
+    expect(active.card?.question).toBe('Question 2');
+    expect(active.repeat).toBe(true);
+    active = await owner.action(active, 'next');
     expect(active.card?.question).toBe('Question 3');
 
     await owner.import(jmm(55));
@@ -247,10 +251,10 @@ describe('Workers API with real local D1', () => {
       expect(single.card?.question).toBe('Locks');
       mockClock.mockReturnValue(now + 1000);
       single = await owner.action(single, 'timeout');
-      expect((await owner.cards(second))[0]).toMatchObject({ status: 'UNLEARNED', times_failed: 1, times_shown: 2 });
+      expect((await owner.cards(second))[0]).toMatchObject({ status: 'UNLEARNED', times_failed: 1, times_shown: 1 });
       expect((await owner.action(single, 'learn')).status).toBe('COMPLETE');
       await owner.ok('reset', { deck: second });
-      expect((await owner.cards(second))[0]).toMatchObject({ status: 'UNLEARNED', times_failed: 1, times_shown: 2, times_learned: 1 });
+      expect((await owner.cards(second))[0]).toMatchObject({ status: 'UNLEARNED', times_failed: 1, times_shown: 1, times_learned: 1 });
     } finally { mockClock.mockRestore(); }
 
     await owner.ok('logout', {});
@@ -278,15 +282,15 @@ describe('Workers API with real local D1', () => {
     expect((await browser.home()).decks).toEqual([]);
   });
 
-  it('migrates populated D1 data while keeping card IDs, progress, and the active session', async () => {
+  it('adds storage without rewriting old cards or progress and requires restarting pre-v3 sessions', async () => {
     const browser = new Browser();
     await browser.login('Migrated');
     expect((await browser.cards('old-deck'))[0]).toMatchObject({
       id: 'old-card', translations: { bg: { question: 'Въпрос?', answer: 'Отговор.' } }, times_shown: 1,
-      interview_priority: null, difficulty: null,
+      interview_priority: null, difficulty: null, metadata: null,
     });
     expect(await browser.study()).toMatchObject({
-      id: 'old-session', version: 7, revealed: true, language: 'en', card: { id: 'old-card' },
+      id: 'old-session', version: 7, status: 'INVALIDATED', card: null,
     });
   });
 
@@ -327,11 +331,11 @@ describe('Workers API with real local D1', () => {
     const source = readFileSync(new URL('../docs/FLASHCARDS-IMPORT-TEMPLATE.md', import.meta.url), 'utf8');
     const { id } = await browser.import(source);
     const cards = await browser.cards(id);
-    expect(cards).toHaveLength(2);
+    expect(cards).toHaveLength(4);
     const [first] = cards;
     expect(first).toMatchObject({ import_key: 'volatile-atomicity', interview_priority: 5, difficulty: 3 });
     const repeated = await browser.import(source);
-    expect(repeated.preview.rows.map(row => row.kind)).toEqual(Array(4).fill('duplicate'));
+    expect(repeated.preview.rows.map(row => row.kind)).toEqual(Array(7).fill('duplicate'));
     expect(await browser.cards(id)).toEqual(cards);
     const revised = await browser.import(source.replace('### difficulty: 3', '### difficulty: 4'));
     expect(revised.preview.rows.filter(row => row.kind === 'metadata')).toHaveLength(1);
@@ -380,4 +384,96 @@ describe('Workers API with real local D1', () => {
     await browser.ok('card', edit);
     expect((await browser.cards(deck))[0]).toMatchObject({ translations: { bg: { simple: 'Един по един.' }, en: { question: 'Updated?' } }, simple_opens: 1 });
   });
+});
+
+it('round-trips v3 through preview, D1, study, editing, export and guarded recreation', async () => {
+  const owner = new Browser();
+  const guest = new Browser();
+  await owner.login('V3 owner'); await guest.login('V3 guest');
+  const { id, preview } = await owner.import(v3Fixture);
+  expect(preview.version).toBe(3);
+  expect(preview.rows.some(row => row.kind === 'invalid')).toBe(false);
+  const cards = await owner.cards(id);
+  expect(cards).toHaveLength(2);
+  expect(cards[0].metadata).toMatchObject({ cardType: 'coding_task', occurrenceCount: 1 });
+  expect(cards[0].metadata?.provenance.sources).toHaveLength(3);
+  expect(cards[0].translations.bg?.questionDetails).toContain('int count = 0;');
+  expect((await owner.import(v3Fixture)).preview.rows.every(row => row.kind === 'duplicate')).toBe(true);
+  let session = await owner.ok<Session>('study/start', { decks: [id], settings: { ...defaults, timer: false }, version: 0 });
+  expect(session.card?.metadata).toEqual(cards[0].metadata);
+  session = await owner.action(session, 'repeat');
+  expect(session.card?.id).toBe(cards[0].id); expect(session.repeat).toBe(true);
+  session = await owner.action(session, 'show'); expect(session.revealed).toBe(true);
+  session = await owner.action(session, 'show'); expect(session.revealed).toBe(false);
+  session = await owner.action(session, 'next'); expect(session.card?.id).toBe(cards[1].id);
+  session = await owner.action(session, 'previous'); expect(session.repeat).toBe(true);
+  session = await owner.action(session, 'next');
+  session = await owner.action(session, 'next'); expect(session.card?.id).toBe(cards[0].id);
+  session = await owner.action(session, 'previous'); expect(session.card?.id).toBe(cards[1].id);
+  session = await owner.action(session, 'repeat'); expect(session.repeat).toBe(true);
+  session = await owner.action(session, 'next');
+  session = await owner.action(session, 'repeat'); expect(session.repeat).toBe(false);
+  session = await owner.action(session, 'next'); expect(session.card?.id).toBe(cards[1].id);
+  session = await owner.action(session, 'repeat');
+  session = await owner.action(session, 'next'); expect(session.status).toBe('COMPLETE');
+  await owner.ok('card', { deck: id, id: cards[0].id, method: 'save', translations: cards[0].translations });
+  const backup = await owner.ok<{ cards: Card[] }>('export');
+  expect(backup.cards.find(card => card.id === cards[0].id)?.metadata).toEqual(cards[0].metadata);
+  const invalid = v3Fixture.replace('occurrenceCount: 1', 'occurrenceCount: -1');
+  const badPreview = await owner.ok<Preview>('import/preview', { source: invalid, target: id });
+  expect(badPreview.rows[0].message).toContain('occurrenceCount');
+  expect((await owner.request('import/apply', { source: invalid, target: id, filename: 'invalid', visibility: 'PRIVATE', previewId: id, revision: badPreview.deck?.revision })).response.status).toBe(400);
+  const replacement = await owner.ok<Preview>('import/preview', { source: v3Fixture, target: id, replace: true });
+  expect(replacement.impact).toMatchObject({ cards: 2, progressRecords: 2 });
+  const request = { source: v3Fixture, target: id, replace: true, filename: 'replacement', visibility: 'PRIVATE', previewId: id, revision: replacement.deck?.revision };
+  expect((await owner.request('import/apply', request)).response.status).toBe(400);
+  expect((await guest.request('import/apply', { ...request, confirmReplacement: id })).response.status).toBe(404);
+  expect((await owner.cards(id)).map(card => card.id)).toEqual(cards.map(card => card.id));
+  await owner.ok('import/apply', { ...request, confirmReplacement: id });
+  const recreated = await owner.cards(id);
+  expect(recreated).toHaveLength(2);
+  expect(recreated[0].id).not.toBe(cards[0].id);
+  expect(recreated[0].metadata).toEqual(cards[0].metadata);
+  expect(recreated.every(card => card.times_shown === 0)).toBe(true);
+  expect((await owner.request('import/apply', { ...request, confirmReplacement: id })).response.status).toBe(409);
+  expect((await owner.home()).username).toBe('V3 owner');
+});
+
+it('recreates legacy cards atomically, reports shared progress loss and preserves unrelated data and authentication', async () => {
+  const owner = new Browser(); const guest = new Browser();
+  await owner.login('Recreation owner'); await guest.login('Recreation guest');
+  const { id } = await owner.import(jmm(2));
+  const { id: unrelated } = await owner.import(concurrency);
+  const untouched = await owner.cards(unrelated);
+  await owner.ok('deck', { id, title: 'Legacy target', visibility: 'SHARED' });
+  const ownerSession = await owner.ok<Session>('study/start', { decks: [id], settings: defaults, version: 0 });
+  const guestSession = await guest.ok<Session>('study/start', { decks: [id], settings: defaults, version: 0 });
+  const before = await owner.cards(id);
+  expect((await owner.request('import/preview', { source: v3Fixture, target: id })).response.status).toBe(400);
+  const report = await owner.ok<{ decks: { id: string; cards: number; progressRecords: number; activeSessions: number }[] }>('replacement-report');
+  expect(report.decks.find(deck => deck.id === id)).toMatchObject({ cards: 2, progressRecords: 2, activeSessions: 2 });
+  expect((await guest.ok<{ decks: unknown[] }>('replacement-report')).decks).toEqual([]);
+  const preview = await owner.ok<Preview>('import/preview', { source: v3Fixture, target: id, replace: true });
+  const request = { source: v3Fixture, target: id, replace: true, confirmReplacement: id, filename: 'v3', visibility: 'SHARED', previewId: id, revision: preview.deck?.revision };
+  // Force an insert failure after deletion to prove the whole D1 batch rolls back.
+  await db.prepare(`CREATE TRIGGER fail_recreation BEFORE INSERT ON cards WHEN NEW.deck_id = '${id}' BEGIN SELECT RAISE(ABORT, 'deliberate test failure'); END`).run();
+  const log = vi.spyOn(console, 'error').mockImplementation(() => {});
+  try {
+    expect((await owner.request('import/apply', request)).response.status).toBe(500);
+    expect(await owner.cards(id)).toEqual(before);
+    expect((await owner.study()).version).toBe(ownerSession.version);
+    expect((await guest.study()).version).toBe(guestSession.version);
+  } finally {
+    log.mockRestore();
+    await db.prepare('DROP TRIGGER fail_recreation').run();
+  }
+  await owner.ok('import/apply', request);
+  expect((await owner.study()).status).toBe('INVALIDATED');
+  expect((await guest.study()).status).toBe('INVALIDATED');
+  expect((await owner.cards(id)).every(card => card.metadata && card.times_shown === 0)).toBe(true);
+  expect(await owner.cards(unrelated)).toEqual(untouched);
+  expect((await owner.home()).username).toBe('Recreation owner');
+  expect((await guest.home()).username).toBe('Recreation guest');
+  const impact = await owner.ok<Preview>('import/preview', { source: v3Fixture, target: id });
+  expect(impact.impact).toMatchObject({ cards: 2, progressRecords: 0, activeSessions: 0, retainedHistoricalEvents: 2 });
 });

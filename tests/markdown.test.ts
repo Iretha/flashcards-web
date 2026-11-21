@@ -48,16 +48,16 @@ it('parses two v2 languages as one card and preserves reserved headings inside f
   expect(parsed.cards[1]).toHaveProperty('error');
 });
 
-it('keeps the documented v1 and v2 examples importable', () => {
+it('keeps the documented v1 and v3 examples importable', () => {
   const template = readFileSync(new URL('../docs/FLASHCARDS-IMPORT-TEMPLATE.md', import.meta.url), 'utf8');
   const specification = readFileSync(new URL('../docs/PROJECT-SPECIFICATION.md', import.meta.url), 'utf8');
   const legacy = /^`{3}md\r?\n([\s\S]*?)^`{3}$/m.exec(specification)?.[1] ?? '';
   const first = parseMarkdown(template);
-  expect(first.version).toBe(2);
-  expect(first.cards).toHaveLength(2);
+  expect(first.version).toBe(3);
+  expect(first.cards).toHaveLength(4);
   expect(first.cards[0]).toEqual(expect.objectContaining({ key: 'volatile-atomicity', translations: {
-    bg: expect.objectContaining({ example: expect.stringContaining('volatile int count') }),
-    en: expect.objectContaining({ details: expect.stringContaining('AtomicInteger') }),
+    bg: expect.objectContaining({ answer: expect.stringContaining('volatile int count') }),
+    en: expect.objectContaining({ answer: expect.stringContaining('AtomicInteger') }),
   } }));
   const old = parseMarkdown(legacy);
   expect(old.version).toBe(1);
