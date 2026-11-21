@@ -241,7 +241,7 @@ export default function App() {
   function resume() {
     void run(async () => {
       let saved = await api<Session | null>('study');
-      if (saved?.status === 'ACTIVE' && saved.paused) saved = await send('resume', saved);
+      if (saved?.status === 'ACTIVE') saved = await send('resume', saved, { answersOpen: settings.answersOpen ?? false });
       setSession(saved);
       if (saved) setSettings(previous => ({ ...previous, language: saved.language }));
       setNow(Date.now());
@@ -370,6 +370,9 @@ export default function App() {
       {home && screen === 'study' && <section className={activeCard ? 'panel study stack study-active' : 'panel study stack'} ref={stage} tabIndex={-1}
         style={{ '--answer-scale': answerSize / 100 } as CSSProperties}>
         {activeCard ? <>
+          <div className="between">
+            <span>{session.remaining} remaining {session.historical && '· History'}</span>
+            <div className="row">
           <div className="answer-size-sidebar" role="group" aria-label={sizeLabels.group}>
             {[
               { text: 'A−', label: sizeLabels.decrease, disabled: answerSize === minAnswerSize,
@@ -384,9 +387,6 @@ export default function App() {
               <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{label}</span>
             </button>)}
           </div>
-          <div className="between">
-            <span>{session.remaining} remaining {session.historical && '· History'}</span>
-            <div className="row">
               <div className="row language-controls" role="group" aria-label="Study language">
                 {languages.map(language => <button key={language} aria-disabled={busy} aria-pressed={session.language === language}
                   onClick={() => studyAction('language', { language })}>{language.toUpperCase()}</button>)}

@@ -522,3 +522,20 @@ ${'Answer content. '.repeat(180)}
   expect(cards).toHaveLength(236);
   expect(cards.every(card => card.difficulty === null && card.interview_priority === null)).toBe(true);
 });
+
+it('applies changed answer defaults when resuming without a timer', async () => {
+  const browser = new Browser();
+  await browser.login('Resume answer defaults');
+  const { id } = await browser.import(rows(1, 3));
+  let session = await browser.ok<Session>('study/start', { decks: [id], settings: { ...defaults, answersOpen: true }, version: 0 });
+  expect(session.revealed).toBe(true);
+  session = await browser.action(session, 'pause');
+  session = await browser.action(session, 'resume', { answersOpen: false });
+  expect(session.revealed).toBe(false);
+  session = await browser.action(session, 'next');
+  expect(session.revealed).toBe(false);
+  session = await browser.action(session, 'previous');
+  expect(session.revealed).toBe(false);
+  session = await browser.action(session, 'resume', { answersOpen: true });
+  expect(session.revealed).toBe(true);
+});

@@ -120,12 +120,12 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
 .study .study-sidebar {
   position: fixed;
   z-index: 10;
-  top: calc(50% + 3.875rem + 8px);
+  top: 50%;
   right: .5rem;
   display: flex;
   align-items: center;
   margin: 0;
-  transform: none;
+  transform: translateY(-50%);
 }
 .study-sidebar .study-sidebar-tab {
   position: relative;
@@ -186,18 +186,13 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
 .study-sidebar button:focus-visible > .study-sidebar-tooltip { visibility: visible; transition: none; }
 .study.study-active { padding-right: 3.5rem; }
 .study .answer-size-sidebar {
-  position: fixed;
-  z-index: 10;
-  top: 50%;
-  right: .5rem;
-  display: grid;
+  display: flex;
   gap: 4px;
   margin: 0;
   padding: 4px;
   border: 1px solid var(--line);
   border-radius: .65rem;
   background: var(--surface);
-  transform: translateY(-50%);
 }
 .answer-size-sidebar button {
   position: relative;
@@ -207,8 +202,10 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   font-size: .8rem;
 }
 .answer-size-sidebar .study-sidebar-tooltip {
-  right: calc(100% + 10px);
-  left: auto;
+  top: calc(100% + 10px);
+  left: 50%;
+  right: auto;
+  transform: translateX(-50%);
 }
 .answer-size-sidebar button:hover > .study-sidebar-tooltip {
   visibility: visible;

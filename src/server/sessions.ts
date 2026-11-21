@@ -121,6 +121,16 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
     ...defaults, order: row.ordering_mode, timer: Boolean(row.timer_enabled), seconds: row.timer_seconds,
   }, action, now);
   let opened: { id: string; section: Section } | undefined;
+  if (action === 'resume' && input.answersOpen !== undefined) {
+    check(typeof input.answersOpen === 'boolean', 'Invalid answer visibility setting.');
+    if (input.answersOpen !== (previous.answersOpen ?? false)) {
+      state.answersOpen = input.answersOpen;
+      state.answerOverrides = {};
+      state.revealed = input.answersOpen;
+      state.historyRevealed = input.answersOpen;
+      if (input.answersOpen) { state.deadline = null; state.remainingMs = null; }
+    }
+  }
   let language: Language | undefined;
   if (action === 'language') {
     check(isLanguage(input.language), 'Choose BG or EN.');
@@ -148,6 +158,9 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
   const batch = [db.prepare(`UPDATE study_sessions SET session_state = ?, current_card_id = ?, status = ?,
     version = version + 1, mutation = ?, updated_at = ? WHERE user_id = ? AND id = ? AND version = ? AND status = 'ACTIVE'`)
     .bind(encoded, state.current, state.current ? 'ACTIVE' : 'COMPLETE', mutation, now, user.id, row.id, row.version)];
+  if (action === 'resume' && typeof input.answersOpen === 'boolean') batch.push(db.prepare(`UPDATE users SET settings = json_set(settings, '$.answersOpen', json(?))
+    WHERE id = ? AND EXISTS (SELECT 1 FROM study_sessions WHERE user_id = ? AND mutation = ?)`)
+    .bind(JSON.stringify(input.answersOpen), user.id, user.id, mutation));
   if (previous.current && outcome && outcome !== 'NEXT') batch.push(event(db, user.id, mutation, previous.current, outcome, now));
   if (shown) batch.push(event(db, user.id, mutation, shown, 'SHOWN', now));
   if (language) batch.push(db.prepare(`UPDATE users SET settings = json_set(settings, '$.language', ?)
