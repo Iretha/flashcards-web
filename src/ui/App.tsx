@@ -423,21 +423,26 @@ export default function App() {
           {activeCard.metadata ? <CardSources key={activeCard.id} metadata={activeCard.metadata}>
             {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
           </CardSources> : selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
-          <label className="answer-toggle">
-            <input type="checkbox" role="switch" checked={answerVisible} disabled={busy} onChange={toggleStudyAnswer} aria-controls="study-answer" />
-            <span className="answer-toggle-track" aria-hidden="true" />
-            <span>Show answer</span>
-          </label>
           {answerVisible && <>
             <div className="answer-divider" aria-hidden="true"><span /></div>
             <div id="study-answer" className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>
               {activeCard.metadata?.answerReferences?.length ? <details><summary>Answer references</summary>{activeCard.metadata.answerReferences.map((reference, index) => <p key={index}><a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a></p>)}</details> : null}
             </div>
           </>}
+          {answerVisible && <div className="answer-divider" aria-hidden="true"><span /></div>}
           <div className="study-navigation actions">
             <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Prev</button>
             <div className="study-navigation-next">
-              <label className="check"><input type="checkbox" checked={session.repeat} disabled={busy} onChange={() => studyAction('repeat')} />Repeat</label>
+              <label className="answer-toggle">
+                <input type="checkbox" role="switch" checked={answerVisible} disabled={busy} onChange={toggleStudyAnswer} aria-controls="study-answer" />
+                <span className="answer-toggle-track" aria-hidden="true" />
+                <span>Show answer</span>
+              </label>
+              <label className="answer-toggle">
+                <input type="checkbox" role="switch" checked={session.repeat} disabled={busy} onChange={() => studyAction('repeat')} />
+                <span className="answer-toggle-track" aria-hidden="true" />
+                <span>Repeat</span>
+              </label>
               <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
             </div>
           </div>
