@@ -90,6 +90,25 @@ class Browser {
 }
 
 describe('Workers API with real local D1', () => {
+  it('issues a scoped session cookie and requires a valid, unexpired session on home', async () => {
+    const browser = new Browser();
+    const { response } = await browser.request('login', { username: 'Cookie check', code: accessCode });
+    expect(response.status).toBe(200);
+    expect(response.headers.get('cache-control')).toBe('no-store');
+    const [cookie, ...attributes] = (response.headers.get('set-cookie') ?? '').split('; ');
+    expect(attributes.sort()).toEqual(['HttpOnly', 'Max-Age=2592000', 'Path=/', 'SameSite=Lax', 'Secure']);
+
+    const missing = await browser.request('home');
+    expect(missing.response.status).toBe(401);
+    expect(missing.data).toEqual({ error: 'Sign in to continue.' });
+
+    browser.cookie = cookie;
+    expect((await browser.home()).username).toBe('Cookie check');
+    await db.prepare('UPDATE auth_sessions SET expires_at = 0 WHERE user_id = (SELECT id FROM users WHERE username = ?)')
+      .bind('Cookie check').run();
+    expect((await browser.request('home')).response.status).toBe(401);
+  });
+
   it('rejects missing sessions, cross-origin posts and excessive invalid codes', async () => {
     const browser = new Browser();
     expect((await browser.request('home')).response.status).toBe(401);

@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SubmitEvent } from 'react';
 import MarkdownContent from './MarkdownContent';
-import { api, ApiError } from './api';
+import { api, ApiError, signIn } from './api';
 import type { Home, Session } from './api';
 import { DeckDetail, DeckEditor } from './Decks';
 import Import from './Import';
@@ -60,11 +60,14 @@ export default function App() {
   const stage = useRef<HTMLElement>(null);
   const deck = home?.decks.find(item => item.id === detail);
 
-  async function reload() {
-    const result = await api<Home>('home');
+  function applyHome(result: Home) {
     setHome(result);
     setSession(result.session);
     return result;
+  }
+
+  async function reload() {
+    return applyHome(await api<Home>('home'));
   }
 
   useEffect(() => {
@@ -167,12 +170,11 @@ export default function App() {
     return () => window.removeEventListener('keydown', keyboard);
   });
 
-  function signIn(event: SubmitEvent<HTMLFormElement>) {
+  function submitSignIn(event: SubmitEvent<HTMLFormElement>) {
     event.preventDefault();
     const fields = new FormData(event.currentTarget);
     void run(async () => {
-      await api('login', { username: fields.get('username'), code: fields.get('code') });
-      const result = await reload();
+      const result = applyHome(await signIn(fields.get('username'), fields.get('code')));
       setSettings(result.settings);
       setSelected(result.decks.filter(deck => result.session?.deckIds.includes(deck.id)).map(deck => deck.id));
     });
@@ -217,7 +219,7 @@ export default function App() {
       {!loaded && <p role="status">Loading Flashcards…</p>}
       {loaded && !home && <section className="panel login stack">
         <h1>Sign in</h1>
-        <form className="stack" onSubmit={signIn}>
+        <form className="stack" method="post" onSubmit={submitSignIn}>
           <label>Username<input name="username" autoComplete="username" required maxLength={64} /></label>
           <label>Access code<input name="code" type="password" autoComplete="current-password" required maxLength={256} /></label>
           <button className="primary" disabled={busy}>{busy ? 'Signing in…' : 'Sign in'}</button>

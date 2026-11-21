@@ -13,13 +13,34 @@ export class ApiError extends Error {
 }
 
 export async function api<T>(path: string, body?: object): Promise<T> {
-  const response = await fetch('/api/' + path, body === undefined ? undefined : {
-    method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body),
-  });
-  const result = await response.json();
+  const options: RequestInit = { credentials: 'same-origin' };
+  if (body !== undefined) {
+    options.method = 'POST';
+    options.headers = { 'Content-Type': 'application/json' };
+    options.body = JSON.stringify(body);
+  }
+  const response = await fetch('/api/' + path, options);
+  let result;
+  try {
+    result = await response.json();
+  } catch {
+    throw new ApiError(response.status, `Unexpected response from /api/${path} (HTTP ${response.status}).`);
+  }
   if (!response.ok) {
     const message = result && typeof result === 'object' && 'error' in result ? result.error : undefined;
     throw new ApiError(response.status, typeof message === 'string' ? message : 'The request failed.');
   }
   return result as T;
+}
+
+export async function signIn(username: FormDataEntryValue | null, code: FormDataEntryValue | null) {
+  await api('login', { username, code });
+  try {
+    return await api<Home>('home');
+  } catch (problem) {
+    if (problem instanceof ApiError && problem.status === 401) {
+      throw new ApiError(401, 'Login succeeded, but the session could not be verified. Check that cookies are enabled for this site and try again.');
+    }
+    throw problem;
+  }
 }
