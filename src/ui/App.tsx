@@ -350,6 +350,7 @@ export default function App() {
             <option value="SEQUENTIAL">Deck order</option><option value="RANDOM">Random</option>
           </select></label>
 
+          <label className="check"><input type="checkbox" checked={settings.answersOpen ?? false} onChange={event => setSettings({ ...settings, answersOpen: event.target.checked })} />Show answers by default</label>
           <label className="check"><input type="checkbox" checked={settings.timer} onChange={event => setSettings({ ...settings, timer: event.target.checked })} />Enable timer</label>
           <label>Seconds per question<input type="number" min={1} max={3600} value={settings.seconds || ''} disabled={!settings.timer} onChange={event => setSettings({ ...settings, seconds: Number(event.target.value) })} /></label>
           <button className="primary" disabled={busy || !total} onClick={() => {
@@ -429,6 +430,7 @@ export default function App() {
             <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
           </div>
           {answerVisible && <>
+            <div className="answer-divider" aria-hidden="true"><span /></div>
             <div className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>
               {activeCard.metadata?.answerReferences?.length ? <details><summary>Answer references</summary>{activeCard.metadata.answerReferences.map((reference, index) => <p key={index}><a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a></p>)}</details> : null}
             </div>

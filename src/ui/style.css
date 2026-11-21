@@ -81,6 +81,28 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   border-left: 4px solid var(--accent);
   padding: calc(.4 * var(--answer-base-size)) calc(.75 * var(--answer-base-size));
 }
+.answer-divider {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: .65rem 0;
+  color: var(--accent);
+}
+.answer-divider::before, .answer-divider::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: linear-gradient(to right, transparent, currentColor);
+  opacity: .55;
+}
+.answer-divider::after { transform: scaleX(-1); }
+.answer-divider > span {
+  width: 8px;
+  height: 8px;
+  border: 1px solid currentColor;
+  transform: rotate(45deg);
+  box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent);
+}
 .study .study-explanation { --answer-base-size: clamp(.55rem, 1.25vw, .95rem); }
 .study .study-note { font-size: max(11pt, .925rem); line-height: 1.35; }
 .study.stack > :is(.markdown, .study-note) { margin-top: .5rem; }

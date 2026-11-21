@@ -54,3 +54,18 @@ describe('study transitions', () => {
     expect(startStudy(queue, { ...defaults, timer: false }, 0).deadline).toBeNull();
   });
 });
+
+it.each([false, true])('uses answer default %s and remembers individual card choices', answersOpen => {
+  const config = { ...defaults, answersOpen, timer: true };
+  let state = startStudy(queue, config, 0);
+  expect(state.revealed).toBe(answersOpen);
+  if (answersOpen) expect(state.deadline).toBeNull();
+  state = advance(state, config, 'show', 1).state;
+  expect(state.revealed).toBe(!answersOpen);
+  state = advance(state, config, 'next', 2).state;
+  expect(state.revealed).toBe(answersOpen);
+  state = advance(state, config, 'previous', 3).state;
+  expect(state.revealed).toBe(!answersOpen);
+  state = advance(state, config, 'next', 4).state;
+  expect(state.revealed).toBe(answersOpen);
+});

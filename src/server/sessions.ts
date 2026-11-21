@@ -20,7 +20,8 @@ function settings(input: Record<string, unknown>): Settings {
   check(typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600, 'Timer must be between 1 and 3600 seconds.');
   const language = input.language ?? defaults.language;
   check(isLanguage(language), 'Choose BG or EN.');
-  return { order: input.order, timer: input.timer, seconds, onlyUnlearned: false, language };
+  check(input.answersOpen === undefined || typeof input.answersOpen === 'boolean', 'Invalid answer visibility setting.');
+  return { order: input.order, timer: input.timer, seconds, onlyUnlearned: false, language, answersOpen: input.answersOpen ?? false };
 }
 
 const read = (db: D1Database, user: string) =>
