@@ -21,8 +21,9 @@ Skill-ът не е самостоятелна CLI програма; зареди
 Новият логически договор изисква id, topic, question, answer и provenance.type;
 questionDetails и answerReferences са optional, а sourceName/sourceUrl са задължителни
 за sourced/mixed. Provenance и условието се виждат от страната на въпроса.
-Окончателната сериализация предстои. Действащият
-[production template](../../docs/FLASHCARDS-IMPORT-TEMPLATE.md) остава непроменен.
+Предложеният Markdown v3 синтаксис е документиран в
+[template](../../docs/FLASHCARDS-IMPORT-TEMPLATE.md), но още не се поддържа от приложението.
+Полетата и правилата трябва да се потвърдят при реализацията на parser-а.
 Новият договор се издава като UTF-8 Markdown draft, без обещание за import съвместимост.
 Legacy import се генерира само при изрична заявка според действителния template,
 с отчет за неподдържаните нови изисквания. Следващата фаза изисква отделна задача.
