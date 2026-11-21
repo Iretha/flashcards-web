@@ -178,7 +178,7 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   left: calc(100% + 66px);
   max-width: calc(100vw - 106px);
 }
-.study-sidebar[data-pointer-hover] button:hover > .study-sidebar-tooltip {
+.study-sidebar button:hover > .study-sidebar-tooltip {
   visibility: visible;
   transition: visibility 0s linear 450ms;
 }
