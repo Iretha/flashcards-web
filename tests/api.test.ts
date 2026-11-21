@@ -499,3 +499,26 @@ it('recreates legacy cards atomically, reports shared progress loss and preserve
   const impact = await owner.ok<Preview>('import/preview', { source: v3Fixture, target: id });
   expect(impact.impact).toMatchObject({ cards: 2, progressRecords: 0, activeSessions: 0, retainedHistoricalEvents: 2 });
 });
+
+it('imports a large v3 deck with optional fields omitted', async () => {
+  const browser = new Browser();
+  await browser.login('Large optional fields');
+  const source = '---\nformatVersion: 3\ntitle: Large deck\n---\n' + Array.from({ length: 236 }, (_, i) => `
+## card: large-${i}
+### cardType: question
+### topic: Java
+### occurrenceCount: 0
+### provenance
+type: generated
+### bg
+#### question
+Question ${i}
+#### answer
+${'Answer content. '.repeat(180)}
+`).join('\n---\n');
+  expect(source.length).toBeGreaterThan(500_000);
+  const { id } = await browser.import(source);
+  const cards = await browser.cards(id);
+  expect(cards).toHaveLength(236);
+  expect(cards.every(card => card.difficulty === null && card.interview_priority === null)).toBe(true);
+});

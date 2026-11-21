@@ -62,6 +62,13 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
 .study { min-height: 64vh; padding: clamp(1rem, 4vw, 3rem); }
 .study:fullscreen { background: #181d30; overflow: auto; }
 .study h1 { font-size: clamp(1.85rem, 5vw, 4.4rem); line-height: 1.18; font-weight: 730; }
+.study-question-row { display: flex; align-items: baseline; gap: .5rem; }
+.study-question-row > .study-question { min-width: 0; flex: 1; }
+.study-question > :has(+ .question-occurrences) { display: inline; }
+.question-occurrences { margin-left: .3em; white-space: nowrap; }
+.question-source-link { display: inline-flex; align-items: center; justify-content: center; flex: none; width: 28px; height: 28px; border-radius: 4px; }
+.question-source-link:hover { background: var(--panel); }
+.question-source-link:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .study .study-question {
   font-size: clamp(.925rem, 2.5vw, 2.2rem);
   line-height: 1.16;
@@ -75,7 +82,7 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   padding: calc(.4 * var(--answer-base-size)) calc(.75 * var(--answer-base-size));
 }
 .study .study-explanation { --answer-base-size: clamp(.55rem, 1.25vw, .95rem); }
-.study .study-note { font-size: .5rem; line-height: 1.35; }
+.study .study-note { font-size: max(11pt, .925rem); line-height: 1.35; }
 .study.stack > :is(.markdown, .study-note) { margin-top: .5rem; }
 .actions button { min-height: 56px; }
 .study .study-sidebar {
@@ -266,7 +273,6 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
   .study .study-explanation { --answer-base-size: .9375rem; }
   .study .markdown:not(.answer) h2 { font-size: 1rem; }
   .study .markdown:not(.answer) :not(pre) > code { font-size: max(.875rem, .9em); }
-  .study .study-note { font-size: .875rem; }
   .study .markdown:not(.answer) .code-block { font-size: .875rem; }
 }
 @media (min-width: 1450px) { :root { font-size: 20px; } button, .button { min-height: 58px; } }

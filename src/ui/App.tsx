@@ -405,11 +405,23 @@ export default function App() {
           })}>Reload session</button>}
           <p className="muted study-note">{activeCard.title}</p>
           {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
+          <div className="study-question-row">
+          {activeCard.metadata?.provenance.sources[0] && <a className="question-source-link"
+            href={activeCard.metadata.provenance.sources[0].sourceUrl} target="_blank" rel="noopener noreferrer"
+            aria-label="Open question source in a new tab" title={activeCard.metadata.provenance.sources[0].sourceName + ' (opens in a new tab)'}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7 .1l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7" />
+              <path d="M14 11a5 5 0 0 0-7-.1l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7" />
+            </svg>
+          </a>}
           <div className="study-question markdown" role="heading" aria-level={1} lang={selectedLanguage.language}>
             <MarkdownContent>{selectedLanguage.translation?.question}</MarkdownContent>
+            {activeCard.metadata && <span className="question-occurrences" title="Independent interview occurrences">({activeCard.metadata.provenance.type === 'generated' ? 0 : activeCard.metadata.occurrenceCount})</span>}
           </div>
-          {activeCard.metadata && <CardSources metadata={activeCard.metadata} />}
-          {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
+          </div>
+          {activeCard.metadata ? <CardSources key={activeCard.id} metadata={activeCard.metadata}>
+            {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
+          </CardSources> : selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
           <div className="row actions">
             <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Previous</button>
             <button className="primary" disabled={busy} aria-expanded={answerVisible} onClick={toggleStudyAnswer}>{answerVisible ? 'Hide answer' : 'Show answer'}</button>
