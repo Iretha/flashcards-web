@@ -12,3 +12,15 @@ Example requests:
 - `Използвай flashcards-deck-generator: добави 15 нови въпроса към deckId java-memory-model.`
 
 The generated output should be an actual downloadable UTF-8 `.md` file, not just a chat response. The canonical import example lives at `docs/FLASHCARDS-IMPORT-TEMPLATE.md`.
+
+## Команда за копиране
+
+```text
+Използвай flashcards-deck-generator: 40 въпроса за Java Memory Model, Senior ниво, на български.
+```
+
+За допълване на съществуващ дек:
+
+```text
+Използвай flashcards-deck-generator: добави 15 нови въпроса към deckId java-memory-model, без дубликати, и създай готов .md файл за импорт.
+```
