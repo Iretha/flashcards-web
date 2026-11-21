@@ -66,8 +66,36 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
 .markdown ol { list-style: decimal; padding-left: 1.4em; }
 .markdown a { color: #bceba8; text-decoration: underline; }
 .markdown img { max-width: 100%; }
-pre { max-width: 100%; overflow: auto; padding: .8em; background: #111426; border-radius: .55rem; white-space: pre; font: .85em/1.5 ui-monospace, monospace; }
-code { font-family: ui-monospace, monospace; }
+.markdown code { font-family: ui-monospace, Consolas, monospace; }
+.markdown :not(pre) > code {
+  padding: .1em .28em;
+  border-radius: .25em;
+  background: #252e48;
+  color: #d6edc8;
+  font-size: .9em;
+}
+.markdown .code-block {
+  max-width: 100%;
+  min-width: 0;
+  overflow-x: auto;
+  padding: .8em;
+  border: 1px solid var(--line);
+  border-radius: .55rem;
+  background: #111426;
+  color: #e1e7f5;
+  font: normal clamp(.8rem, 75%, 1.5rem)/1.5 ui-monospace, Consolas, monospace;
+  white-space: pre;
+  overflow-wrap: normal;
+  word-break: normal;
+  tab-size: 4;
+}
+.code-block .token.comment { color: #a5b3cf; }
+.code-block .token.keyword { color: #d5b5ff; }
+.code-block .token.string, .code-block .token.char { color: #bceba8; }
+.code-block .token.class-name, .code-block .token.function { color: #a7d7ff; }
+.code-block .token.number, .code-block .token.boolean, .code-block .token.constant { color: #ffc29c; }
+.code-block .token.operator, .code-block .token.annotation, .code-block .token.property,
+.code-block .token.variable, .code-block .token.builtin { color: #ffdb83; }
 fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem; min-width: 0; }
 @media (max-width: 780px) { .workspace { grid-template-columns: 1fr; } }
 @media (min-width: 1450px) { :root { font-size: 20px; } button, .button { min-height: 58px; } }

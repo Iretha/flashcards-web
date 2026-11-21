@@ -19,8 +19,9 @@ const explanationLabels: Record<Section, { en: string; bg: string }> = {
 type Screen = 'library' | 'import' | 'detail' | 'study';
 
 function moveFocus(key: string, active: HTMLElement | null) {
-  const candidates = [...document.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary')]
-    .filter(element => element.getClientRects().length > 0);
+  const candidates = [...document.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, pre.code-block')]
+    .filter(element => element.getClientRects().length > 0 &&
+      (!element.matches('pre.code-block') || element.scrollWidth > element.clientWidth));
   if (!active || !candidates.includes(active)) {
     candidates[0]?.focus();
     return;
@@ -147,9 +148,19 @@ export default function App() {
         else setScreen('library');
         return;
       }
+      if (element?.matches('pre.code-block') && (event.key === 'ArrowLeft' || event.key === 'ArrowRight')) {
+        const step = Math.max(1, Math.round(element.clientWidth / 4));
+        const maxScroll = element.scrollWidth - element.clientWidth;
+        const nextScroll = Math.max(0, Math.min(maxScroll, element.scrollLeft + (event.key === 'ArrowRight' ? step : -step)));
+        if (Math.abs(nextScroll - element.scrollLeft) >= 1) {
+          event.preventDefault();
+          element.scrollLeft = nextScroll;
+          return;
+        }
+      }
       if (screen === 'study' && session?.status === 'ACTIVE') {
         let action: StudyAction | undefined;
-        const interactive = element?.closest('button, a, summary');
+        const interactive = element?.closest('button, a, summary, pre.code-block');
         if ((event.key === ' ' || event.key === 'Enter') && !interactive) action = 'show';
         if (event.key === 'ArrowRight' && !interactive) action = 'next';
         if (event.key === 'ArrowLeft' && !interactive) action = 'previous';
