@@ -64,12 +64,13 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   font-weight: 730;
 }
 .study .answer {
-  font-size: clamp(.55rem, 1.3vw, 1rem);
+  --answer-base-size: clamp(.55rem, 1.3vw, 1rem);
+  font-size: calc(var(--answer-base-size) * var(--answer-scale, 1));
   line-height: 1.4;
   border-left: 4px solid var(--accent);
-  padding: .4em .75em;
+  padding: calc(.4 * var(--answer-base-size)) calc(.75 * var(--answer-base-size));
 }
-.study .study-explanation { font-size: clamp(.55rem, 1.25vw, .95rem); }
+.study .study-explanation { --answer-base-size: clamp(.55rem, 1.25vw, .95rem); }
 .study .study-note { font-size: .5rem; line-height: 1.35; }
 .study.stack > :is(.markdown, .study-note) { margin-top: .5rem; }
 .actions button { min-height: 56px; }
@@ -139,6 +140,37 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   transition: visibility 0s linear 450ms;
 }
 .study-sidebar button:focus-visible > .study-sidebar-tooltip { visibility: visible; transition: none; }
+.study.study-active { padding-right: 3.5rem; }
+.study .answer-size-sidebar {
+  position: fixed;
+  z-index: 10;
+  top: 50%;
+  right: .5rem;
+  display: grid;
+  gap: 4px;
+  margin: 0;
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: .65rem;
+  background: var(--surface);
+  transform: translateY(-50%);
+}
+.answer-size-sidebar button {
+  position: relative;
+  width: 2.25rem;
+  min-height: 2.25rem;
+  padding: 0;
+  font-size: .8rem;
+}
+.answer-size-sidebar .study-sidebar-tooltip {
+  right: calc(100% + 10px);
+  left: auto;
+}
+.answer-size-sidebar button:hover > .study-sidebar-tooltip {
+  visibility: visible;
+  transition: visibility 0s linear 450ms;
+}
+.answer-size-sidebar button:focus-visible > .study-sidebar-tooltip { visibility: visible; transition: none; }
 @media (max-height: 290px) {
   .study-sidebar-action + .study-sidebar-action { margin-top: 0; }
 }
@@ -193,6 +225,20 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   tab-size: 4;
 }
 .markdown .code-language + .code-block { padding-top: calc(.9rem + .2em); }
+.study .answer h2 { font-size: calc(var(--answer-heading-size, .65rem) * var(--answer-scale, 1)); }
+.study .answer :not(pre) > code {
+  font-size: max(calc(var(--answer-inline-code-min, 0rem) * var(--answer-scale, 1)), .9em);
+}
+.study .answer .code-block {
+  font-size: var(--answer-code-size, clamp(calc(.4rem * var(--answer-scale, 1)), 75%, calc(.75rem * var(--answer-scale, 1))));
+  white-space: pre-wrap;
+  overflow-wrap: break-word;
+  overflow-wrap: anywhere;
+}
+.study .answer .code-language { font-size: calc(.6rem * var(--answer-scale, 1)); }
+.study .answer .code-language + .code-block {
+  padding-top: calc(.9rem * var(--answer-scale, 1) + .2em);
+}
 .code-block .token.comment { color: #a5b3cf; }
 .code-block .token.keyword { color: #d5b5ff; }
 .code-block .token.string, .code-block .token.char { color: #bceba8; }
@@ -207,12 +253,17 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
 @media (max-width: 780px) { .workspace { grid-template-columns: 1fr; } }
 @media (max-width: 780px) {
   .study .study-question { font-size: clamp(1.125rem, 2.5vw, 2.2rem); }
-  .study .answer { font-size: 1rem; }
-  .study .study-explanation { font-size: .9375rem; }
-  .study .markdown h2 { font-size: 1rem; }
-  .study .markdown :not(pre) > code { font-size: max(.875rem, .9em); }
+  .study .answer {
+    --answer-base-size: 1rem;
+    --answer-heading-size: 1rem;
+    --answer-inline-code-min: .875rem;
+    --answer-code-size: calc(.875rem * var(--answer-scale, 1));
+  }
+  .study .study-explanation { --answer-base-size: .9375rem; }
+  .study .markdown:not(.answer) h2 { font-size: 1rem; }
+  .study .markdown:not(.answer) :not(pre) > code { font-size: max(.875rem, .9em); }
   .study .study-note { font-size: .875rem; }
-  .study .markdown .code-block { font-size: .875rem; }
+  .study .markdown:not(.answer) .code-block { font-size: .875rem; }
 }
 @media (min-width: 1450px) { :root { font-size: 20px; } button, .button { min-height: 58px; } }
 @media (max-width: 420px) { .shell { padding-left: .75rem; padding-right: .75rem; } }

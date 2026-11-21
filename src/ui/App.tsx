@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import type { SubmitEvent } from 'react';
+import type { CSSProperties, SubmitEvent } from 'react';
 import MarkdownContent from './MarkdownContent';
 import StudySidebar from './StudySidebar';
 import { api, ApiError, signIn } from './api';
@@ -8,7 +8,7 @@ import { DeckDetail, DeckEditor } from './Decks';
 import Import from './Import';
 import { defaults } from '../lib/study';
 import type { Settings, StudyAction } from '../lib/study';
-import { languages, sections, selectExplanation, selectTranslation } from '../lib/translations';
+import { answerSizeLabels, languages, sections, selectExplanation, selectTranslation } from '../lib/translations';
 import type { Section } from '../lib/translations';
 
 const explanationLabels: Record<Section, { en: string; bg: string }> = {
@@ -18,6 +18,20 @@ const explanationLabels: Record<Section, { en: string; bg: string }> = {
 };
 
 type Screen = 'library' | 'import' | 'detail' | 'study';
+
+const answerSizeKey = 'flashcards-web:answer-text-size';
+const defaultAnswerSize = 100;
+const minAnswerSize = 60;
+const maxAnswerSize = 180;
+const answerSizeStep = 10;
+
+function readAnswerSize() {
+  try {
+    const saved = Number(window.localStorage.getItem(answerSizeKey));
+    if (saved >= minAnswerSize && saved <= maxAnswerSize && saved % answerSizeStep === 0) return saved;
+  } catch { /* Storage may be unavailable. */ }
+  return defaultAnswerSize;
+}
 
 function moveFocus(key: string, active: HTMLElement | null) {
   const candidates = [...document.querySelectorAll<HTMLElement>('button:not(:disabled), input:not(:disabled), select:not(:disabled), textarea:not(:disabled), a[href], summary, pre.code-block')]
@@ -59,9 +73,15 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(defaults);
   const [session, setSession] = useState<Session | null>(null);
   const [hiddenAnswer, setHiddenAnswer] = useState<Session | null>(null);
+  const [answerSize, setAnswerSize] = useState(readAnswerSize);
   const [now, setNow] = useState(Date.now);
   const stage = useRef<HTMLElement>(null);
   const deck = home?.decks.find(item => item.id === detail);
+
+  useEffect(() => {
+    try { window.localStorage.setItem(answerSizeKey, String(answerSize)); }
+    catch { /* Keep the current size in memory if storage is unavailable. */ }
+  }, [answerSize]);
 
   function applyHome(result: Home) {
     setHome(result);
@@ -215,6 +235,8 @@ export default function App() {
   const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
   const explanation = session?.explanation && selectExplanation(translations, selectedLanguage.language, session.explanation);
   const answerVisible = Boolean(session?.revealed && hiddenAnswer !== session);
+  const sizeLabels = answerSizeLabels[session?.language ?? settings.language];
+  const activeCard = session?.status === 'ACTIVE' && session.card;
   const toggleStudyAnswer = () => answerVisible ? setHiddenAnswer(session) : studyAction('show');
 
   return <div className="shell">
@@ -304,8 +326,23 @@ export default function App() {
           }}>{session?.status === 'ACTIVE' ? 'Start new session' : 'Start studying'}</button>
         </section>
       </div>}
-      {home && screen === 'study' && <section className="panel study stack" ref={stage} tabIndex={-1}>
-        {session?.status === 'ACTIVE' && session.card ? <>
+      {home && screen === 'study' && <section className={activeCard ? 'panel study stack study-active' : 'panel study stack'} ref={stage} tabIndex={-1}
+        style={{ '--answer-scale': answerSize / 100 } as CSSProperties}>
+        {activeCard ? <>
+          <div className="answer-size-sidebar" role="group" aria-label={sizeLabels.group}>
+            {[
+              { text: 'A−', label: sizeLabels.decrease, disabled: answerSize === minAnswerSize,
+                run: () => setAnswerSize(size => Math.max(minAnswerSize, size - answerSizeStep)) },
+              { text: `${answerSize}%`, label: sizeLabels.reset, disabled: answerSize === defaultAnswerSize,
+                run: () => setAnswerSize(defaultAnswerSize) },
+              { text: 'A+', label: sizeLabels.increase, disabled: answerSize === maxAnswerSize,
+                run: () => setAnswerSize(size => Math.min(maxAnswerSize, size + answerSizeStep)) },
+            ].map(({ text, label, disabled, run }) => <button key={label} type="button"
+              aria-label={label} aria-disabled={disabled} onClick={() => { if (!disabled) run(); }}>
+              {text}
+              <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{label}</span>
+            </button>)}
+          </div>
           <div className="between">
             <span>{session.remaining} remaining {session.historical && '· History'}</span>
             <div className="row">
@@ -315,7 +352,7 @@ export default function App() {
               </div>
               {deadline !== null && deadline !== undefined && <span className="timer" aria-label="Seconds remaining">{Math.max(0, Math.ceil((deadline - now) / 1000))}s</span>}
               {session.paused && <button disabled={busy} onClick={() => studyAction('resume')}>Resume timer</button>}
-              {stage.current?.requestFullscreen && <button onClick={() => void run(async () => {
+              {document.fullscreenEnabled && <button onClick={() => void run(async () => {
                 if (document.fullscreenElement) await document.exitFullscreen();
                 else await stage.current?.requestFullscreen();
               })}>Fullscreen</button>}
@@ -326,7 +363,7 @@ export default function App() {
             setSession(await api<Session>('study'));
             setNow(Date.now());
           })}>Reload session</button>}
-          <p className="muted study-note">{session.card.title}</p>
+          <p className="muted study-note">{activeCard.title}</p>
           {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <div className="study-question markdown" role="heading" aria-level={1} lang={selectedLanguage.language}>
             <MarkdownContent>{selectedLanguage.translation?.question}</MarkdownContent>

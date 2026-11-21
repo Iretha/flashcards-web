@@ -16,6 +16,21 @@ export const studyControlLabels = {
   },
 } satisfies Record<Language, Record<string, string>>;
 
+export const answerSizeLabels = {
+  en: {
+    group: 'Answer text size',
+    decrease: 'Decrease answer text size',
+    increase: 'Increase answer text size',
+    reset: 'Reset answer text size to 100%',
+  },
+  bg: {
+    group: 'Размер на текста на отговора',
+    decrease: 'Намали текста на отговора',
+    increase: 'Увеличи текста на отговора',
+    reset: 'Върни размера на текста на отговора на 100%',
+  },
+};
+
 export function isLanguage(value: unknown): value is Language {
   return value === 'bg' || value === 'en';
 }
