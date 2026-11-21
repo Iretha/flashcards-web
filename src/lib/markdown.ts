@@ -19,7 +19,7 @@ export function parseMarkdown(source: string) {
       if (declared === 3 || declared === '3') version = 3;
       else if (declared === 2 || declared === '2') version = 2;
       else if (declared !== undefined && declared !== 1 && declared !== '1') throw new Error('Unsupported Markdown formatVersion.');
-      for (const key of ['deckId', 'title', 'description']) {
+      for (const key of ['deckId', 'title', 'description', 'visibility']) {
         const value: unknown = Reflect.get(data, key);
         if (typeof value === 'string') metadata[key] = value.trim();
       }

@@ -163,7 +163,6 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
   const links = object(input.links ?? {});
   if (input.replace === true) {
     check(deck, 'Replacement requires an existing owned target deck.');
-    check(parsed.version === 3, 'Replacement requires Markdown v3.');
   }
   return { deck, key, metadata, existing, parsed, links };
 }
@@ -198,25 +197,25 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
   const { deck, key, metadata, parsed, existing, links } = await prepareImport(db, user, input);
   check(input.previewId === (deck?.id ?? null) && input.revision === (deck?.revision ?? null), 'Deck changed. Preview the import again.', 409);
   const updates = object(input.choices ?? {});
-  const scope = visibility(input.visibility);
-  const title = string(metadata.title || input.filename, 'title', 160);
-  const description = string(metadata.description ?? '', 'description', 2000, true);
+  const scope = visibility(input.visibility ?? metadata.visibility?.toUpperCase() ?? deck?.visibility ?? 'PRIVATE');
+  const title = string(input.title ?? deck?.title ?? (metadata.title || input.filename), 'title', 160);
+  const description = string(input.description ?? deck?.description ?? metadata.description ?? '', 'description', 2000, true);
   if (input.replace === true) check(input.confirmReplacement === deck?.id, 'Confirm replacement with the exact target deck ID.');
   const { rows, changed, cards } = planImport(parsed, input.replace === true ? [] : existing, links, updates);
   for (const row of rows) {
-    if (parsed.version === 3) check(row.kind !== 'invalid', row.message ?? 'Invalid v3 card.');
+    if (parsed.version === 3 || input.replace === true) check(row.kind !== 'invalid', row.message ?? 'Invalid v3 card.');
     check(row.kind !== 'link', 'Resolve how each card matches the existing deck.');
     if (row.kind === 'conflict') check(['keep', 'update'].includes(String(updates[row.index])), 'Resolve every content conflict.');
   }
   check(uniqueQuestions(cards), 'A matching question already exists.', 409);
   check(rows.some(row => row.kind !== 'invalid'), 'There are no valid cards to import.');
-  if (deck && !changed.length && deck.visibility === scope) return { id: deck.id, imported: 0, updatedTranslations: 0 };
+  if (deck && !changed.length && deck.visibility === scope && deck.title === title && deck.description === description) return { id: deck.id, imported: 0, updatedTranslations: 0 };
   const id = deck?.id ?? crypto.randomUUID();
   const mutation = crypto.randomUUID();
   const now = Date.now();
   const header = deck
-    ? db.prepare(`UPDATE decks SET visibility = ?, revision = revision + 1, mutation = ?, updated_at = ?
-      WHERE id = ? AND owner_id = ? AND revision = ?`).bind(scope, mutation, now, id, user, deck.revision)
+    ? db.prepare(`UPDATE decks SET title = ?, description = ?, visibility = ?, revision = revision + 1, mutation = ?, updated_at = ?
+      WHERE id = ? AND owner_id = ? AND revision = ?`).bind(title, description, scope, mutation, now, id, user, deck.revision)
     : db.prepare(`INSERT INTO decks(id, owner_id, source_key, title, description, visibility, mutation, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, user, key, title, description, scope, mutation, now, now);
   const batch = [header];

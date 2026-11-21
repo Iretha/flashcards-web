@@ -262,6 +262,28 @@ describe('Workers API with real local D1', () => {
     expect((await otherDevice.home()).username).toBe('Owner');
   }, 15_000);
 
+  it('uses Markdown deck defaults and allows metadata overrides on a duplicate import', async () => {
+    const browser = new Browser();
+    await browser.login('Import metadata');
+    const source = '---\ntitle: File title\ndescription: File description\nvisibility: SHARED\n---\n## Question\nAnswer';
+    const preview = await browser.ok<Preview>('import/preview', { source, target: 'new' });
+    expect(preview.metadata.visibility).toBe('SHARED');
+    const { id } = await browser.ok<{ id: string }>('import/apply', {
+      source, target: 'new', filename: 'file', previewId: null, revision: null,
+    });
+    expect((await browser.home()).decks.find(deck => deck.id === id)).toMatchObject({
+      title: 'File title', description: 'File description', visibility: 'SHARED',
+    });
+    const again = await browser.ok<Preview>('import/preview', { source, target: id });
+    await browser.ok('import/apply', {
+      source, target: id, filename: 'file', previewId: id, revision: again.deck?.revision,
+      title: 'Custom title', description: '', visibility: 'PRIVATE',
+    });
+    expect((await browser.home()).decks.find(deck => deck.id === id)).toMatchObject({
+      title: 'Custom title', description: '', visibility: 'PRIVATE', total: 1,
+    });
+  });
+
   it('supports manual deck and card management without changing card identity', async () => {
     const browser = new Browser();
     await browser.login('Editor');

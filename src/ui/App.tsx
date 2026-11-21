@@ -69,6 +69,7 @@ export default function App() {
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState('');
   const [create, setCreate] = useState(false);
+  const [editingDeck, setEditingDeck] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [session, setSession] = useState<Session | null>(null);
   const [answerSize, setAnswerSize] = useState(readAnswerSize);
@@ -84,12 +85,39 @@ export default function App() {
   function applyHome(result: Home) {
     setHome(result);
     setSession(result.session);
+    setSelected(current => current.filter(id => result.decks.some(deck => deck.id === id)));
     return result;
   }
 
   async function reload() {
     return applyHome(await api<Home>('home'));
   }
+
+  useEffect(() => {
+    if (!home) return;
+    let cancelled = false;
+    let checking = false;
+    async function refreshAccess() {
+      if (inFlight.current || checking) return;
+      checking = true;
+      try {
+        const result = await api<Home>('home');
+        if (!cancelled && !inFlight.current) applyHome(result);
+      } catch (problem) {
+        if (!cancelled && problem instanceof ApiError && problem.status === 401) {
+          setHome(null);
+          setSession(null);
+        }
+      } finally { checking = false; }
+    }
+    const interval = window.setInterval(() => void refreshAccess(), 5000);
+    window.addEventListener('focus', refreshAccess);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshAccess);
+    };
+  }, [Boolean(home)]);
 
   useEffect(() => {
     void reload().then(result => {
@@ -232,23 +260,30 @@ export default function App() {
 
   return <div className="shell">
     <header className="top">
-      <div className="brand"><span aria-hidden="true" className="logo">▱</span> Flashcards</div>
+      <a className="brand" href="/" onClick={event => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        if (busy) return;
+        setCreate(false);
+        if (screen === 'study') exitStudy();
+        else setScreen('library');
+      }}><span aria-hidden="true" className="logo">▱</span> Flashcards</a>
       {home && screen !== 'study' && <div className="row account">
-        <span>{home.username}</span>
         <a className="button" href="/api/export">Export backup</a>
         <a className="button" href="/api/replacement-report">Reload impact report</a>
-        <button disabled={busy} onClick={() => void run(async () => {
+
+      </div>}
+      <time className="build-version" dateTime={buildTimestamp} title="Дата и час на изграждане • Europe/Sofia">
+        v{buildVersion}
+      </time>
+      {home && screen !== 'study' && <button className="sign-out" disabled={busy} onClick={() => void run(async () => {
           await api('logout', {});
           setHome(null);
           setSession(null);
           setSelected([]);
           setCreate(false);
           setScreen('library');
-        })}>Switch user / Sign out</button>
-      </div>}
-      <time className="build-version" dateTime={buildTimestamp} title="Дата и час на изграждане • Europe/Sofia">
-        v{buildVersion}
-      </time>
+        })}>{home.username} ? Switch user / Sign out</button>}
     </header>
     <main aria-busy={busy}>
       {error && <p className="error" role="alert">{error}</p>}
@@ -285,9 +320,17 @@ export default function App() {
               <label className="check"><input type="checkbox" checked={selected.includes(item.id)} onChange={event => {
                 setSelected(current => event.target.checked ? [...current, item.id] : current.filter(id => id !== item.id));
               }} /> <strong>{item.title}</strong></label>
-              <button onClick={() => { setDetail(item.id); setScreen('detail'); }}>View deck</button>
+              <div className="row">
+                <button onClick={() => { setDetail(item.id); setScreen('detail'); }}>View deck</button>
+                {item.owned === 1 && <button disabled={busy} onClick={() => setEditingDeck(item.id)}>Edit deck</button>}
+              </div>
             </div>
             {item.description && <p>{item.description}</p>}
+            {editingDeck === item.id && item.owned === 1 && <DeckEditor deck={item} busy={busy} save={data => void run(async () => {
+              await api('deck', data);
+              await reload();
+              setEditingDeck(null);
+            })} close={() => setEditingDeck(null)} />}
             <p className="muted">{item.visibility === 'PRIVATE' ? 'Private' : 'Shared'} · {item.total} cards · {item.presentations} presentations</p>
           </article>)}
         </section>

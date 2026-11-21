@@ -20,6 +20,7 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
     <label>Visibility<select value={visibility} onChange={event => setVisibility(event.target.value as Deck['visibility'])}>
       <option value="PRIVATE">Private</option><option value="SHARED">Shared</option>
     </select></label>
+    {deck && <p className="muted">Private decks are visible only to you. Switching a shared deck to Private removes access for other users and invalidates their active study sessions with this deck.</p>}
     <div className="row"><button className="primary" disabled={busy}>Save deck</button><button type="button" onClick={close}>Cancel</button></div>
   </form>;
 }
