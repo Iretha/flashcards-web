@@ -15,7 +15,7 @@ Until the template supports the contract, present new-contract content as a clea
 
 ## Logical content contract
 
-Final field names and serialization remain to be decided in the template task:
+A proposed Markdown v3 serialization exists in the repository template, but it is not yet supported by the importer. Its field names and placement must be validated against parser and storage implementation:
 
 | Field | Requirement |
 | --- | --- |
