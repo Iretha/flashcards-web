@@ -32,20 +32,17 @@ export default function StudySidebar({ language, busy, hasPrevious, repeat = fal
 }) {
   const labels = studyControlLabels[language];
 
-  const actions: { icon: keyof typeof icons; label: string; disabled?: boolean; run: () => void }[] = [
+  const actions: { icon: keyof typeof icons; label: string; disabled?: boolean; pressed?: boolean; run: () => void }[] = [
     { icon: 'arrow-left', label: labels.previous, disabled: !hasPrevious, run: () => onAction('previous') },
     { icon: answerVisible ? 'eye-off' : 'eye', label: answerVisible ? labels.hide : labels.show, run: onToggleAnswer },
+    { icon: 'repeat-2', label: labels.repeat, pressed: repeat, run: () => onAction('repeat') },
     { icon: 'arrow-right', label: labels.next, run: () => onAction('next') },
   ];
 
   return <div className="study-sidebar">
     <div id="study-sidebar-actions" className="study-sidebar-actions" role="group" aria-label={labels.actions}>
-      <button type="button" className="study-sidebar-action" aria-label={labels.repeat}
-        aria-pressed={repeat} aria-disabled={busy} onClick={() => { if (!busy) onAction('repeat'); }}>
-        <Icon name="repeat-2" />
-        <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{labels.repeat}</span>
-      </button>      {actions.map(({ icon, label, disabled, run }) => <button key={icon === 'eye-off' ? 'eye' : icon} type="button"
-        className="study-sidebar-action" aria-label={label} aria-disabled={busy || Boolean(disabled)}
+      {actions.map(({ icon, label, disabled, pressed, run }) => <button key={icon === 'eye-off' ? 'eye' : icon} type="button"
+        className="study-sidebar-action" aria-label={label} aria-pressed={pressed} aria-disabled={busy || Boolean(disabled)}
         onClick={() => { if (!busy && !disabled) run(); }}>
         <Icon name={icon} />
         <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{label}</span>
