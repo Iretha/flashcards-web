@@ -3,6 +3,7 @@ import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, 
 import { check, HttpError, json, object, string } from './http';
 import { act, reset, startSession, studyView } from './sessions';
 import { defaults } from '../lib/study';
+import type { Translations } from '../lib/translations';
 
 export async function handle(request: Request, db: D1Database, secret?: string) {
   const url = new URL(request.url);
@@ -23,13 +24,14 @@ export async function handle(request: Request, db: D1Database, secret?: string) 
       if (route === 'study') return json(await studyView(db, user.id));
       if (route === 'export') {
         const decks = await listDecks(db, user.id);
-        const [cards, progress, history] = await db.batch([
+        const [cards, progress, history] = await db.batch<Record<string, unknown>>([
           db.prepare(`SELECT c.* FROM cards c JOIN decks d ON d.id = c.deck_id WHERE d.owner_id = ? OR d.visibility = 'SHARED'`).bind(user.id),
           db.prepare('SELECT * FROM card_progress WHERE user_id = ?').bind(user.id),
           db.prepare('SELECT * FROM study_events WHERE user_id = ? ORDER BY created_at, rowid').bind(user.id),
         ]);
         return json({ version: 1, username: user.username, exportedAt: new Date().toISOString(), decks,
-          cards: cards.results, progress: progress.results, history: history.results,
+          cards: cards.results.map(card => ({ ...card, translations: JSON.parse(String(card.translations)) as Translations })),
+          progress: progress.results, history: history.results,
         }, 200, { 'Content-Disposition': 'attachment; filename="flashcards-backup.json"' });
       }
       throw new HttpError(404, 'Unknown endpoint.');

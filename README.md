@@ -19,6 +19,16 @@ npm run dev
 
 Open the printed localhost URL. Use HTTPS when accessing the application over a local network because the session cookie is Secure. To check the production build locally, run `npm run build` followed by `npm run preview`.
 
+Local development uses an isolated D1 database. The UUID placeholder works locally. Use the following commands to check or apply migrations in `migrations/` and verify the local connection:
+
+```sh
+npx wrangler d1 migrations list DB --local
+npx wrangler d1 migrations apply DB --local
+npx wrangler d1 execute DB --local --command="SELECT 1 AS connected"
+```
+
+`npm run db:local` runs the same local migration apply command.
+
 ```sh
 npm test
 npm run typecheck
@@ -27,10 +37,24 @@ npm run build
 
 ## Cloudflare Workers
 
-Sign in with `npx wrangler login`. Create a D1 database with `npx wrangler d1 create flashcards-web` and replace the placeholder `database_id` in `wrangler.jsonc` with the ID it prints. Keep the binding name `DB`.
+Sign in with `npx wrangler login` and run `npx wrangler d1 list` to find the UUID of the existing `flashcards-db` database. In `wrangler.jsonc`, replace the all-zero `database_id` under `d1_databases[0]` in your local checkout. The Worker uses the `DB` binding.
+
+Run a read-only query to check the remote connection. A successful result contains `connected: 1`.
 
 ```sh
+npx wrangler d1 execute DB --remote --command="SELECT 1 AS connected"
+```
+
+Review pending production migrations before applying them.
+
+```sh
+npx wrangler d1 migrations list DB --remote
 npx wrangler d1 migrations apply DB --remote
+```
+
+Set the shared access code and deploy when ready.
+
+```sh
 npx wrangler secret put ACCESS_CODE
 npm run deploy
 ```

@@ -41,7 +41,10 @@ button, .button, input, select, textarea, summary {
 button, .button, summary { cursor: pointer; font-weight: 650; }
 .button { display: inline-flex; align-items: center; text-decoration: none; }
 button:disabled { opacity: .5; cursor: default; }
+button[aria-disabled=true] { opacity: .7; cursor: default; }
 button.primary { background: #bceba8; color: #17261c; border-color: #bceba8; }
+button[aria-pressed=true], button[aria-expanded=true] { background: #bceba8; color: #17261c; border-color: #bceba8; }
+.language-controls { margin: 0; }
 button.danger { color: #ffb5b5; }
 :focus { outline: 3px solid #ffdb83; outline-offset: 3px; }
 label { display: block; font-weight: 600; }
@@ -54,7 +57,7 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
 .error { color: #ffd0d0; background: #422435; padding: .9rem; border-radius: .5rem; margin-bottom: 1rem; }
 .study { min-height: 64vh; padding: clamp(1rem, 4vw, 3rem); }
 .study:fullscreen { background: #181d30; overflow: auto; }
-.study h1 { font-size: clamp(1.85rem, 5vw, 4.4rem); }
+.study h1, .study-question { font-size: clamp(1.85rem, 5vw, 4.4rem); line-height: 1.18; font-weight: 730; }
 .study .answer { font-size: clamp(1.1rem, 2.6vw, 2rem); border-left: 4px solid var(--accent); padding: .7rem 1rem; }
 .actions button { min-height: 56px; }
 .timer { font-weight: 750; color: var(--accent); min-width: 3ch; }

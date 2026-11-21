@@ -1,6 +1,8 @@
+import type { Language, Section } from './translations';
+
 export type Ordering = 'SEQUENTIAL' | 'RANDOM';
-export interface Settings { order: Ordering; timer: boolean; seconds: number; onlyUnlearned: boolean }
-export const defaults: Settings = { order: 'SEQUENTIAL', timer: true, seconds: 30, onlyUnlearned: true };
+export interface Settings { order: Ordering; timer: boolean; seconds: number; onlyUnlearned: boolean; language: Language }
+export const defaults: Settings = { order: 'SEQUENTIAL', timer: true, seconds: 30, onlyUnlearned: true, language: 'en' };
 export interface QueueCard { id: string; failed: number; visits: number }
 export interface StudyState {
   queue: QueueCard[];
@@ -10,8 +12,11 @@ export interface StudyState {
   revealed: boolean;
   deadline: number | null;
   remainingMs: number | null;
+  language?: Language;
+  explanation?: Section | null;
+  historyRevealed?: boolean;
 }
-export type StudyAction = 'show' | 'learn' | 'repeat' | 'next' | 'previous' | 'forward' | 'timeout' | 'pause' | 'resume';
+export type StudyAction = 'show' | 'learn' | 'repeat' | 'next' | 'previous' | 'forward' | 'timeout' | 'pause' | 'resume' | 'language' | 'explanation';
 export type Outcome = 'LEARNED' | 'REPEAT' | 'TIMEOUT' | 'NEXT';
 
 // One ticket for every card, plus one per failure up to seven extra tickets.
@@ -41,6 +46,8 @@ function present(state: StudyState, settings: Settings, now: number, random: () 
   const next = choose(state.queue, state.history, settings.order, random);
   state.current = next?.id ?? null;
   state.revealed = false;
+  state.explanation = null;
+  state.historyRevealed = false;
   state.remainingMs = null;
   state.deadline = next && settings.timer ? now + settings.seconds * 1000 : null;
   if (next) {
@@ -55,7 +62,7 @@ function present(state: StudyState, settings: Settings, now: number, random: () 
 export function startStudy(queue: QueueCard[], settings: Settings, now: number, random = Math.random) {
   const state: StudyState = {
     queue: queue.map(card => ({ ...card })), history: [], cursor: -1, current: null,
-    deadline: null, remainingMs: null, revealed: false,
+    deadline: null, remainingMs: null, revealed: false, language: settings.language,
   };
   present(state, settings, now, random);
   return state;
@@ -76,9 +83,17 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
     if (state.remainingMs !== null) state.deadline = now + state.remainingMs;
     state.remainingMs = null;
   } else if (action === 'previous') {
-    state.cursor = Math.max(0, state.cursor - 1);
+    if (state.cursor > 0) {
+      state.cursor--;
+      state.historyRevealed = false;
+      state.explanation = null;
+    }
   } else if (historical && (action === 'next' || action === 'forward')) {
     state.cursor++;
+    state.historyRevealed = false;
+    state.explanation = null;
+  } else if (action === 'show' && historical) {
+    state.historyRevealed = true;
   } else if (action === 'show' && !historical && (state.deadline === null || state.deadline > now)) {
     state.revealed = true;
     state.deadline = null;

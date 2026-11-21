@@ -1,42 +1,53 @@
 import { advance, defaults, startStudy } from '../lib/study';
 import type { Settings, StudyAction, StudyState } from '../lib/study';
 import type { User } from './auth';
-import { listCards } from './decks';
 import { check, object, string } from './http';
+import { isLanguage, isSection, selectExplanation, selectTranslation } from '../lib/translations';
+import type { Language, Section, Translations } from '../lib/translations';
 
 interface SessionRow {
   id: string; user_id: string; version: number; status: 'ACTIVE' | 'COMPLETE' | 'INVALIDATED';
   selected_deck_ids: string; ordering_mode: Settings['order']; timer_enabled: number;
   timer_seconds: number; session_state: string;
 }
-const actions = ['show', 'learn', 'repeat', 'next', 'previous', 'forward', 'timeout', 'pause', 'resume'];
+const actions = ['show', 'learn', 'repeat', 'next', 'previous', 'forward', 'timeout', 'pause', 'resume', 'language', 'explanation'];
 
 function settings(input: Record<string, unknown>): Settings {
   check(input.order === 'SEQUENTIAL' || input.order === 'RANDOM', 'Choose an ordering mode.');
   check(typeof input.timer === 'boolean' && typeof input.onlyUnlearned === 'boolean', 'Invalid study settings.');
   const seconds = input.seconds;
   check(typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600, 'Timer must be between 1 and 3600 seconds.');
-  return { order: input.order, timer: input.timer, seconds, onlyUnlearned: input.onlyUnlearned };
+  const language = input.language ?? defaults.language;
+  check(isLanguage(language), 'Choose BG or EN.');
+  return { order: input.order, timer: input.timer, seconds, onlyUnlearned: input.onlyUnlearned, language };
 }
 
 const read = (db: D1Database, user: string) =>
   db.prepare('SELECT * FROM study_sessions WHERE user_id = ?').bind(user).first<SessionRow>();
 
+async function studyCard(db: D1Database, user: string, id: string) {
+  const card = await db.prepare(`SELECT c.id, c.question, c.answer, c.translations, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
+    WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED')`).bind(id, user)
+    .first<{ id: string; question: string; answer: string; title: string; translations: string }>();
+  return card && { ...card, translations: JSON.parse(card.translations) as Translations };
+}
+
 export async function studyView(db: D1Database, user: string) {
   const row = await read(db, user);
   if (!row) return null;
   const deckIds: string[] = JSON.parse(row.selected_deck_ids);
-  if (row.status !== 'ACTIVE') return { id: row.id, version: row.version, status: row.status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds };
   const state: StudyState = JSON.parse(row.session_state);
+  const language = state.language ?? defaults.language;
+  if (row.status !== 'ACTIVE') return { id: row.id, version: row.version, status: row.status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds, language, explanation: null };
   const historical = state.cursor < state.history.length - 1;
   const id = state.history[state.cursor];
-  const card = await db.prepare(`SELECT c.id, c.question, c.answer, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
-    WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED')`).bind(id, user)
-    .first<{ id: string; question: string; answer: string; title: string }>();
+  const card = await studyCard(db, user, id);
   return {
     id: row.id, version: row.version, status: card ? row.status : 'INVALIDATED' as const, card,
-    remaining: state.queue.length, historical, hasPrevious: state.cursor > 0, revealed: state.revealed && !historical,
+    remaining: state.queue.length, historical, hasPrevious: state.cursor > 0,
+    revealed: historical ? Boolean(state.historyRevealed) : state.revealed,
     deadline: state.deadline, paused: state.remainingMs !== null, seconds: row.timer_seconds, deckIds,
+    language, explanation: state.explanation ?? null,
   };
 }
 
@@ -56,7 +67,13 @@ export async function startSession(db: D1Database, user: User, input: Record<str
   const snapshot = await db.prepare(`SELECT id, revision FROM decks WHERE (owner_id = ? OR visibility = 'SHARED')
     AND id IN (SELECT value FROM json_each(?))`).bind(user.id, serialized).all<{ id: string; revision: number }>();
   check(snapshot.results.length === deckIds.length, 'One or more decks are unavailable.', 404);
-  const cards = (await Promise.all(deckIds.map(id => listCards(db, user.id, id)))).flat();
+  const cards = (await db.prepare(`SELECT c.id, coalesce(p.status, 'UNLEARNED') AS status,
+    coalesce(p.times_failed, 0) AS times_failed FROM json_each(?) selection
+    JOIN cards c ON c.deck_id = selection.value JOIN decks d ON d.id = c.deck_id
+    LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
+    WHERE (d.owner_id = ? OR d.visibility = 'SHARED') AND (? = 0 OR p.status IS NULL OR p.status = 'UNLEARNED')
+    ORDER BY selection.key, c.position, c.id LIMIT 5001`)
+    .bind(serialized, user.id, user.id, Number(config.onlyUnlearned)).all<{ id: string; status: string; times_failed: number }>()).results;
   const eligible = cards.filter(card => !config.onlyUnlearned || card.status === 'UNLEARNED');
   check(eligible.length <= 5000, 'Select at most 5000 cards in one study session.');
   const now = Date.now();
@@ -98,6 +115,28 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
   const { state, outcome, shown } = advance(previous, {
     ...defaults, order: row.ordering_mode, timer: Boolean(row.timer_enabled), seconds: row.timer_seconds,
   }, action, now);
+  let opened: { id: string; section: Section } | undefined;
+  let language: Language | undefined;
+  if (action === 'language') {
+    check(isLanguage(input.language), 'Choose BG or EN.');
+    if (input.language !== (previous.language ?? defaults.language)) {
+      language = input.language;
+      state.language = language;
+    }
+  }
+  if (action === 'explanation') {
+    const section = input.section;
+    check(isSection(section), 'Choose an explanation.');
+    const historical = previous.cursor < previous.history.length - 1;
+    check(historical ? previous.historyRevealed : previous.revealed, 'Show the answer first.', 409);
+    const id = previous.history[previous.cursor];
+    const card = await studyCard(db, user.id, id);
+    check(card, 'Card not available.', 404);
+    const selected = selectTranslation(card.translations, state.language ?? defaults.language);
+    check(selectExplanation(card.translations, selected.language, section).content, 'Explanation not available.', 404);
+    state.explanation = state.explanation === section ? null : section;
+    if (state.explanation) opened = { id, section };
+  }
   const encoded = JSON.stringify(state);
   if (encoded === row.session_state) return studyView(db, user.id);
   const mutation = crypto.randomUUID();
@@ -106,6 +145,17 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
     .bind(encoded, state.current, state.current ? 'ACTIVE' : 'COMPLETE', mutation, now, user.id, row.id, row.version)];
   if (previous.current && outcome && outcome !== 'NEXT') batch.push(event(db, user.id, mutation, previous.current, outcome, now));
   if (shown) batch.push(event(db, user.id, mutation, shown, 'SHOWN', now));
+  if (language) batch.push(db.prepare(`UPDATE users SET settings = json_set(settings, '$.language', ?)
+    WHERE id = ? AND EXISTS (SELECT 1 FROM study_sessions WHERE user_id = ? AND mutation = ?)`)
+    .bind(language, user.id, user.id, mutation));
+  if (opened) {
+    const column = { simple: 'simple_opens', example: 'example_opens', details: 'details_opens' }[opened.section];
+    batch.push(db.prepare(`INSERT INTO card_progress(user_id, card_id, ${column})
+      SELECT ?, c.id, 1 FROM cards c JOIN study_sessions s ON s.user_id = ?
+      WHERE c.id = ? AND s.mutation = ?
+      ON CONFLICT(user_id, card_id) DO UPDATE SET ${column} = ${column} + 1`)
+      .bind(user.id, user.id, opened.id, mutation));
+  }
   const [result] = await db.batch(batch);
   check(result.meta.changes, 'The session changed on another device.', 409);
   return studyView(db, user.id);

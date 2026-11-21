@@ -1,0 +1,5 @@
+import ReactMarkdown from 'react-markdown';
+
+export default function MarkdownContent({ children }: { children?: string }) {
+  return <ReactMarkdown skipHtml>{children}</ReactMarkdown>;
+}

@@ -1,4 +1,5 @@
 import { parse } from 'yaml';
+import { parseBilingual } from './markdown-v2';
 
 export interface Draft { question: string; answer: string }
 export interface ImportCard extends Draft { id: string; question_key: string }
@@ -7,17 +8,22 @@ export const questionKey = (value: string) => value.normalize('NFKC').trim().rep
 export function parseMarkdown(source: string) {
   const lines = source.replace(/^\uFEFF/, '').split(/\r?\n/);
   const metadata: Record<string, string> = {};
+  let version: 1 | 2 = 1;
   if (lines[0]?.trim() === '---') {
     const end = lines.findIndex((line, index) => index > 0 && line.trim() === '---');
     if (end < 0) throw new Error('The Markdown frontmatter is missing its closing delimiter.');
     const data: unknown = parse(lines.splice(0, end + 1).slice(1, -1).join('\n'), { maxAliasCount: 0 });
     if (data && typeof data === 'object') {
+      const declared: unknown = Reflect.get(data, 'formatVersion');
+      if (declared === 2 || declared === '2') version = 2;
+      else if (declared !== undefined && declared !== 1 && declared !== '1') throw new Error('Unsupported Markdown formatVersion.');
       for (const key of ['deckId', 'title', 'description']) {
         const value: unknown = Reflect.get(data, key);
         if (typeof value === 'string') metadata[key] = value.trim();
       }
     }
   }
+  if (version === 2) return { version, metadata, cards: parseBilingual(lines) } as const;
   const cards: Draft[] = [];
   let question: string | undefined;
   let answer: string[] = [];
@@ -42,7 +48,7 @@ export function parseMarkdown(source: string) {
     } else if (question !== undefined) answer.push(line);
   }
   finish();
-  return { metadata, cards };
+  return { version, metadata, cards } as const;
 }
 
 export function compareImport(drafts: Draft[], existing: ImportCard[]) {

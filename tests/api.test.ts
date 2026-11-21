@@ -3,6 +3,7 @@ import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { handle } from '../src/server/api';
 import { defaults } from '../src/lib/study';
+import { selectTranslation, selectExplanation } from '../src/lib/translations';
 import type { Deck, Preview, Card, Session, Home } from '../src/ui/api';
 
 const origin = 'https://cards.example';
@@ -13,6 +14,9 @@ const rows = (start: number, end: number) => Array.from({ length: end - start + 
 }).join('\n\n---\n\n');
 const jmm = (count: number) => '---\ndeckId: jmm\ntitle: Java Memory Model\n---\n' + rows(1, count);
 const concurrency = '---\ndeckId: concurrency\ntitle: Concurrency\n---\n## Locks\n\nA lock limits access.';
+const v2 = (body: string) => '---\ndeckId: bilingual\ntitle: Bilingual\nformatVersion: 2\n---\n' + body;
+const bg = '### bg\n#### question\nКакво е ключалка?\n#### answer\nОграничава достъпа.\n#### simple\nЕдин по един.\n#### details\nПравила за синхронизация.';
+const en = '### en\n#### question\nWhat is a lock?\n#### answer\nIt restricts access.\n#### simple\nOne at a time.\n#### example\nOnly one thread enters.';
 
 let runtime: Miniflare;
 let db: D1Database;
@@ -27,6 +31,16 @@ beforeAll(async () => {
       .split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/),
   );
   await db.batch(migrations.map(statement => db.prepare(statement)));
+  await db.batch([
+    db.prepare("INSERT INTO users(id, username, username_key, created_at, last_login_at) VALUES ('migrated', 'Migrated', 'migrated', 0, 0)"),
+    db.prepare("INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at) VALUES ('old-deck', 'migrated', 'Old', '', 'PRIVATE', 0, 0)"),
+    db.prepare("INSERT INTO cards VALUES ('old-card', 'old-deck', 'old-stable-key', 'въпрос?', 'Въпрос?', 'Отговор.', 0, 0, 0)"),
+    db.prepare("INSERT INTO study_events VALUES ('old-event', 'migrated', 'old-session', 'old-card', 'old-deck', 'SHOWN', 1)"),
+    db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
+      .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
+  ]);
+  const bilingual = readFileSync(new URL('../migrations/0003_bilingual.sql', import.meta.url), 'utf8');
+  await db.batch(bilingual.split(';').filter(statement => statement.trim()).map(statement => db.prepare(statement)));
 });
 afterAll(async () => { await runtime?.dispose(); });
 
@@ -56,10 +70,10 @@ class Browser {
     return data.username;
   }
 
-  async import(source: string, target = '', choices = {}) {
-    const preview = await this.ok<Preview>('import/preview', { source, target });
+  async import(source: string, target = '', choices = {}, links = {}) {
+    const preview = await this.ok<Preview>('import/preview', { source, target, links });
     const { id } = await this.ok<{ id: string }>('import/apply', {
-      source, filename: 'fixture', target, choices, visibility: preview.deck?.visibility ?? 'PRIVATE',
+      source, filename: 'fixture', target, choices, links, visibility: preview.deck?.visibility ?? 'PRIVATE',
       previewId: preview.deck?.id ?? null, revision: preview.deck?.revision ?? null,
     });
     return { id, preview };
@@ -68,8 +82,8 @@ class Browser {
   cards(deck: string) { return this.ok<Card[]>('cards?deck=' + deck); }
   home() { return this.ok<Home>('home'); }
   study() { return this.ok<Session>('study'); }
-  action(session: Session, action: string) {
-    return this.ok<Session>('study/action', { id: session.id, version: session.version, action });
+  action(session: Session, action: string, extra = {}) {
+    return this.ok<Session>('study/action', { id: session.id, version: session.version, action, ...extra });
   }
 }
 
@@ -200,5 +214,86 @@ describe('Workers API with real local D1', () => {
     expect((await browser.study()).status).toBe('INVALIDATED');
     await browser.ok('deck/delete', { deck });
     expect((await browser.home()).decks).toEqual([]);
+  });
+
+  it('migrates populated D1 data while keeping card IDs, progress, and the active session', async () => {
+    const browser = new Browser();
+    await browser.login('Migrated');
+    expect((await browser.cards('old-deck'))[0]).toMatchObject({
+      id: 'old-card', translations: { bg: { question: 'Въпрос?', answer: 'Отговор.' } }, times_shown: 1,
+    });
+    expect(await browser.study()).toMatchObject({
+      id: 'old-session', version: 7, revealed: true, language: 'en', card: { id: 'old-card' },
+    });
+  });
+
+  it('imports v1 and v2, explicitly links a partial translation, and preserves logical progress', async () => {
+    const browser = new Browser();
+    await browser.login('Bilingual imports');
+    const { id: deck } = await browser.import('---\ndeckId: bilingual\ntitle: Legacy\n---\n## Какво е ключалка?\n\nОграничава достъпа.');
+    const [legacy] = await browser.cards(deck);
+    const active = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+    await browser.action(active, 'learn');
+    const partial = v2('## card: lock\n' + en);
+    const needsLink = await browser.ok<Preview>('import/preview', { source: partial });
+    expect(needsLink.rows[0]).toMatchObject({ kind: 'link', candidates: [{ id: legacy.id }] });
+    const denied = await browser.request('import/apply', {
+      source: partial, filename: 'fixture', visibility: 'PRIVATE', previewId: deck, revision: needsLink.deck?.revision,
+    });
+    expect(denied.response.status).toBe(400);
+    const result = await browser.import(partial, '', {}, { 0: legacy.id });
+    expect(result.preview.rows[0].kind).toBe('translation');
+    const updated = await browser.cards(deck);
+    expect(updated).toHaveLength(1);
+    expect(updated[0]).toMatchObject({
+      id: legacy.id, import_key: 'lock', times_shown: 1, times_learned: 1, status: 'LEARNED',
+      translations: { bg: { answer: 'Ограничава достъпа.' }, en: { answer: 'It restricts access.' } },
+    });
+    expect((await browser.import(partial)).preview.rows[0].kind).toBe('duplicate');
+    const changedParts = v2('## card: lock\n' + bg + '\n' + en);
+    const changed = await browser.import(changedParts, '', { '0:bg': 'update' });
+    expect(changed.preview.rows.map(row => row.kind)).toEqual(['conflict', 'duplicate']);
+    expect((await browser.cards(deck))[0].translations.bg?.simple).toBe('Един по един.');
+  });
+
+  it('preserves the timer, revealed content, open section and preference across language switches and devices', async () => {
+    const browser = new Browser();
+    const other = new Browser();
+    const guest = new Browser();
+    await browser.login('Bilingual study');
+    await other.login('Bilingual study');
+    await guest.login('Bilingual guest');
+    const { id: deck } = await browser.import(v2('## card: lock\n' + bg + '\n' + en + '\n---\n## card: bg-only\n' +
+      '### bg\n#### question\nСамо български?\n#### answer\nДа.'));
+    const cards = await browser.cards(deck);
+    expect(cards).toHaveLength(2);
+    expect(Object.keys(cards[0].translations)).toEqual(['bg', 'en']);
+    let session = await browser.ok<Session>('study/start', { decks: [deck], settings: { ...defaults, language: 'bg' }, version: 0 });
+    const deadline = session.deadline;
+    session = await browser.action(session, 'language', { language: 'en' });
+    expect(session).toMatchObject({ card: { id: cards[0].id }, language: 'en', deadline, revealed: false });
+    expect((await browser.request('study/action', { id: session.id, version: session.version, action: 'explanation', section: 'simple' })).response.status).toBe(409);
+    session = await browser.action(session, 'show');
+    expect(session).toMatchObject({ revealed: true, deadline: null });
+    session = await browser.action(session, 'explanation', { section: 'simple' });
+    session = await browser.action(session, 'language', { language: 'bg' });
+    expect(session).toMatchObject({ explanation: 'simple', revealed: true, deadline: null, language: 'bg' });
+    expect(selectExplanation(session.card!.translations, session.language, 'simple').content).toBe('Един по един.');
+    expect((await other.home()).settings.language).toBe('bg');
+    expect(await other.study()).toEqual(session);
+    session = await other.action(session, 'explanation', { section: 'example' });
+    expect(selectExplanation(session.card!.translations, session.language, 'example')).toEqual({ language: 'en', content: 'Only one thread enters.' });
+    session = await other.action(session, 'explanation', { section: 'details' });
+    session = await other.action(session, 'language', { language: 'en' });
+    expect((await browser.cards(deck))[0]).toMatchObject({ times_shown: 1, times_failed: 0, simple_opens: 1, example_opens: 1, details_opens: 1 });
+    session = await other.action(session, 'learn');
+    expect(selectTranslation(session.card!.translations, session.language)).toMatchObject({ language: 'bg', fallback: true });
+    await browser.ok('reset', { deck, card: cards[0].id });
+    expect((await browser.cards(deck))[0]).toMatchObject({ status: 'UNLEARNED', times_learned: 1, simple_opens: 1, example_opens: 1, details_opens: 1 });
+    await browser.ok('deck', { id: deck, title: 'Bilingual', visibility: 'SHARED' });
+    const edit = { deck, id: cards[0].id, method: 'save', translations: { en: { question: 'Updated?', answer: 'Yes' } } };
+    expect((await guest.request('card', edit)).response.status).toBe(404);
+    await browser.ok('card', edit);
+    expect((await browser.cards(deck))[0]).toMatchObject({ translations: { bg: { simple: 'Един по един.' }, en: { question: 'Updated?' } }, simple_opens: 1 });
   });
 });

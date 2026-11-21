@@ -1,12 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SubmitEvent } from 'react';
-import ReactMarkdown from 'react-markdown';
+import MarkdownContent from './MarkdownContent';
 import { api, ApiError } from './api';
 import type { Home, Session } from './api';
 import { DeckDetail, DeckEditor } from './Decks';
 import Import from './Import';
 import { defaults } from '../lib/study';
 import type { Settings, StudyAction } from '../lib/study';
+import { languages, sections, selectExplanation, selectTranslation } from '../lib/translations';
+import type { Section } from '../lib/translations';
+
+const explanationLabels: Record<Section, { en: string; bg: string }> = {
+  simple: { en: 'Explain Simply', bg: 'Обясни просто' },
+  example: { en: 'Show Example', bg: 'Дай пример' },
+  details: { en: 'More Details', bg: 'По-подробно' },
+};
 
 type Screen = 'library' | 'import' | 'detail' | 'study';
 
@@ -49,7 +57,6 @@ export default function App() {
   const [settings, setSettings] = useState<Settings>(defaults);
   const [session, setSession] = useState<Session | null>(null);
   const [now, setNow] = useState(Date.now);
-  const [historicalAnswer, setHistoricalAnswer] = useState(false);
   const stage = useRef<HTMLElement>(null);
   const deck = home?.decks.find(item => item.id === detail);
 
@@ -91,22 +98,18 @@ export default function App() {
     }
   }
 
-  async function send(action: StudyAction, current: Session) {
-    const next = await api<Session>('study/action', { action, id: current.id, version: current.version });
+  async function send(action: StudyAction, current: Session, values?: object) {
+    const next = await api<Session>('study/action', { action, id: current.id, version: current.version, ...values });
     setSession(next);
-    setHistoricalAnswer(false);
+    if (action === 'language') setSettings(previous => ({ ...previous, language: next.language }));
     setNow(Date.now());
     if (next.status !== 'ACTIVE') await reload();
     return next;
   }
 
-  function studyAction(action: StudyAction) {
+  function studyAction(action: StudyAction, values?: object) {
     if (session?.status !== 'ACTIVE') return;
-    if (session.historical && action === 'show') {
-      setHistoricalAnswer(true);
-      return;
-    }
-    void run(async () => { await send(action, session); });
+    void run(async () => { await send(action, session, values); });
   }
 
   function exitStudy() {
@@ -180,6 +183,7 @@ export default function App() {
       let saved = await api<Session | null>('study');
       if (saved?.status === 'ACTIVE' && saved.paused) saved = await send('resume', saved);
       setSession(saved);
+      if (saved) setSettings(previous => ({ ...previous, language: saved.language }));
       setNow(Date.now());
       setScreen('study');
     });
@@ -188,6 +192,9 @@ export default function App() {
   const selectedDecks = home?.decks.filter(item => selected.includes(item.id)) ?? [];
   const total = selectedDecks.reduce((sum, item) => sum + item.total, 0);
   const learned = selectedDecks.reduce((sum, item) => sum + item.learned, 0);
+  const translations = session?.card?.translations ?? {};
+  const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
+  const explanation = session?.explanation && selectExplanation(translations, selectedLanguage.language, session.explanation);
 
   return <div className="shell">
     <header className="top">
@@ -252,6 +259,10 @@ export default function App() {
           {session?.status === 'ACTIVE' && <button className="primary" disabled={busy} onClick={resume}>Resume session</button>}
           {session?.status === 'INVALIDATED' && <p className="muted">The previous session ended after a deck or progress change.</p>}
           <p>{total} cards selected · {learned} learned · {total - learned} remaining</p>
+          <div className="row" role="group" aria-label="Study language">
+            {languages.map(language => <button key={language} aria-pressed={settings.language === language}
+              onClick={() => setSettings({ ...settings, language })}>{language === 'bg' ? 'Български' : 'English'}</button>)}
+          </div>
           <label>Question order<select value={settings.order} onChange={event => setSettings({ ...settings, order: event.target.value as Settings['order'] })}>
             <option value="SEQUENTIAL">Deck order</option><option value="RANDOM">Random</option>
           </select></label>
@@ -266,7 +277,6 @@ export default function App() {
                 version: session?.version ?? 0,
               });
               setSession(next);
-              setHistoricalAnswer(false);
               setNow(Date.now());
               setScreen('study');
             });
@@ -278,6 +288,10 @@ export default function App() {
           <div className="between">
             <span>{session.remaining} remaining {session.historical && '· History'}</span>
             <div className="row">
+              <div className="row language-controls" role="group" aria-label="Study language">
+                {languages.map(language => <button key={language} aria-disabled={busy} aria-pressed={session.language === language}
+                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}</button>)}
+              </div>
               {deadline !== null && deadline !== undefined && <span className="timer" aria-label="Seconds remaining">{Math.max(0, Math.ceil((deadline - now) / 1000))}s</span>}
               {session.paused && <button disabled={busy} onClick={() => studyAction('resume')}>Resume timer</button>}
               {stage.current?.requestFullscreen && <button onClick={() => void run(async () => {
@@ -292,11 +306,28 @@ export default function App() {
             setNow(Date.now());
           })}>Reload session</button>}
           <p className="muted">{session.card.title}</p>
-          <h1>{session.card.question}</h1>
-          {(session.revealed || historicalAnswer) && <div className="answer markdown"><ReactMarkdown skipHtml>{session.card.answer}</ReactMarkdown></div>}
+          {selectedLanguage.fallback && <p className="muted" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
+          <div className="study-question markdown" role="heading" aria-level={1} lang={selectedLanguage.language}>
+            <MarkdownContent>{selectedLanguage.translation?.question}</MarkdownContent>
+          </div>
+          {session.revealed && <>
+            <div className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent></div>
+            <div className="row" role="group" aria-label="Explanations">
+              {sections.map(section => {
+                const available = selectExplanation(translations, selectedLanguage.language, section);
+                return available.content && <button key={section} aria-disabled={busy} aria-expanded={session.explanation === section}
+                  onClick={() => studyAction('explanation', { section })}>
+                  {explanationLabels[section][selectedLanguage.language]}{available.language !== selectedLanguage.language ? ' · ' + available.language.toUpperCase() : ''}
+                </button>;
+              })}
+            </div>
+            {explanation && explanation.content && <div className="answer markdown" lang={explanation.language}>
+              <MarkdownContent>{explanation.content}</MarkdownContent>
+            </div>}
+          </>}
           <div className="row actions">
             <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Previous</button>
-            <button className="primary" disabled={busy || session.revealed || historicalAnswer} onClick={() => studyAction('show')}>Show answer</button>
+            <button className="primary" disabled={busy || session.revealed} onClick={() => studyAction('show')}>Show answer</button>
             <button disabled={busy || session.historical} onClick={() => studyAction('learn')}>Learned</button>
             <button disabled={busy || session.historical} onClick={() => studyAction('repeat')}>Repeat</button>
             <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
