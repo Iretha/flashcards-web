@@ -60,6 +60,74 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
 .study h1, .study-question { font-size: clamp(1.85rem, 5vw, 4.4rem); line-height: 1.18; font-weight: 730; }
 .study .answer { font-size: clamp(1.1rem, 2.6vw, 2rem); border-left: 4px solid var(--accent); padding: .7rem 1rem; }
 .actions button { min-height: 56px; }
+.study .study-sidebar {
+  position: fixed;
+  z-index: 10;
+  top: 50%;
+  left: 0;
+  display: flex;
+  align-items: center;
+  margin: 0;
+  transform: translateY(-50%);
+}
+.study-sidebar .study-sidebar-tab {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 24px;
+  min-height: 48px;
+  padding: 0;
+  border-radius: 0 .55rem .55rem 0;
+}
+.study-sidebar-tab svg { width: 18px; }
+.study-sidebar-actions {
+  padding: 4px;
+  border: 1px solid var(--line);
+  border-radius: .65rem;
+  background: var(--surface);
+}
+.study-sidebar .study-sidebar-action {
+  position: relative;
+  display: grid;
+  place-items: center;
+  width: 46px;
+  height: 46px;
+  min-height: 0;
+  padding: 0;
+}
+.study-sidebar-action + .study-sidebar-action { margin-top: 4px; }
+.study-sidebar-action[aria-disabled=true] { opacity: 1; color: var(--muted); }
+.study-sidebar-action[aria-disabled=true] svg { opacity: .55; }
+.study-sidebar-tooltip {
+  position: absolute;
+  top: 50%;
+  left: calc(100% + 10px);
+  transform: translateY(-50%);
+  width: max-content;
+  max-width: calc(100vw - 96px);
+  padding: 5px 9px;
+  border: 1px solid var(--line);
+  border-radius: .4rem;
+  background: #111426;
+  color: #f2f4ff;
+  font-size: 14px;
+  line-height: 1.25;
+  overflow-wrap: break-word;
+  pointer-events: none;
+  visibility: hidden;
+}
+.study-sidebar-tab[aria-expanded=true] .study-sidebar-tooltip {
+  left: calc(100% + 66px);
+  max-width: calc(100vw - 106px);
+}
+.study-sidebar[data-pointer-hover] button:hover > .study-sidebar-tooltip {
+  visibility: visible;
+  transition: visibility 0s linear 450ms;
+}
+.study-sidebar button:focus-visible > .study-sidebar-tooltip { visibility: visible; transition: none; }
+@media (max-height: 290px) {
+  .study-sidebar-action + .study-sidebar-action { margin-top: 0; }
+}
 .timer { font-weight: 750; color: var(--accent); min-width: 3ch; }
 .markdown > * + * { margin-top: .65em; }
 .markdown ul { list-style: disc; padding-left: 1.4em; }

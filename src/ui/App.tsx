@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import type { SubmitEvent } from 'react';
 import MarkdownContent from './MarkdownContent';
+import StudySidebar from './StudySidebar';
 import { api, ApiError, signIn } from './api';
 import type { Home, Session } from './api';
 import { DeckDetail, DeckEditor } from './Decks';
@@ -57,6 +58,7 @@ export default function App() {
   const [create, setCreate] = useState(false);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [session, setSession] = useState<Session | null>(null);
+  const [hiddenAnswer, setHiddenAnswer] = useState<Session | null>(null);
   const [now, setNow] = useState(Date.now);
   const stage = useRef<HTMLElement>(null);
   const deck = home?.decks.find(item => item.id === detail);
@@ -112,7 +114,11 @@ export default function App() {
   }
 
   function studyAction(action: StudyAction, values?: object) {
-    if (session?.status !== 'ACTIVE') return;
+    if (session?.status !== 'ACTIVE' || inFlight.current) return;
+    if (action === 'show' && hiddenAnswer === session) {
+      setHiddenAnswer(null);
+      return;
+    }
     void run(async () => { await send(action, session, values); });
   }
 
@@ -208,6 +214,7 @@ export default function App() {
   const translations = session?.card?.translations ?? {};
   const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
   const explanation = session?.explanation && selectExplanation(translations, selectedLanguage.language, session.explanation);
+  const answerVisible = Boolean(session?.revealed && hiddenAnswer !== session);
 
   return <div className="shell">
     <header className="top">
@@ -323,7 +330,7 @@ export default function App() {
           <div className="study-question markdown" role="heading" aria-level={1} lang={selectedLanguage.language}>
             <MarkdownContent>{selectedLanguage.translation?.question}</MarkdownContent>
           </div>
-          {session.revealed && <>
+          {answerVisible && <>
             <div className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent></div>
             <div className="row" role="group" aria-label="Explanations">
               {sections.map(section => {
@@ -340,11 +347,14 @@ export default function App() {
           </>}
           <div className="row actions">
             <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Previous</button>
-            <button className="primary" disabled={busy || session.revealed} onClick={() => studyAction('show')}>Show answer</button>
+            <button className="primary" disabled={busy || answerVisible} onClick={() => studyAction('show')}>Show answer</button>
             <button disabled={busy || session.historical} onClick={() => studyAction('learn')}>Learned</button>
             <button disabled={busy || session.historical} onClick={() => studyAction('repeat')}>Repeat</button>
             <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
           </div>
+          <StudySidebar busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
+            answerVisible={answerVisible} onAction={studyAction}
+            onToggleAnswer={() => answerVisible ? setHiddenAnswer(session) : studyAction('show')} />
         </> : <>
           <h1>{session?.status === 'COMPLETE' ? 'Session complete' : 'Session unavailable'}</h1>
           <button onClick={exitStudy}>Back to library</button>
