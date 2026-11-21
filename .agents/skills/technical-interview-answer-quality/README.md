@@ -38,13 +38,14 @@ B Educator, C Learner. Не редактирай файла; върни проб
 
 Задължителни логически полета: `id`, `topic`, `question`, `answer`, `provenance.type`.
 Незадължителни: `questionDetails`, `answerReferences`; `provenance.sourceName` и
-`provenance.sourceUrl` са задължителни при sourced/mixed. Окончателната сериализация,
-метаданните за преформулиране и структурата на references предстоят в отделната template задача.
+`provenance.sourceUrl` са задължителни при sourced/mixed. Предложената Markdown v3 сериализация е описана в template-а, но все още не е
+поддържана от importer-а. Метаданните за преформулиране и структурата на references
+трябва да се финализират при реализацията.
 Question Details и Answer са Markdown. Кодът за анализ и provenance се виждат преди отговора.
 Примерите са контекстуални, без отделен задължителен UI елемент.
 
-Това са **draft примери**, не import синтаксис. Действащият [v2 template](../../../docs/FLASHCARDS-IMPORT-TEMPLATE.md)
-не реализира новия договор. Не добавяй неподдържани полета към import файл и не представяй draft като готов за import.
+Това са **draft примери**, не import синтаксис. [Template документът](../../../docs/FLASHCARDS-IMPORT-TEMPLATE.md) вече описва предложен v3 договор,
+но действащият importer все още е v2 и не го реализира. Не добавяй неподдържани полета към import файл и не представяй draft като готов за import.
 
 ## Концептуална карта, AI Generated, без необходимост от код
 
