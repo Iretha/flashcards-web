@@ -1,4 +1,5 @@
 import { parseMarkdown } from '../lib/markdown';
+import { MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR } from '../lib/import-limits';
 import CardSources from './CardSources';
 import { useState } from 'react';
 import type { Deck, Preview } from './api';
@@ -21,7 +22,7 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
     <label>Markdown files<input type="file" accept=".md,.markdown,text/markdown" multiple disabled={busy} onChange={event => {
       const selected = Array.from(event.currentTarget.files ?? []);
       void run(async () => {
-        if (selected.some(file => file.size > 1_500_000)) throw new Error('Each Markdown file must be under 1.5 MB.');
+        if (selected.some(file => file.size > MAX_MARKDOWN_BYTES)) throw new Error(MARKDOWN_SIZE_ERROR);
         const entries = await Promise.all(selected.map(async (file, index): Promise<FileDraft> => {
           const source = await file.text();
           const { metadata } = parseMarkdown(source);

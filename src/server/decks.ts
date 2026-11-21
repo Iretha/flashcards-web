@@ -1,4 +1,5 @@
 import { validateMetadata } from '../lib/metadata';
+import { MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR } from '../lib/import-limits';
 import type { CardMetadata } from '../lib/metadata';
 import { parseMarkdown, questionKey } from '../lib/markdown';
 import type { ImportCard } from '../lib/markdown';
@@ -148,7 +149,8 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
 }
 
 async function prepareImport(db: D1Database, user: string, input: Record<string, unknown>) {
-  const source = string(input.source, 'Markdown file', 500_000);
+  check(typeof input.source !== 'string' || new TextEncoder().encode(input.source).byteLength <= MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR);
+  const source = string(input.source, 'Markdown file', MAX_MARKDOWN_BYTES);
   let parsed: ReturnType<typeof parseMarkdown>;
   try { parsed = parseMarkdown(source); }
   catch (error) { throw new HttpError(400, error instanceof Error ? error.message : 'Invalid Markdown frontmatter.'); }
