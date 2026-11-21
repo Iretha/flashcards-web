@@ -3,7 +3,7 @@
 **Version:** 1.0  
 **Status:** Approved product requirements; implementation in progress  
 **Repository:** `Iretha/flashcards-web`  
-**Card languages:** Bulgarian and English. Application controls are primarily in English.
+**Language:** Bulgarian (UI may support additional languages later)
 
 ## 1. Purpose and scope
 
@@ -51,7 +51,6 @@ A deck contains a title, optional description, ordered cards, an owner, and visi
 - Import can create a new deck or add/update content in an existing deck.
 - A stable deck identifier in file metadata is recommended, but the user may explicitly choose an existing destination deck when it is absent.
 - Each card has a question and a Markdown answer; multiline text, lists, code blocks, and formatting must be preserved.
-- Legacy Markdown v1 remains valid. For example:
 
 ```md
 ---
@@ -73,8 +72,6 @@ A relation establishing ordering and visibility guarantees.
 ```
 
 - The parser must distinguish YAML frontmatter, card separators, and horizontal rules/code fences within answers.
-- In v1 a heading `##` starts a question. In v2 a heading `## card: <key>` starts a logical card with BG and/or EN sections.
-- Import preview reports new and existing cards, added translations, selected translation updates, duplicates, conflicts, and invalid cards.
 - Duplicates are checked **within the destination deck only**; the same question is allowed in different decks.
 - Question matching normalizes Unicode, case, and whitespace.
 - Exact duplicates are skipped. Existing cards retain identity and progress.
@@ -89,7 +86,6 @@ A relation establishing ordering and visibility guarantees.
 - Default selection is **unlearned cards**.
 - Choose **SEQUENTIAL** (initial presentations follow source order) or **RANDOM**.
 - Timer can be enabled or disabled on the setup screen; when enabled, default timeout is **30 seconds**, editable by the user.
-- Choose Bulgarian or English. Initialize the choice from the most recently used language.
 - Show selected, learned, and remaining counts.
 - If a session is unfinished, offer to resume it or start a new one.
 
@@ -144,12 +140,10 @@ The full card list supports sorting by source order, hardest first, easiest firs
 
 **Reset decision (approved):**
 - Reset a card or all cards in a deck to UNLEARNED.
-- **Do not erase** presentation counts, failure counts, learning counts, explanation counters, or history.
 - Ensure active study sessions are reconciled or invalidated when reset changes eligibility.
 
 ## 9. Session persistence and synchronization
 
-- Save selected decks, ordering, queue/scheduler state, current card, back-navigation history, timer settings, answer visibility, preferred study language, open explanation, and progress.
 - Resume after browser refresh, browser closure or switching between PC, phone and TV.
 - Server-side D1 is the durable source of truth; local buffering/cache may improve responsiveness.
 - Mutations must be idempotent or otherwise safe against retries, so a duplicated request does not inflate counts.
@@ -215,19 +209,3 @@ The full card list supports sorting by source order, hardest first, easiest firs
 ## 15. Implementation notes
 
 This document records product decisions made before implementation. The coding agent may choose internal schema, endpoints, component boundaries, scheduler constants and minor UI details as long as these requirements hold. If an implementation limitation forces a change to an approved behavior, surface it explicitly rather than silently changing the product contract.
-
-## 16. Bilingual cards and progressive explanations
-
-Each card has a single identity and position. It can contain Bulgarian, English, or both. Each available language has a question and an answer. The simple explanation, practical example, and detailed explanation are optional. Progress, scheduling, and presentation history belong to the card. The editor provides a tab per language.
-
-The study setup starts with the user's last language preference, or English for a new user. The study screen supports BG and EN before and after the answer is shown. Language changes preserve the current card, revealed answer, open explanation, and timer state. The active session stores the language for resume across devices. When a translation is missing, the UI identifies the language it displays. It labels explanations sourced from the other language.
-
-The explanation controls become available after Show Answer. One explanation can be open at a time. Opening a section increments its own counter. Closing it or changing language does not increment the counter. Reset preserves all three counters along with the original presentation statistics.
-
-## Import identity and migration
-
-Markdown v1 remains supported. Legacy questions containing Bulgarian Cyrillic letters default to BG. Other legacy questions default to EN. Existing cards retain their IDs and progress through the D1 migration.
-
-Markdown v2 identifies cards by a key unique within the deck. On the first v2 import, a single existing unkeyed card with a matching normalized question can acquire the incoming key. If the target cannot be identified unambiguously, the import preview asks the user to link or create the card when applicable. After linking, imports can add a language by supplying only that language under the same key. Changed translations require an explicit decision. Missing languages and omitted explanation fields remain stored. An explicitly empty explanation heading clears that field when the update is accepted.
-
-See the [Markdown import template](FLASHCARDS-IMPORT-TEMPLATE.md) for the canonical v2 deck.

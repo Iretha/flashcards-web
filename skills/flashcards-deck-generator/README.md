@@ -1,24 +1,26 @@
-# Flashcards Deck Generator
+# Flashcards Deck Generator skill
 
-Use this skill to produce import-ready Markdown v2 decks. It generates Bulgarian and English versions of each card by default, with a main answer, a simple explanation, and a practical example in each language. Detailed explanations are optional.
+Reusable agent skill for producing Markdown files compatible with the Flashcards app.
 
-Add the folder to your agent's skill directory or attach its `SKILL.md` instructions to the conversation.
+## Use in ChatGPT / coding agents
 
-Provide the subject, audience, and target number of cards. Attach the existing Markdown when adding concepts or translations so the generator can preserve the deck ID and card keys. Ask for BG-only or EN-only if needed.
+Add the folder `skills/flashcards-deck-generator` to an agent's supported skill directory or attach the `SKILL.md` instructions to the agent. The file being present in GitHub **does not automatically install or activate it** in every ChatGPT conversation.
 
-Download the resulting `.md` file and use **Import Markdown** in Flashcards. Review matches and conflicts before applying it.
+Example requests:
 
-- [Import template](../../docs/FLASHCARDS-IMPORT-TEMPLATE.md)
-- [Example prompts](../../docs/EXAMPLE-PROMPTS.md)
+- `Използвай flashcards-deck-generator: 40 въпроса за Java Memory Model, Senior, на български.`
+- `Използвай flashcards-deck-generator: добави 15 нови въпроса към deckId java-memory-model.`
+
+The generated output should be an actual downloadable UTF-8 `.md` file, not just a chat response. The canonical import example lives at `docs/FLASHCARDS-IMPORT-TEMPLATE.md`.
 
 ## Команда за копиране
 
 ```text
-Използвай flashcards-deck-generator. Генерирай 40 BG и EN карти за Java Memory Model, Senior ниво, и създай .md файл за импорт.
+Използвай flashcards-deck-generator: 40 въпроса за Java Memory Model, Senior ниво, на български.
 ```
 
 За допълване на съществуващ дек:
 
 ```text
-Използвай flashcards-deck-generator. Добави 15 нови карти към приложения дек java-memory-model. Запази deckId, използвай нови card keys само за новите концепции и създай отделен .md файл.
+Използвай flashcards-deck-generator: добави 15 нови въпроса към deckId java-memory-model, без дубликати, и създай готов .md файл за импорт.
 ```

@@ -1,17 +1,31 @@
-# Example prompts
+# Flashcards — готови промптове за копиране
 
-## New bilingual deck
+## 1. Създаване на нов дек
 
-> Generate 15 flashcards on the Java Memory Model for developers who know Java syntax. Use Markdown v2 with BG and EN for every card. Include a concise answer, simple explanation, and Java example in each language. Include detailed explanations where useful. Deliver a downloadable .md file with deckId java-memory-model.
+Генерирай 40 флашкарти за Senior Java интервю на тема **Java Concurrency**, на български език.
 
-## English-only deck
+Прочети и използвай точно темплейта от:
+https://github.com/Iretha/flashcards-web/blob/main/docs/FLASHCARDS-IMPORT-TEMPLATE.md
 
-> Create eight English-only Markdown v2 cards for beginners learning SQL joins. Include a short answer, a plain-language explanation, and a practical example per card. Deliver a downloadable .md file.
+Спазвай структурата на Markdown файла, включително YAML frontmatter (`deckId`, `title`, `description`), `##` за всеки въпрос и `---` между картите.
 
-## Add Bulgarian translations
+Въпросите да са разнообразни, без дублиране. Отговорите да са ясни, точни и сравнително кратки, подходящи за преговор на телевизор. Добавяй кратки Java примери само когато помагат.
 
-> Add Bulgarian translations to the cards in the attached deck. Reuse its deckId and each existing card key. Return only the new BG sections in an import-ready Markdown v2 file.
+**Създай готов за изтегляне UTF-8 файл `java-concurrency.md`**, който мога директно да импортирам в приложението Flashcards. Не се ограничавай до показване на текста в чата.
 
-## Extend a deck
+## 2. Допълване на съществуващ дек
 
-> Add five new cards on atomic counters to the attached deck. Keep its deckId and preserve the established keys for any existing concepts you update. Return a Markdown v2 file with the additions and updates.
+Добави **15 нови флашкарти** към съществуващия дек **Java Memory Model** с `deckId: java-memory-model`, на български език.
+
+Прочети и използвай точно темплейта от:
+https://github.com/Iretha/flashcards-web/blob/main/docs/FLASHCARDS-IMPORT-TEMPLATE.md
+
+**Запази същия `deckId: java-memory-model`**. Генерирай само новите въпроси; не повтаряй вече създадените въпроси, ако са налични в контекста или предоставен файл. Ако не разполагаш със съществуващите въпроси, посочи, че не можеш да гарантираш липса на дублиране.
+
+Използвай `##` за всеки въпрос и `---` между картите. Отговорите да са ясни, точни и кратки, с Java примери само при нужда.
+
+**Създай готов за изтегляне UTF-8 файл `java-memory-model-extra.md`**, който мога да импортирам в съществуващия дек, без да загубя прогреса си. Не се ограничавай до показване на текста в чата.
+
+---
+
+**Употреба:** Копирай съответния промпт и промени темата, броя карти, името на файла и `deckId` според нуждите си.
