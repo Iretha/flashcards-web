@@ -6,16 +6,24 @@ formatVersion: 3
 # PROPOSED v3 CONTRACT — not importable until the application parser, validation and rendering support v3.
 # One stable card key connects BG and EN variants. One file represents one deck.
 # Required per card: provenance; at least one language with question and answer.
+# Required: cardType (question | coding_task), topic, occurrenceCount (integer >= 0), provenance.type.
 # Optional: interviewPriority, difficulty (integers 1–5), questionDetails, answerReferences.
 # questionDetails and answer are Markdown; examples belong in answer, task code in questionDetails.
 # provenance: sourced (question found in source), mixed (adapted from source), generated (AI-created).
-# sourced/mixed require a verified sourceName and sourceUrl. Never invent a source.
+# sourced/mixed require at least one verified provenance.sources entry with sourceName and sourceUrl.
+# Each source may include company, location (job location), interviewLocation (only when verified), publishedAt (YYYY-MM-DD when known).
+# occurrenceCount counts independently documented interview-question occurrences, NOT study repetitions.
+# occurrenceCount must equal the number of independently evidenced interview occurrences in provenance.sources; other references do not count; deduplicate reposts.
+# generated cards without documented occurrences use occurrenceCount: 0. Never invent sources, dates, or locations.
 # answerReferences verify answer claims and are NOT evidence of the question's origin.
 # This document is a format proposal; field syntax must be aligned with the parser before activation.
 ---
 
 ## card: volatile-atomicity
 
+### cardType: question
+### topic: Java Memory Model
+### occurrenceCount: 0
 ### interviewPriority: 5
 
 ### difficulty: 3
@@ -75,6 +83,9 @@ If both threads read `5`, both may write `6` rather than `7`. Use `AtomicInteger
 
 ## card: compile-widening
 
+### cardType: question
+### topic: Java Language
+### occurrenceCount: 0
 ### interviewPriority: 3
 
 ### difficulty: 2
@@ -136,14 +147,18 @@ Output:
 
 ## card: happens-before
 
+### cardType: question
+### topic: Java Memory Model
+### occurrenceCount: 0
 ### interviewPriority: 4
 
 ### difficulty: 5
 
 ### provenance
 type: mixed
-sourceName: Java Language Specification §17.4.5
-sourceUrl: https://docs.oracle.com/javase/specs/jls/se25/html/jls-17.html#jls-17.4.5
+sources:
+  - sourceName: Java Language Specification §17.4.5
+    sourceUrl: https://docs.oracle.com/javase/specs/jls/se25/html/jls-17.html#jls-17.4.5
 
 ### answerReferences
 - title: Java Language Specification §17.4.5 — Happens-before Order
@@ -168,3 +183,47 @@ What does `happens-before` mean in the Java Memory Model?
 `happens-before` is a relationship between actions establishing visibility and ordering guarantees. If A happens-before B, the effects of A are visible to B under the Java Memory Model rules.
 
 The relation includes program order within a thread and synchronization rules, such as a write to a `volatile` field before a subsequent read of that field in the synchronization order. It is transitive.
+
+
+---
+
+## card: thread-safe-counter-task
+
+### cardType: coding_task
+### topic: Java Concurrency
+### occurrenceCount: 0
+### interviewPriority: 4
+### difficulty: 3
+
+### provenance
+type: generated
+sources: []
+
+### en
+
+#### question
+Implement a thread-safe counter.
+
+#### questionDetails
+Implement `increment()` and `get()` so concurrent increments are not lost.
+
+```java
+interface Counter {
+    void increment();
+    int get();
+}
+```
+
+#### answer
+Use `AtomicInteger` to perform atomic increments.
+
+```java
+import java.util.concurrent.atomic.AtomicInteger;
+
+class AtomicCounter implements Counter {
+    private final AtomicInteger count = new AtomicInteger();
+
+    public void increment() { count.incrementAndGet(); }
+    public int get() { return count.get(); }
+}
+```
