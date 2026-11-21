@@ -107,6 +107,16 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
 .study .study-note { font-size: max(11pt, .925rem); line-height: 1.35; }
 .study.stack > :is(.markdown, .study-note) { margin-top: .5rem; }
 .actions button { min-height: 56px; }
+.study-navigation { display: flex; justify-content: space-between; align-items: center; gap: .75rem; }
+.study-navigation-next { display: flex; align-items: center; gap: .75rem; }
+.answer-toggle { display: inline-flex; align-items: center; gap: .65rem; position: relative; cursor: pointer; min-height: 44px; align-self: flex-start; }
+.answer-toggle > input { position: absolute; opacity: 0; width: 100%; height: 100%; margin: 0; cursor: pointer; }
+.answer-toggle-track { width: 44px; height: 24px; border-radius: 24px; background: #505a70; border: 1px solid #8290aa; flex: none; }
+.answer-toggle-track::after { content: ''; display: block; width: 18px; height: 18px; margin: 2px; border-radius: 50%; background: #fff; }
+.answer-toggle > input:checked + .answer-toggle-track { background: var(--accent); }
+.answer-toggle > input:checked + .answer-toggle-track::after { transform: translateX(20px); background: #18202a; }
+.answer-toggle > input:focus-visible + .answer-toggle-track { outline: 2px solid var(--accent); outline-offset: 3px; }
+.answer-toggle:has(input:disabled) { opacity: .5; cursor: default; }
 .study .study-sidebar {
   position: fixed;
   z-index: 10;
