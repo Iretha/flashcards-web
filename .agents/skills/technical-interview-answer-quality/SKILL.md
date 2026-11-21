@@ -1,144 +1,71 @@
----
+﻿---
 name: technical-interview-answer-quality
-description: Generate, rewrite, and critically review technical interview flashcards with expert accuracy, learner clarity, teaching quality, and strict question-answer alignment. Supports flashcards-web Markdown format v2.
+description: Generate, rewrite and review Senior Java interview flashcards for technical accuracy, active recall, question-answer alignment and traceable question provenance.
 ---
 
 # Technical Interview Answer Quality
 
-## Purpose
-Produce technically correct, complete, understandable interview answers that directly answer their questions. Apply to Java, JVM, Spring, SQL, concurrency, architecture and other technical subjects. Use the same quality gate for newly generated cards and revisions.
+## Scope and compatibility
 
-## Mandatory workflow
+Act as a Senior Java engineer (Java, JVM, concurrency, Spring and backend), technical interviewer, computer science educator, learning experience designer and critical QA reviewer. Apply these rules to every new or reviewed card, in Bulgarian or English.
 
-1. **Identify the exact question.** Determine what is being asked, the expected scope, and whether the question asks for a definition, comparison, mechanism, explanation of why, code outcome, diagnosis, trade-off or design decision. List the essential points that a correct answer must address. Do not silently answer a related question instead.
-2. **Research and verify.** Prefer authoritative, version-appropriate primary sources (language specifications, official API documentation, framework documentation). Distinguish normative guarantees from implementation details, common behavior and assumptions. For version-sensitive claims, identify the applicable version. If reliable verification is unavailable, qualify the uncertainty rather than inventing guarantees or citations.
-3. **Draft a natural senior-level answer.** Start with a direct answer in the first sentence. Explain the mechanism and its consequence in coherent prose, usually 3–6 sentences, extending only when needed. Use correct terminology but explain non-obvious terms. Include limitations, counterexamples and trade-offs when material to the question. Do not use telegraphic fragments, slash-heavy shorthand, arrow chains or keyword lists as a substitute for explanation.
-4. **Create teaching layers.** `simple` should translate the core idea into accessible language without introducing false analogies. `example` must concretely demonstrate the claim, preferably with minimal valid code where useful; state expected versus merely possible outcomes. `details` should add genuine nuance, caveats, edge cases or version context rather than repeating `answer`.
-5. **Run four independent review passes:**
-   - **Software engineering expert:** Is every claim correct? Are guarantees, assumptions, concurrency properties, API semantics and edge cases distinguished? Would the answer withstand senior-level follow-up questions?
-   - **Learner:** Can the reader understand the answer without guessing missing logical steps? Are unfamiliar terms explained and is the example illuminating rather than distracting?
-   - **Teacher:** Does the explanation progress from direct answer to reasoning to practical implication? Does it build an accurate mental model without oversimplification or unnecessary detail?
-   - **Question-answer alignment examiner:** Does the answer address the *exact* question and every essential sub-question? Is it a direct answer rather than a nearby lecture? Does the example support the answer, and do `simple` and `details` agree with it?
-6. **Revise and recheck.** Any failed criterion requires a rewrite of the relevant section, followed by a new review of alignment and technical correctness. Do not mark a card accepted until all gates pass.
+Read the repository instructions, relevant existing cards and `docs/FLASHCARDS-IMPORT-TEMPLATE.md` before file work. The logical contract below describes future content, NOT a production schema or an import format. Do not change the app, schema, production template, migrate cards or recreate decks as part of updating this skill. Those require a separate explicit task.
 
-## Question-answer alignment test (mandatory per card)
+Until the template supports the contract, present new-contract content as a clearly labeled draft, not import-ready v2. Do not invent importer fields, hide question code in answers, or discard provenance to make a file importable. For explicitly requested legacy edits, preserve the actual schema, stable deckId/card keys, omitted languages and unaffected fields; report unsupported requirements separately. Legacy `simple/example/details` are compatibility fields, not mandatory learning layers for future cards.
 
-Before accepting an answer, explicitly determine internally:
-- What is the one-sentence direct response to this particular question?
-- Which key concepts or distinctions must appear for the answer to be complete?
-- Does the first sentence answer it, or merely introduce the subject?
-- Are all parts of a multi-part question addressed?
-- If the question asks **why**, is there a causal explanation? If it asks **how**, is there a mechanism? If it asks **when**, are the conditions stated? If it asks **compare**, are both sides and the deciding difference covered? If it asks about code, is the result justified and uncertainty handled?
-- Would the answer still seem appropriate if attached to a different, nearby question? If yes, it may be too generic: make it specific.
-- Does the example actually demonstrate the claim under the stated assumptions?
-- Are `answer`, `simple`, `example`, and `details` mutually consistent?
+## Logical content contract
 
-Reject when the answer is factually true but does not resolve the question, omits an essential condition, overstates a guarantee, relies on an unspoken assumption, or replaces explanation with jargon.
+Final field names and serialization remain to be decided in the template task:
 
-## Output style
+| Field | Requirement |
+| --- | --- |
+| `id` | Required, stable and unique within its deck |
+| `topic` | Required, specific topic |
+| `question` | Required Question Title: short, concrete, standalone question |
+| `questionDetails` | Optional Markdown prompt context, code, task, inputs, constraints or tables |
+| `answer` | Required Markdown direct answer, brief reasoning and essential qualifications |
+| `provenance.type` | Required: `sourced`, `generated` or `mixed` |
+| `provenance.sourceName` | Required for sourced/mixed; otherwise optional |
+| `provenance.sourceUrl` | Required real URL for sourced/mixed; otherwise optional |
+| `answerReferences` | Optional technical verification references, separate from provenance |
 
-- Write natural, complete sentences suitable for spoken senior-level interviews.
-- Default length of `answer`: approximately 70–130 words when needed, not a rigid quota; concise questions may need less. Accuracy and completeness take precedence over word count.
-- Put the decisive answer first; then the reasoning and practical significance.
-- Prefer clear paragraphs over compressed notes and excessive bullets.
-- Avoid vague claims such as “always thread-safe”, “guarantees latest value” or “prevents all reordering” unless rigorously justified.
-- Separate guarantees from examples and implementation-specific observations.
-- Explain each important technical term on first use within the relevant learning layer.
-- Avoid duplicating `answer` verbatim in `simple` or `details`.
-- If bilingual, ensure both languages express equivalent claims, not merely similar topics. Review each language independently for accuracy and alignment.
-- Preserve original questions and card IDs unless the user authorizes correcting a demonstrably incorrect or misleading question. Report any question changes.
+Provenance must be visible on the question side in the future UI. Question Details must be visible before revealing the answer and must not disclose the solution. For compile/output/code-analysis questions, put all code needed to solve the task there. Keep long context out of the title.
 
-## Flashcards-web Markdown v2
+Start the answer with the decisive response to the exact question, then explain why and include material conditions. Answer why/how/when/comparison questions with the corresponding cause/mechanism/conditions/distinction. A true but merely related explanation fails alignment. Prefer natural spoken interview prose; no fixed word quota, filler introductions, conclusions, repetition or keyword-only answers. Preserve necessary nuance over brevity.
 
-When working with flashcards-web imports, read the current repository template `docs/FLASHCARDS-IMPORT-TEMPLATE.md` before generating or modifying files. Preserve the actual schema rather than assuming it is unchanged. At the time of this skill's creation, the structure is:
+Examples are optional and integrated: analysis input goes in Question Details; explanatory code goes in Answer. Do not require code on every card or repeat prompt code without a reason. Use minimal correct snippets, state their execution context and assumptions, and distinguish guaranteed output from possible outcomes. Use inline code for identifiers and keywords, fenced `java` code, `text` output, short lists and comparison tables only when useful. Prefer Markdown over HTML or decoration.
 
-```markdown
----
-deckId: topic-id
-title: Topic title
-description: Description
-formatVersion: 2
----
+## Research and technical accuracy
 
-## card: stable-card-key
+Verify every technical claim against version-appropriate sources, preferring JLS, JVMS, official Java API, OpenJDK/JEPs, official Spring documentation, then other reliable technical sources. Check the current stable Java release when generating; do not freeze “modern Java” to a release in a README example. State target versions and preview/implementation conditions where relevant. A JEP proposal alone does not prove a feature shipped.
 
-### interviewPriority: 1
+Distinguish specification guarantees from typical behavior and JVM implementation; compile-time from runtime; visibility from atomicity; thread safety from synchronization; race condition from data race; happens-before from wall-clock order; framework from language behavior. Avoid absolute claims with material exceptions.
 
-### difficulty: 1
+For JMM: volatile does not make compound operations atomic or referenced objects thread-safe; monitor edges require the same monitor; safe publication differs from subsequent mutation; final-field initialization has conditions including construction escape; sleep is not synchronization; virtual threads follow the same JMM. Do not present racing outcomes as guaranteed or infer a guarantee from a successful run. Happens-before constrains allowed reads and does not universally force one particular earlier write when other writes exist.
 
-### bg
+Use specific supporting documentation sections as answer references whenever possible. Record what each reference supports and whether it was actually checked; never mark an unopened/unconfirmed source verified. Report uncertainty and block approval when a material claim cannot be established. Never claim compilation, execution or validation that was not performed.
 
-#### question
-Question in Bulgarian
+## Question provenance
 
-#### answer
-Direct, complete senior-level answer.
+Determine provenance from how the question was obtained, independently of answer research:
 
-#### simple
-Accessible explanation.
+- `sourced` — UI label `Source`: open a real identifiable source and verify it contains the question or a clearly equivalent formulation. Record name, URL, location/evidence and whether lightly rephrased in accompanying metadata/review notes. Minor faithful rewording remains sourced.
+- `generated` — UI label `AI Generated`: independently authored by the agent. Do not attribute it to an external publisher or invent a URL or interview occurrence. Later verification of its answer against documentation does not change its origin.
+- `mixed` — UI label `AI Adapted`: created from or substantially adapted using a concrete source. Record real name, URL and the relationship/adaptation. Documentation used to create a question implies mixed, not sourced. Do not claim the adapted wording appears verbatim.
 
-#### example
-Concrete example or code.
+Never invent sources, links or quotations. A page about the topic alone does not establish sourced provenance. Never claim a question is common or was asked in an interview without evidence. If a source cannot be confirmed, flag it as unverified for review. Unknown origins of existing questions must remain unresolved, not be relabeled generated; generated is valid only for genuinely agent-authored questions. Unresolved provenance prevents full approval. Keep provenance evidence and rephrasing notes in the review artifact until their serialization is agreed.
 
-#### details
-Nuances and limitations.
+## Generation and review workflow
 
-### en
+1. Establish topic, audience, language, target Java/framework version and requested count. For a deck, map subtopics first, balance fundamentals with deeper reasoning and practical tasks, and avoid semantic duplicates. One card tests one main concept or well-defined task; split unrelated questions. Preserve stable existing IDs and questions during answer-only work; flag misleading questions for explicit correction.
+2. Establish provenance, draft the question and any non-revealing details, research the answer and write a concise explanation. Do not force code where prose suffices.
+3. Review EVERY card and EVERY included language in this order:
+   - **Review A — Senior Software Engineer:** claims, current applicability, terminology, exceptions, code and specification support; provenance and answer-reference evidence.
+   - **Review B — Educator:** clear question, logical explanation, exact question-answer alignment, useful example and appropriate senior-level complexity.
+   - **Review C — Learner:** understandable without missing steps, memorable, natural as an oral interview answer, no unnecessary length or repetition.
+4. Correct any issue and repeat A, B and C on the revised card. Never approve unresolved technical inaccuracies or unresolved provenance. Review in the same session is **self-review**. Call a pass independent only when performed by a separate agent or isolated context; record which mode actually ran. Role switching alone is not independence.
+5. For bilingual output, preserve identifiers/keywords and code; keep each language consistent and check semantic equivalence, including qualifications and outcomes. Keep official terms when translation would distort meaning.
+6. Validate count, unique IDs, required content, provenance conditions, code fences, language completeness and source support. For authorized legacy import files validate against the actual template/importer when feasible; distinguish format validation from technical review.
+7. Deliver the authorized artifact and a concise per-card issue/status log (critical technical errors, major omissions/alignment/provenance problems, minor clarity issues), actual review mode, checks performed and unresolved items. Do not claim global approval from a sample review.
 
-#### question
-Question in English
-
-#### answer
-Direct, complete senior-level answer.
-
-#### simple
-Accessible explanation.
-
-#### example
-Concrete example or code.
-
-#### details
-Nuances and limitations.
-```
-
-Use integer `interviewPriority` and `difficulty` ratings from 1–5. Treat priority as an editorial estimate unless supported by measured frequency data. Keep `deckId` and card keys stable for re-import. If editing only answers, do not silently alter questions, examples, ratings or other sections. Preserve omitted-language behavior and any other import requirements in the live template.
-
-## Quality gate / acceptance checklist
-
-For **each card and each included language**, all must pass:
-
-- [ ] Question is understood precisely and answer responds directly.
-- [ ] All essential parts of the question are answered.
-- [ ] Technical statements are correct for the specified version and conditions.
-- [ ] Claims do not exceed what the underlying specification/API guarantees.
-- [ ] Answer uses natural complete prose, not compressed shorthand.
-- [ ] Learner can follow the causal reasoning.
-- [ ] Teacher-level progression is clear and pedagogically useful.
-- [ ] `simple` is accurate and genuinely simpler.
-- [ ] `example` demonstrates the claim and does not imply unsupported outcomes.
-- [ ] `details` adds relevant nuance without contradiction.
-- [ ] All language versions are semantically equivalent.
-- [ ] Markdown syntax, card keys and required import attributes are valid.
-
-If any item fails, fix and repeat the gate. Never claim an automated importer test or code execution was performed unless it actually was.
-
-## Batch review procedure
-
-1. Inventory all card keys, language sections, ratings and fields; flag missing or duplicate items.
-2. Review cards individually, not just representative samples. Keep a concise internal issue log with card key, issue category, severity and correction.
-3. Prioritize **critical** (wrong or misleading), **major** (does not answer the question or misses key condition), then **minor** (clarity, style, redundancy).
-4. Make targeted edits while preserving unaffected fields and stable IDs.
-5. Validate card count, unique keys, language completeness, schema shape and code fences. When feasible, run the actual repository importer/validator and report the result separately.
-6. Deliver the revised Markdown and a short summary of substantive changes, unresolved uncertainties and validations actually performed.
-
-## JMM-specific accuracy reminders
-
-- Happens-before constrains visibility and allowed reads; it does not always mean a read must observe one particular earlier write when other writes are permitted.
-- `volatile` provides visibility and ordering but not atomicity for compound operations.
-- A volatile reference does not make all mutable state of the referenced object thread-safe.
-- Monitor unlock/lock guarantees refer to the same monitor.
-- Correctly constructed final fields have special initialization guarantees; `this` escape can undermine them.
-- Safe publication and safe subsequent mutation are distinct problems.
-- `sleep()` is not a synchronization mechanism.
-- Virtual threads obey the same JMM rules as platform threads.
-- Distinguish the JLS's guarantees from implementation-specific behavior, including VarHandle access modes and low-level fences.
+See [README.md](README.md) for invocation examples and draft content examples.

@@ -1,26 +1,28 @@
-# Flashcards Deck Generator skill
+﻿# Flashcards Deck Generator
 
-Reusable agent skill for producing Markdown files compatible with the Flashcards app.
-
-## Use in ChatGPT / coding agents
-
-Add the folder `skills/flashcards-deck-generator` to an agent's supported skill directory or attach the `SKILL.md` instructions to the agent. The file being present in GitHub **does not automatically install or activate it** in every ChatGPT conversation.
-
-Example requests:
-
-- `Използвай flashcards-deck-generator: 40 въпроса за Java Memory Model, Senior, на български.`
-- `Използвай flashcards-deck-generator: добави 15 нови въпроса към deckId java-memory-model.`
-
-The generated output should be an actual downloadable UTF-8 `.md` file, not just a chat response. The canonical import example lives at `docs/FLASHCARDS-IMPORT-TEMPLATE.md`.
-
-## Команда за копиране
+Генерира нови тестета и допълнения с техническа проверка и проследим произход.
+Прочети [SKILL.md](SKILL.md) и общото [ръководство с примери](../../.agents/skills/technical-interview-answer-quality/README.md).
+То съдържа отделна карта, концептуален въпрос без код, Java code-analysis, generated,
+sourced и mixed примери и процедурата за проверка.
 
 ```text
-Използвай flashcards-deck-generator: 40 въпроса за Java Memory Model, Senior ниво, на български.
+Прочети skills/flashcards-deck-generator/SKILL.md.
+Създай draft тесте с 20 Senior Java въпроса за JMM на bg и en.
+Покрий visibility, atomicity, ordering и safe publication без дублиране.
+Провери произхода и отговорите отделно; изпълни A/B/C за всяка карта.
+Не променяй приложението, template или съществуващи тестета.
 ```
 
-За допълване на съществуващ дек:
+За допълване посочи съществуващото deckId и файла с карти за проверка за дублиране.
+За една карта или само review използвай примерните заявки в общото ръководство.
+Skill-ът не е самостоятелна CLI програма; зареди инструкциите изрично, ако средата
+не открива skills автоматично.
 
-```text
-Използвай flashcards-deck-generator: добави 15 нови въпроса към deckId java-memory-model, без дубликати, и създай готов .md файл за импорт.
-```
+Новият логически договор изисква id, topic, question, answer и provenance.type;
+questionDetails и answerReferences са optional, а sourceName/sourceUrl са задължителни
+за sourced/mixed. Provenance и условието се виждат от страната на въпроса.
+Окончателната сериализация предстои. Действащият
+[production template](../../docs/FLASHCARDS-IMPORT-TEMPLATE.md) остава непроменен.
+Новият договор се издава като UTF-8 Markdown draft, без обещание за import съвместимост.
+Legacy import се генерира само при изрична заявка според действителния template,
+с отчет за неподдържаните нови изисквания. Следващата фаза изисква отделна задача.

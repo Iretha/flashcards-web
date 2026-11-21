@@ -1,187 +1,118 @@
-# Technical Interview Answer Quality — ръководство
+﻿# Technical Interview Answer Quality — ръководство
 
-Този skill помага при **създаване, пренаписване и проверка** на технически въпроси и отговори за интервюта. Прилага четири гледни точки: senior разработчик, учащ, преподавател и независима проверка **дали отговорът действително отговаря на въпроса**.
+Skill за генериране, редактиране и проверка на Senior Java interview флашкарти: Java, JVM, concurrency, Spring и backend. Правилата са в [SKILL.md](SKILL.md); генераторът на тестета ги използва като общ договор.
 
-Основните правила са в [SKILL.md](./SKILL.md). Това README е практическо ръководство с готови промптове.
+## Използване
 
-## 1. Кога да го използваш
+Посочи името `$technical-interview-answer-quality` или поискай прочитане на `.agents/skills/technical-interview-answer-quality/SKILL.md`. Наличието в Git не гарантира автоматично зареждане във всеки AI инструмент.
 
-- Генериране на нови флашкарти за Java, JMM, Spring, SQL, JVM, архитектура и др.
-- Пренаписване на твърде кратки, неясни или неточни отговори.
-- Критичен преглед на съществуващ набор от карти.
-- Проверка дали `answer` е точен, пълен и пряко свързан с `question`.
-- Създаване на двуезични карти за импорт във `flashcards-web`.
-
-## 2. Как се извиква
-
-В AI агент с достъп до хранилището посочи skill-а по име или път и поискай да бъде прочетен **преди** изпълнение на задачата:
+Ново тесте:
 
 ```text
-Прочети .agents/skills/technical-interview-answer-quality/SKILL.md
-и следвай правилата му.
-
-[Твоята задача]
+Прочети skills/flashcards-deck-generator/SKILL.md и общия quality skill.
+Създай draft с 20 Senior Java concurrency карти на български и английски.
+Определи подтемите, посочи целевата стабилна Java версия, провери източниците
+и всяка карта с Review A, B, C. Не променяй template и не импортирай.
 ```
 
-**Важно:** Наличието на файла в репото не доказва, че всеки AI инструмент автоматично открива или изпълнява skill-а. Ако средата няма автоматично зареждане, използвай изричното указание по-горе. Skill-ът не е самостоятелна програма или CLI команда.
-
-## 3. Пример: генериране на 50 въпроса
+Отделна карта:
 
 ```text
-Прочети и приложи skill-а:
-.agents/skills/technical-interview-answer-quality/SKILL.md
-
-Подготви 50 Java Memory Model interview questions от basic до senior.
-За всеки въпрос попълни question, answer, simple, example, details
-на български и английски, interviewPriority и difficulty (1–5).
-
-Отговорите да бъдат естествени, технически точни, разбираеми
-и достатъчно пълни, без да са прекалено дълги.
-
-Провери всяка карта по четирите роли и особено дали answer
-отговаря директно на конкретния question.
-
-Използвай docs/FLASHCARDS-IMPORT-TEMPLATE.md.
-Запази резултата като Markdown файл, готов за импорт.
+Използвай technical-interview-answer-quality. Създай една английска карта
+за причината volatile count++ да не е атомарно. Без код, ако не е необходим.
+Дай provenance, отделни answerReferences и резултат от A/B/C self-review.
 ```
 
-## 4. Пример: пренаписване само на отговорите
+Проверка:
 
 ```text
-Прочети .agents/skills/technical-interview-answer-quality/SKILL.md.
-
-Прегледай всички карти в [път към Markdown файла].
-Пренапиши само секциите #### answer на bg и en.
-
-Искам пълноценни senior-level отговори с нормални изречения,
-а не телеграфни бележки. Не променяй card keys, въпросите,
-simple, example, details или оценките.
-
-Провери дали всеки отговор отговаря точно на въпроса.
-Върни променения файл и обобщение на поправките.
+Приложи skill-а към [файл]. Провери всяка карта и всеки език в ред A Engineer,
+B Educator, C Learner. Не редактирай файла; върни проблеми по id, корекции,
+проверени източници и нерешени въпроси. Не приемай неизвестен произход за generated.
+Обозначи self-review; независим преглед има само с отделен агент/изолиран контекст.
 ```
 
-## 5. Пример: независим критичен преглед
+При разрешена редакция поправи проблемите и повтори трите проверки. Проверката на Markdown не доказва техническа коректност.
+
+## Бъдещ формат
+
+Задължителни логически полета: `id`, `topic`, `question`, `answer`, `provenance.type`.
+Незадължителни: `questionDetails`, `answerReferences`; `provenance.sourceName` и
+`provenance.sourceUrl` са задължителни при sourced/mixed. Окончателната сериализация,
+метаданните за преформулиране и структурата на references предстоят в отделната template задача.
+Question Details и Answer са Markdown. Кодът за анализ и provenance се виждат преди отговора.
+Примерите са контекстуални, без отделен задължителен UI елемент.
+
+Това са **draft примери**, не import синтаксис. Действащият [v2 template](../../../docs/FLASHCARDS-IMPORT-TEMPLATE.md)
+не реализира новия договор. Не добавяй неподдържани полета към import файл и не представяй draft като готов за import.
+
+## Концептуална карта, AI Generated, без необходимост от код
+
+- id: `volatile-compound-operation`
+- topic: Java concurrency
+- Question: Why does volatile not make an increment atomic?
+- Provenance: `generated` — **AI Generated**; въпросът е независимо създаден за този пример.
+
+Answer:
+
+`volatile` does not make a compound read-modify-write operation atomic. Two threads can read the same value before either writes the incremented value, losing an update. Use an atomic increment operation or protect the complete operation with the same lock.
+
+Answer reference: [JLS SE 25 §17.4.5](https://docs.oracle.com/javase/specs/jls/se25/html/jls-17.html#jls-17.4.5), проверена за happens-before/visibility; тя не е произход на въпроса. Конкретната версия е reference, а не твърдение за най-новата Java.
+
+## Java code-analysis карта
+
+- id: `widening-int-long`
+- topic: Java conversions
+- Question: Will this Java code compile?
+- Provenance: `generated` — **AI Generated**.
+
+Question Details (inside a method body):
+
+```java
+int x = 10;
+long y = x;
+System.out.println(y);
+```
+
+Answer:
+
+Yes. Assignment permits widening primitive conversion from `int` to `long`. It prints:
 
 ```text
-Приложи technical-interview-answer-quality към [файл].
-
-Не приемай съществуващите отговори за верни по подразбиране.
-За всяка карта провери:
-1. Техническа точност и условия/ограничения.
-2. Разбираемост за учащия.
-3. Преподавателска логика и качество на примера.
-4. Пълно съответствие между question и answer.
-
-Класифицирай проблемите като critical, major или minor.
-Коригирай ги, прегледай повторно и изведи кратък отчет
-с card key, проблем и направена промяна.
+10
 ```
 
-## 6. Пример: проверка само на съответствието
+При реално генериране провери конкретните JLS секции за widening primitive и assignment conversion; този пример не твърди извършена compiler проверка. Кодът не се повтаря в отговора.
 
-```text
-Използвай question-answer alignment проверката от SKILL.md.
+## Sourced и mixed
 
-За всяка карта в [файл] установи дали answer:
-- отговаря директно на question;
-- обхваща всички части на въпроса;
-- обяснява причината при „защо“ и механизма при „как“;
-- не подменя въпроса със свързана тема;
-- е подкрепен, а не опроверган, от example и details.
+Проверен реален източник: [Oracle Java Tutorials — Questions and Exercises: Variables](https://docs.oracle.com/javase/tutorial/java/nutsandbolts/QandE/questions_variables.html), Questions №5. Страницата е за JDK 8; използваме я за установяване на произход, не като доказателство за актуалност на всички нейни практики.
 
-Покажи само проблемните карти с конкретна корекция.
-Не редактирай файла, докато не одобря предложенията.
-```
+**Sourced draft:**
 
-## 7. Пример: добавяне на нови карти към съществуващ deck
+- id: `primitive-types`
+- topic: Java types
+- Question: What are the eight primitive data types supported by the Java programming language?
+- Provenance: `sourced` — **Source**; sourceName: Oracle Java Tutorials; sourceUrl: адресът по-горе.
+- Evidence/rephrasing note: Questions №5 съдържа същия въпрос; не е преформулиран.
+- Answer: `byte`, `short`, `int`, `long`, `float`, `double`, `boolean`, and `char`.
 
-```text
-Прочети SKILL.md и docs/FLASHCARDS-IMPORT-TEMPLATE.md.
+**Mixed draft:**
 
-Добави 10 senior въпроса за VarHandle към съществуващия
-Java Memory Model deck. Не дублирай съществуващи въпроси.
-Запази deckId и всички стари card keys без промяна.
-Дай уникални стабилни ключове на новите карти.
-Провери техническата точност и въпрос–отговор съответствието.
-```
+- id: `primitive-reference-distinction`
+- topic: Java types
+- Question: Is String a primitive type in Java?
+- Provenance: `mixed` — **AI Adapted**; sourceName и sourceUrl: същият Oracle източник.
+- Adaptation note: създаден от Questions №5–6 за разграничаване на primitive types от String; не е дословно публикуван въпрос.
+- Answer: No. `String` is a class, so a variable of type `String` holds a reference rather than a primitive value.
 
-## 8. Как изглежда добър отговор
+За тези draft карти добави отделни version-appropriate JLS answer references при техническата проверка. Потвърденият произход не означава автоматично одобрен отговор. Примерите демонстрират формата и не са отчет за преминали независими A/B/C проверки.
 
-**Въпрос:** Защо `volatile` не прави `count++` атомарно?
+## Определяне на provenance
 
-**Неудачен отговор:**
-
-> Volatile = visibility, не atomicity. Използвай CAS.
-
-Това е свързано с темата, но не обяснява **защо**.
-
-**По-добър отговор:**
-
-> `volatile` гарантира видимост и определени правила за подредба на четенията и записите, но не обединява няколко действия в една атомарна операция. `count++` първо прочита текущата стойност, след това я увеличава и накрая записва резултата. Ако две нишки прочетат една и съща стара стойност, и двете могат да запишат един и същ резултат и едно увеличение да се загуби. За атомарно увеличаване използваме `AtomicInteger.incrementAndGet()` или синхронизация.
-
-**Защо е по-добър:** Отговаря на въпроса още в първото изречение, обяснява механизма, показва как възниква проблемът и посочва правилно решение.
-
-## 9. Структура за импорт
-
-Източникът на истината за схемата е [FLASHCARDS-IMPORT-TEMPLATE.md](../../../docs/FLASHCARDS-IMPORT-TEMPLATE.md). Прочитай актуалната му версия преди генериране или редакция.
-
-Обичайната структура на карта във formatVersion 2:
-
-```markdown
-## card: volatile-atomicity
-
-### interviewPriority: 5
-
-### difficulty: 3
-
-### bg
-
-#### question
-Защо volatile не гарантира атомарност?
-
-#### answer
-Пълен, директен отговор.
-
-#### simple
-По-просто обяснение.
-
-#### example
-Конкретен пример.
-
-#### details
-Допълнителни нюанси.
-
-### en
-
-#### question
-Why doesn't volatile guarantee atomicity?
-
-#### answer
-A complete, direct answer.
-
-#### simple
-A simpler explanation.
-
-#### example
-A concrete example.
-
-#### details
-Relevant technical nuances.
-```
-
-Файлът трябва да съдържа и валиден YAML frontmatter с `deckId`, `title`, `description` и `formatVersion: 2`, съгласно актуалния темплейт.
-
-## 10. Критерии за приемане
-
-Приеми резултата само ако:
-
-1. Всяка карта отговаря на **точния** въпрос и всичките му части.
-2. Твърденията са технически точни, с нужните условия и ограничения.
-3. Отговорите са ясни и с нормални завършени изречения.
-4. `simple`, `example` и `details` са съгласувани с `answer`.
-5. Българският и английският текст имат еквивалентен смисъл.
-6. Стабилните ключове и схемата на импорта са запазени.
-7. В отчета се различават действително изпълнени проверки от непроверени предположения.
-
-**Препоръчителен работен процес:** генериране → четири проверки → корекции → повторна проверка → валидиране на Markdown → импорт и тест в приложението (ако средата позволява).
+`sourced` изисква действително намерен въпрос или ясно еквивалентна формулировка;
+`mixed` е създаден/съществено адаптиран от конкретен източник; `generated` е независимо
+създаден от агента. Документация, използвана само за проверка на готов отговор,
+е answer reference. Неизвестен произход на съществуваща карта се отбелязва за преглед.
+Никога не измисляй URL, цитат или твърдение за реално интервю. Проверявай URL и
+подкрепящия пасаж, преди да отбележиш verified.
