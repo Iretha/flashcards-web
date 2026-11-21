@@ -1,34 +1,104 @@
 ---
 deckId: java-memory-model
 title: Java Memory Model
-description: Senior Java interview preparation — visibility, ordering and concurrency
+description: Senior Java interview preparation — bilingual cards with progressive explanations
+formatVersion: 2
 ---
 
-## What is the Java Memory Model (JMM)?
+## card: volatile-atomicity
 
-The **Java Memory Model** defines the rules for how threads interact through shared memory, including visibility and ordering guarantees.
+### bg
 
----
+#### question
+Защо `volatile` не гарантира атомарност?
 
-## What does happens-before mean?
+#### answer
+`volatile` осигурява видимост и гаранции за подредба, но не прави съставни операции като `count++` атомарни.
 
-A **happens-before** relationship guarantees that the effects of an earlier action are visible to a later action.
+#### simple
+`count++` всъщност означава: прочети стойността, увеличи я и я запиши. Две нишки могат да прочетат една и съща стара стойност и да загубят едно увеличение.
 
-For example, a write to a `volatile` variable happens-before a subsequent read of that same variable that observes it under the JMM ordering rules.
-
----
-
-## Why does volatile not make count++ atomic?
-
-`count++` involves reading, incrementing, and writing the value. `volatile` provides visibility and ordering guarantees, but does not turn that sequence into a single atomic operation.
+#### example
+Две нишки увеличават един и същ брояч:
 
 ```java
-volatile int count = 0;
+class Counter {
+    volatile int count = 0;
 
-// Not atomic:
-count++;
-
-// Atomic alternative:
-AtomicInteger atomicCount = new AtomicInteger();
-atomicCount.incrementAndGet();
+    void increment() {
+        count++; // Не е атомарно
+    }
+}
 ```
+
+Ако и двете прочетат `5`, и двете могат да запишат `6` вместо очакваното `7`.
+
+#### details
+`volatile` предоставя гаранции за видимост и подредба според Java Memory Model. За атомарно увеличаване използвай `AtomicInteger.incrementAndGet()` или синхронизация.
+
+### en
+
+#### question
+Why doesn't `volatile` guarantee atomicity?
+
+#### answer
+`volatile` provides visibility and ordering guarantees but does not make compound operations such as `count++` atomic.
+
+#### simple
+`count++` means read the value, increment it, and write it back. Two threads may read the same old value and lose an update.
+
+#### example
+Two threads increment a shared counter:
+
+```java
+class Counter {
+    volatile int count = 0;
+
+    void increment() {
+        count++; // Not atomic
+    }
+}
+```
+
+If both read `5`, both may write `6` rather than the expected `7`.
+
+#### details
+`volatile` establishes visibility and ordering guarantees under the Java Memory Model. For atomic increments, use `AtomicInteger.incrementAndGet()` or synchronization.
+
+---
+
+## card: happens-before
+
+### bg
+
+#### question
+Какво означава `happens-before` в Java Memory Model?
+
+#### answer
+`happens-before` е отношение, което гарантира видимостта и подредбата на ефектите от едно действие спрямо друго.
+
+#### simple
+Ако действие A е `happens-before` действие B, B трябва да вижда ефектите от A, които са релевантни за тази гаранция.
+
+#### example
+Една нишка записва данни и след това поставя `volatile` флаг на `true`. Друга нишка, която прочете `true` от този флаг, може да види и предходните записани данни.
+
+#### details
+Програмният ред в една нишка и синхронизационни действия като volatile write/read и monitor unlock/lock създават `happens-before` отношения. Отношението е транзитивно.
+
+### en
+
+#### question
+What does `happens-before` mean in the Java Memory Model?
+
+#### answer
+`happens-before` is a relation that guarantees ordering and visibility of the effects of one action with respect to another.
+
+#### simple
+If action A happens-before action B, B must observe the effects of A covered by that guarantee.
+
+#### example
+One thread writes data and then sets a `volatile` flag to `true`. Another thread that reads `true` from the flag can also see the earlier data writes.
+
+#### details
+Program order within a thread and synchronization actions such as volatile write/read and monitor unlock/lock establish happens-before relationships. The relation is transitive.
