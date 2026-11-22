@@ -21,7 +21,7 @@ VALUES (?, ?, ?, ?);
 DELETE FROM api_tokens WHERE token_hash = ?;
 ```
 
-Issue a new token and revoke the old one to rotate a credential. The management API uses bearer authentication only. Browser sessions and the browser access code continue to serve the existing browser routes. Provisioning is operator-managed.
+Issue a new token and revoke the old one to rotate a credential. The management API uses bearer authentication only. Browser sessions and the browser access code continue to serve the existing browser routes. Provisioning supports self-service through Settings and existing operator tooling.
 
 ## Endpoints
 
@@ -114,7 +114,7 @@ Expose list, get, create and patch operations as tools with equivalent input sch
 
 ## Deck collaborators
 
-Bearer tokens retain their existing user scope, expiry, write flag and operator-managed provisioning. Read operations include private decks where that user is a collaborator. Writes require both `can_write` and current owner/collaborator membership; public visibility grants no write permission. Collaborators may update deck content and metadata but cannot change visibility. Existing supported methods, If-Match revision checks, idempotency keys and error envelopes remain unchanged. The Management API does not add deletion or collaborator administration methods.
+Bearer tokens retain their existing user scope, expiry, write flag and compatibility with operator-managed provisioning. Read operations include private decks where that user is a collaborator. Writes require both `can_write` and current owner/collaborator membership; public visibility grants no write permission. Collaborators may update deck content and metadata but cannot change visibility. Existing supported methods, If-Match revision checks, idempotency keys and error envelopes remain unchanged. The Management API does not add deletion or collaborator administration methods.
 
 Browser collaborator administration uses the existing session cookie and same-origin JSON POST rules:
 
@@ -126,3 +126,19 @@ Browser collaborator administration uses the existing session cookie and same-or
 Collaborator removal preserves cards and progress. Subsequent mutations recheck membership in SQL, including requests made with existing bearer tokens. A write already committed before removal is retained. Non-destructive browser imports require an explicit target for collaborator decks; automatic source-key matching remains scoped to owned decks. Replacement imports and whole-deck deletion remain owner-only. Visibility cannot be changed through collaborator imports.
 
 Migration `0009_deck_collaborators.sql` is additive and retains existing `owner_id` values, card IDs and study progress. Apply it through the normal migration workflow before serving the updated application. No ownership backfill is needed because the original schema already requires a user foreign key.
+
+
+## Self-service tokens
+
+Open Settings ? API Tokens outside study mode. Name the token (1?80 characters), select Read only (default) or Read & Write, and an expiration of 30, 90 (default), 180 or 365 days. Copy the token immediately: it cannot be retrieved again. Keep it in a secret manager, never publish it or put it in URLs. Send `Authorization: Bearer <token>` over HTTPS. Revoke compromised tokens immediately.
+
+Browser-session endpoints (bearer tokens cannot manage tokens):
+- GET /api/tokens returns metadata only, never hashes or plaintext.
+- POST /api/tokens accepts {name, can_write?: boolean, days?: number}; returns 201 {id, token} once.
+- POST /api/tokens accepts {action: "revoke", id}; returns 200 {}; repeated revocation succeeds; another user's ID returns 404.
+
+Mutations require same Origin and application/json. Unsupported fields including user IDs return 400; missing session 401; cross-origin 403; wrong content type 415; ten-active-token limit 409; over 60 mutation attempts per user per hour 429. Responses use no-store. The active limit includes operator tokens and is enforced by one atomic conditional INSERT. Last-used tracking is omitted to avoid authentication writes.
+
+Migration 0010 preserves operator credentials and expiration. Missing historical metadata remains null; legacy tokens can be revoked by their owner in Settings. Personal token revocation and expiration are checked on each subsequent authentication. Write scope intersects current owner/collaborator permissions.
+
+Future MCP integration may require OAuth depending on client requirements. No MCP or OAuth is implemented, and manual token-entry support in ChatGPT is not asserted.

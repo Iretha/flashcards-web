@@ -1,3 +1,4 @@
+import { tokens } from './tokens';
 import { collaborators } from './collaborators';
 import { authenticate, hasSessionCookie, login, logout } from './auth';
 import type { SessionDiagnostics } from './auth';
@@ -38,6 +39,7 @@ async function dispatch(
     if (request.method === 'GET') {
       const user = await authenticate(db, request, diagnostics);
       check(user, 'Sign in to continue.', 401);
+      if (route === 'tokens') return await tokens(db, user.id);
       if (route === 'home') return json({
         username: user.username, settings: { ...defaults, ...JSON.parse(user.settings) },
         decks: await listDecks(db, user.id), session: await studyView(db, user.id),
@@ -81,6 +83,7 @@ async function dispatch(
     if (route === 'login') return await login(db, secret, request, input);
     const user = await authenticate(db, request, diagnostics);
     check(user, 'Sign in to continue.', 401);
+    if (route === 'tokens') return await tokens(db, user.id, input);
     if (route === 'logout') return await logout(db, request);
     if (route === 'collaborators') return json(await collaborators(db, user.id, string(input.deck, 'deck ID', 80), input));
     if (route === 'deck') return json(await saveDeck(db, user.id, input));

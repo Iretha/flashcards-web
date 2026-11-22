@@ -1,3 +1,4 @@
+import { ApiTokens } from './ApiTokens';
 import { effectiveInstructions } from '../lib/chatgpt';
 import AskChatGpt from './AskChatGpt';
 import { useEffect, useRef, useState } from 'react';
@@ -336,6 +337,7 @@ export default function App() {
       </button>
     </header>
     <main aria-busy={busy}>
+      {home && screen !== 'study' && <ApiTokens key={home.username} />}
       {error && <p className="error" role="alert">{error}</p>}
       {!loaded && <p role="status">Loading Flashcards…</p>}
       {loaded && !home && <section className="panel login stack">
