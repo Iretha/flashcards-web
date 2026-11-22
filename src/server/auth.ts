@@ -17,9 +17,16 @@ export function hasSessionCookie(request: Request) {
   return /(?:^|;\s*)flashcards_session=/.test(request.headers.get('Cookie') ?? '');
 }
 
-async function digest(value: string) {
+export async function digest(value: string) {
   const bytes = await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value));
   return Array.from(new Uint8Array(bytes), byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+export async function authenticateClient(db: D1Database, request: Request) {
+  const match = /^Bearer (fc_[a-f0-9]{64})$/i.exec(request.headers.get('Authorization') ?? '');
+  if (!match) return null;
+  return db.prepare('SELECT user_id, can_write FROM api_tokens WHERE token_hash = ? AND expires_at > ?')
+    .bind(await digest(match[1]), Date.now()).first<{ user_id: string; can_write: number }>();
 }
 
 async function equalCode(a: string, b: string) {

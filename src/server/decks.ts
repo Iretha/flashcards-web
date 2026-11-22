@@ -38,16 +38,36 @@ export async function listDecks(db: D1Database, user: string) {
 }
 
 export async function listCards(db: D1Database, user: string, deck: string) {
-  const result = await db.prepare(`SELECT c.*, coalesce(p.status, 'UNLEARNED') AS status,
+  return (await cardsForDeck(db, user, deck).all<CardRow>()).results.map(decodeCard);
+}
+
+type CardRow = Omit<Card, 'translations' | 'metadata'> & { translations: string; metadata: string | null };
+
+function decodeCard(card: CardRow): Card {
+  return { ...card, translations: JSON.parse(card.translations) as Translations, metadata: card.metadata ? JSON.parse(card.metadata) as CardMetadata : null };
+}
+
+export async function deckWithCards(db: D1Database, user: string, id: string, cardId?: string) {
+  const [parent, cards] = await db.batch([
+    db.prepare("SELECT * FROM decks WHERE id = ? AND (owner_id = ? OR visibility = 'SHARED')").bind(id, user),
+    cardsForDeck(db, user, id, cardId),
+  ]);
+  const deck = parent.results[0] as unknown as Deck | undefined;
+  check(deck, 'Deck not available.', 404);
+  return { deck, cards: (cards.results as unknown as CardRow[]).map(decodeCard) };
+}
+
+function cardsForDeck(db: D1Database, user: string, deck: string, cardId?: string) {
+  const args = cardId ? [user, deck, user, cardId] : [user, deck, user];
+  return db.prepare(`SELECT c.*, coalesce(p.status, 'UNLEARNED') AS status,
     coalesce(p.times_shown, 0) AS times_shown, coalesce(p.times_failed, 0) AS times_failed,
     coalesce(p.times_learned, 0) AS times_learned, p.last_shown_at, p.last_learned_at,
     coalesce(p.simple_opens, 0) AS simple_opens, coalesce(p.example_opens, 0) AS example_opens,
     coalesce(p.details_opens, 0) AS details_opens
     FROM cards c JOIN decks d ON d.id = c.deck_id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
-    WHERE c.deck_id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED') ORDER BY c.position, c.id`)
-    .bind(user, deck, user).all<Omit<Card, 'translations' | 'metadata'> & { translations: string; metadata: string | null }>();
-  return result.results.map(card => ({ ...card, translations: JSON.parse(card.translations) as Translations, metadata: card.metadata ? JSON.parse(card.metadata) as CardMetadata : null }));
+    WHERE c.deck_id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED')
+      ${cardId ? 'AND c.id = ?' : ''} ORDER BY c.position, c.id`).bind(...args);
 }
 
 function readTranslations(input: unknown): Translations {
@@ -183,7 +203,7 @@ export async function inspectImport(db: D1Database, user: string, input: Record<
   return { impact, deck, key, metadata, rows, existing: existing.length, version: parsed.version };
 }
 
-function writeCards(db: D1Database, deck: string, mutation: string, now: number, cards: ImportTarget[]) {
+export function writeCards(db: D1Database, deck: string, mutation: string, now: number, cards: ImportTarget[], insertOnly = false) {
   const values = cards.map((card, position) => {
     const content = card.translations[card.primary_language]!;
     return { ...card, ...content, position, questionKey: questionKey(content.question) };
@@ -195,10 +215,10 @@ function writeCards(db: D1Database, deck: string, mutation: string, now: number,
       ?, ?, value ->> 'import_key', value ->> 'primary_language', value -> 'translations',
       value ->> 'interview_priority', value ->> 'difficulty', CASE WHEN json_type(value, '$.metadata') = 'object' THEN value -> 'metadata' ELSE NULL END
     FROM json_each(?) WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)
-    ON CONFLICT(id) DO UPDATE SET question_key = excluded.question_key, question = excluded.question,
+    ${insertOnly ? '' : `ON CONFLICT(id) DO UPDATE SET question_key = excluded.question_key, question = excluded.question,
       answer = excluded.answer, updated_at = excluded.updated_at, import_key = excluded.import_key,
       primary_language = excluded.primary_language, translations = excluded.translations,
-      interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata`)
+      interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata`}`)
     .bind(deck, deck, now, now, JSON.stringify(values), deck, mutation);
 }
 

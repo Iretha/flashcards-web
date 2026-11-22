@@ -35,6 +35,10 @@ npm run typecheck
 npm run build
 ```
 
+## External management API
+
+See the [Management API reference](docs/MANAGEMENT-API.md) for deck and card endpoints, token provisioning and request examples.
+
 ## Cloudflare Workers
 
 The target Worker is `flashcards-api`. In Cloudflare Dashboard, open D1 → `flashcards-db` and copy its Database ID. Paste it in `wrangler.jsonc` at `d1_databases[0].database_id`, replacing the all-zero placeholder before deployment. The `DB` binding uses local D1 during development (`remote: false`) and the configured UUID identifies the database in production.

@@ -5,10 +5,12 @@ import { check, HttpError, json, object, string } from './http';
 import { act, reset, startSession, studyView } from './sessions';
 import { defaults } from '../lib/study';
 import type { Translations } from '../lib/translations';
+import { manage } from './management';
 
 export async function handle(request: Request, db: D1Database, secret?: string) {
   const url = new URL(request.url);
   const route = url.pathname.replace(/^\/api\//, '');
+  if (route === 'decks' || route.startsWith('decks/')) return manage(request, db, url, route);
   const endpoint = url.pathname;
   if (endpoint !== '/api/login' && endpoint !== '/api/home') return dispatch(request, db, secret, url, route);
 
