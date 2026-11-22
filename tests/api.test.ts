@@ -1000,3 +1000,49 @@ it('imports answerless v2/v3 cards and preserves conflicts and browser edits', a
     expect((await browser.cards(id))[0]).toMatchObject({id:card.id,translations:{en:{answer:''}}});
   }
 });
+
+
+it('retrieves individual deck permissions with current membership, token scopes and unchanged ETags', async () => {
+  const owner = await apiToken('retrieve-owner');
+  const editor = await apiToken('retrieve-editor');
+  const readOnly = await apiToken('retrieve-editor', 0);
+  const viewer = await apiToken('retrieve-viewer');
+  for (const visibility of ['PRIVATE', 'SHARED']) {
+    const created = await apiRequest(owner, 'decks', 'POST', {title:'Secret retrieval '+visibility, visibility}, {'Idempotency-Key':'retrieve-'+visibility});
+    expect(created.status).toBe(201);
+    const deck = (await created.json() as {data:{id:string;revision:number}}).data;
+    const route = 'decks/'+deck.id;
+    const etag = '"'+deck.revision+'"';
+    await db.prepare('INSERT INTO deck_collaborators(deck_id,user_id,added_at,added_by) VALUES (?,?,0,?)')
+      .bind(deck.id,'retrieve-editor','retrieve-owner').run();
+    async function expectPermissions(token: string, canEdit: boolean, canManage: boolean) {
+      const response = await apiRequest(token,route);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('ETag')).toBe(etag);
+      const body = await response.json() as {data:{permissions:object}};
+      expect(body.data.permissions).toEqual({can_read:true,can_edit:canEdit,can_manage:canManage});
+    }
+    async function expectPrivateDenied(token: string) {
+      const denied = await apiRequest(token,route);
+      expect(denied.status).toBe(404);
+      expect(denied.headers.get('ETag')).toBeNull();
+      expect(await denied.json()).toEqual({error:{code:'not_found',message:'Deck not available.'}});
+    }
+    await expectPermissions(owner,true,true);
+    await expectPermissions(editor,true,false);
+    await expectPermissions(readOnly,true,false);
+    expect((await apiRequest(readOnly,route,'PATCH',{title:'Denied'},{'If-Match':etag})).status).toBe(403);
+    if (visibility === 'SHARED') await expectPermissions(viewer,false,false);
+    else await expectPrivateDenied(viewer);
+    await db.prepare('DELETE FROM deck_collaborators WHERE deck_id = ? AND user_id = ?').bind(deck.id,'retrieve-editor').run();
+    if (visibility === 'SHARED') {
+      await expectPermissions(editor,false,false);
+      await expectPermissions(readOnly,false,false);
+      expect((await apiRequest(editor,route,'PATCH',{title:'Denied'},{'If-Match':etag})).status).toBe(403);
+    } else {
+      await expectPrivateDenied(editor);
+      await expectPrivateDenied(readOnly);
+      expect((await apiRequest(editor,route,'PATCH',{title:'Denied'},{'If-Match':etag})).status).toBe(404);
+    }
+  }
+});

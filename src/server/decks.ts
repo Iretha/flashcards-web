@@ -1,4 +1,4 @@
-import { canEditDeck, editAccess, permissions } from './permissions';
+import { editAccess, permissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { validateMetadata } from '../lib/metadata';
 import { MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR } from '../lib/import-limits';
@@ -27,7 +27,7 @@ export interface Card extends ImportCard, ImportTarget {
 
 export async function getDeck(db: D1Database, user: string, id: string, write = false) {
   const deck = await db.prepare(`SELECT decks.*, ${editAccess(2)} AS editable FROM decks WHERE id = ?1`).bind(id, user).first<Deck>();
-  check(deck && (await canEditDeck(db, user, deck) || (!write && deck.visibility === 'SHARED')), 'Deck not available.', 404);
+  check(deck && (Boolean(deck.editable) || (!write && deck.visibility === 'SHARED')), 'Deck not available.', 404);
   return decodeDeck(deck);
 }
 
