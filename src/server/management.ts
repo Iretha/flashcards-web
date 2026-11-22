@@ -1,4 +1,4 @@
-import { canEditDeck, editAccess } from './permissions';
+import { canEditDeck, editAccess, managementPermissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { authenticateClient, digest } from './auth';
 import { deckWithCards, getDeck, listCards, listDecks, writeCards, primaryLanguageStatements, decodeDeck } from './decks';
@@ -39,7 +39,7 @@ function identifier(value: string, name: string, max: number) {
 function deckData(deck: Deck, user: string) {
   deck = decodeDeck(deck);
   const { id, title, description, visibility, source_key, chatgpt_default, chatgpt_en, chatgpt_bg, revision } = deck;
-  return { primaryLanguage: deck.primaryLanguage, supportedLanguages: deck.supportedLanguages, id, title, description, visibility, source_key, chatgpt_default, chatgpt_en, chatgpt_bg, revision, owned: deck.owner_id === user };
+  return { primaryLanguage: deck.primaryLanguage, supportedLanguages: deck.supportedLanguages, id, title, description, visibility, source_key, chatgpt_default, chatgpt_en, chatgpt_bg, revision, owned: deck.owner_id === user, permissions: managementPermissions(deck.owner_id === user, Boolean(deck.editable)) };
 }
 
 function cardData(card: ImportTarget & { deck_id: string; position: number }, revision: number) {
@@ -76,10 +76,12 @@ function cardValues(value: unknown, id: string, current?: ImportTarget): ImportT
       const patch = fields(entries[language], path, keys);
       const next = { ...translations[language] } as Translation;
       for (const key of keys) {
-        const required = key === 'question' || key === 'answer';
+        const required = key === 'question';
+        if (key === 'answer' && !(key in patch) && next.answer === undefined) next.answer = '';
         if (!required && !(key in patch)) continue;
         next[key] = text(key in patch ? patch[key] : next[key], path + '.' + key, key === 'question' ? 2000 : 20000, required);
       }
+      if (!next.answer.trim()) next.answer = '';
       requireField(validTranslation(next), path, 'Invalid translation.');
       translations[language] = next;
     }
@@ -165,7 +167,11 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
     const respond = (data: { revision: number }, status = 200, extra: Record<string, string> = {}) =>
       json({ data }, status, { ETag: `"${data.revision}"`, ...extra });
     if (method === 'GET') {
-      if (!deckId) return json({ data: (await listDecks(db, user)).map(item => deckData(item, user)) });
+      if (!deckId) {
+        const access = url.searchParams.get('access') ?? 'all';
+        requireField(['all', 'owned', 'editable', 'shared'].includes(access), 'access', 'Expected all, owned, editable or shared.');
+        return json({ data: (await listDecks(db, user, access)).map(item => deckData(item, user)) });
+      }
       if (!cardsRoute) return respond(deckData(await getDeck(db, user, deckId), user));
       const q = url.searchParams.has('q') ? text(url.searchParams.get('q'), 'q', 200).trim().toLowerCase() : '';
       const { deck, cards } = await deckWithCards(db, user, deckId, cardId || undefined);
@@ -275,7 +281,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
     const row = results.at(-1)!.results[0];
     const status = method === 'POST' ? 201 : 200;
     const extra: Record<string, string> = method === 'POST' ? { Location: location(id) } : {};
-    if (!cardsRoute) return respond(deckData(row as unknown as Deck, user), status, extra);
+    if (!cardsRoute) return respond(deckData(await getDeck(db, user, id), user), status, extra);
     const saved = row as unknown as Omit<ImportTarget, 'translations' | 'metadata'> & {
       deck_id: string; position: number; translations: string; metadata: string | null; revision: number;
     };

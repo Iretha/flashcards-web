@@ -32,10 +32,11 @@ describe('universal language selection', () => {
     expect(preference).toBe('de');
   });
   it('rejects empty and partial translations and requires coding task statements', () => {
-    for (const value of [{ question: '', answer: '' }, { question: 'Q', answer: ' ' }]) {
+    for (const value of [{ question: '', answer: '' }, { question: ' ', answer: 'A' }]) {
       expect(completeTranslation(value)).toBe(false);
       expect(selectTranslation({ en, de: value }, 'de', 'en').translation).toEqual(en);
     }
+    expect(completeTranslation({ question: 'Q', answer: '' })).toBe(true);
     expect(completeTranslation(en, 'coding_task')).toBe(false);
     expect(completeTranslation({ ...en, questionDetails: 'Implement it.' }, 'coding_task')).toBe(true);
     expect(selectTranslation({ de }, 'fr', 'en').translation).toBeUndefined();

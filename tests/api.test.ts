@@ -920,3 +920,129 @@ it('preserves an operator credential inserted before migration 0010', async () =
   expect(row?.can_write).toBe(1); expect(row?.expires_at).toBe(4102444800000);
   expect(row?.name).toBeNull(); expect(row?.created_at).toBeNull(); expect(row?.revoked_at).toBeNull();
 });
+
+
+it('returns current deck permissions and filters independently of token scope', async () => {
+  const owner = await apiToken('ready-owner');
+  const editor = await apiToken('ready-editor', 0);
+  const viewer = await apiToken('ready-viewer');
+  async function create(title: string, visibility = 'PRIVATE') {
+    const response = await apiRequest(owner, 'decks', 'POST', {title, visibility}, {'Idempotency-Key': title});
+    expect(response.status).toBe(201);
+    const {data} = await response.json() as any;
+    expect(data.permissions).toEqual({can_read:true,can_edit:true,can_manage:true});
+    return data.id as string;
+  }
+  const privateId = await create('ready-private');
+  const sharedId = await create('ready-shared', 'SHARED');
+  await db.prepare('INSERT INTO deck_collaborators(deck_id,user_id,added_at,added_by) VALUES (?,?,0,?)').bind(privateId,'ready-editor','ready-owner').run();
+  const list = async (token: string, access?: string) => {
+    const response = await apiRequest(token, 'decks' + (access ? '?access=' + access : ''));
+    expect(response.status).toBe(200);
+    return (await response.json() as any).data as any[];
+  };
+  const ids = (items: any[]) => items.map(item => item.id);
+  expect(ids(await list(editor))).toContain(privateId);
+  expect(ids(await list(editor,'all'))).toEqual(ids(await list(editor)));
+  expect(await list(editor,'owned')).toEqual([]);
+  expect(ids(await list(editor,'editable'))).toEqual([privateId]);
+  expect(ids(await list(editor,'shared'))).toEqual(ids(await list(editor)));
+  expect((await list(editor)).find(item => item.id === privateId).permissions).toEqual({can_read:true,can_edit:true,can_manage:false});
+  expect((await apiRequest(editor,'decks/'+privateId,'PATCH',{title:'Denied'})).status).toBe(403);
+  expect((await list(viewer)).find(item => item.id === sharedId).permissions).toEqual({can_read:true,can_edit:false,can_manage:false});
+  expect((await apiRequest(viewer,'decks/'+privateId)).status).toBe(404);
+  expect((await apiRequest(owner,'decks?access=invalid')).status).toBe(400);
+  await db.prepare('DELETE FROM deck_collaborators WHERE deck_id = ?').bind(privateId).run();
+  expect(ids(await list(editor))).not.toContain(privateId);
+  expect(await list(editor,'editable')).toEqual([]);
+});
+
+it('normalizes answerless creation and preserves card identity, progress and PATCH omissions', async () => {
+  const token = await apiToken('answerless-owner');
+  const created = await apiRequest(token,'decks','POST',{title:'Answerless'}, {'Idempotency-Key':'answerless-deck'});
+  const deck = (await created.json() as any).data;
+  const route = 'decks/'+deck.id+'/cards';
+  for (const [index, answer] of [undefined, '', '   '].entries()) {
+    const body = {translations:{en:{question:'Answerless '+index, ...(answer === undefined ? {} : {answer})}}};
+    const response = await apiRequest(token,route,'POST',body,{'Idempotency-Key':'answerless-'+index});
+    expect(response.status).toBe(201);
+    const card = (await response.json() as any).data;
+    expect(card.translations.en.answer).toBe('');
+    expect((await apiRequest(token,route,'POST',body,{'Idempotency-Key':'answerless-'+index})).headers.get('Idempotency-Replayed')).toBe('true');
+    await db.prepare('INSERT INTO card_progress(user_id,card_id,times_shown) VALUES (?,?,7)').bind('answerless-owner',card.id).run();
+    let revision = card.revision;
+    for (const patch of [{answer:'Filled'}, {question:'Renamed '+index}, {answer:''}, {answer:'Final'}]) {
+      const result = await apiRequest(token,route+'/'+card.id,'PATCH',{translations:{en:patch}},{'If-Match':'"'+revision+'"'});
+      expect(result.status).toBe(200);
+      const next = (await result.json() as any).data;
+      expect(next.id).toBe(card.id);
+      expect(next.translations.en.answer).toBe('answer' in patch ? patch.answer : 'Filled');
+      revision = next.revision;
+    }
+    expect(await db.prepare('SELECT times_shown FROM card_progress WHERE card_id = ?').bind(card.id).first('times_shown')).toBe(7);
+  }
+  expect((await apiRequest(token,route,'POST',{translations:{en:{question:' '}}},{'Idempotency-Key':'invalid-question'})).status).toBe(400);
+});
+
+
+it('imports answerless v2/v3 cards and preserves conflicts and browser edits', async () => {
+  const browser = new Browser();
+  await browser.login('answerless-browser');
+  for (const version of [2,3]) {
+    const metadata = version === 3 ? '\n### cardType: question\n### topic: Java\n### occurrenceCount: 0\n### provenance\ntype: generated\nsources: []' : '';
+    const source = '---\nformatVersion: '+version+'\ndeckId: empty-'+version+'\nprimaryLanguage: en\n---\n## card: empty'+metadata+'\n### en\n#### question\nQuestion '+version;
+    const {id} = await browser.import(source);
+    const [card] = await browser.cards(id);
+    expect(card.translations.en.answer).toBe('');
+    const preview = await browser.ok<Preview>('import/preview',{source:source+'\n#### answer\nNew answer',target:id});
+    expect(preview.rows.some(row => row.kind === 'conflict')).toBe(true);
+    await browser.ok('card',{deck:id,id:card.id,method:'save',translations:{en:{question:'Question '+version,answer:'   '}}});
+    expect((await browser.cards(id))[0]).toMatchObject({id:card.id,translations:{en:{answer:''}}});
+  }
+});
+
+
+it('retrieves individual deck permissions with current membership, token scopes and unchanged ETags', async () => {
+  const owner = await apiToken('retrieve-owner');
+  const editor = await apiToken('retrieve-editor');
+  const readOnly = await apiToken('retrieve-editor', 0);
+  const viewer = await apiToken('retrieve-viewer');
+  for (const visibility of ['PRIVATE', 'SHARED']) {
+    const created = await apiRequest(owner, 'decks', 'POST', {title:'Secret retrieval '+visibility, visibility}, {'Idempotency-Key':'retrieve-'+visibility});
+    expect(created.status).toBe(201);
+    const deck = (await created.json() as {data:{id:string;revision:number}}).data;
+    const route = 'decks/'+deck.id;
+    const etag = '"'+deck.revision+'"';
+    await db.prepare('INSERT INTO deck_collaborators(deck_id,user_id,added_at,added_by) VALUES (?,?,0,?)')
+      .bind(deck.id,'retrieve-editor','retrieve-owner').run();
+    async function expectPermissions(token: string, canEdit: boolean, canManage: boolean) {
+      const response = await apiRequest(token,route);
+      expect(response.status).toBe(200);
+      expect(response.headers.get('ETag')).toBe(etag);
+      const body = await response.json() as {data:{permissions:object}};
+      expect(body.data.permissions).toEqual({can_read:true,can_edit:canEdit,can_manage:canManage});
+    }
+    async function expectPrivateDenied(token: string) {
+      const denied = await apiRequest(token,route);
+      expect(denied.status).toBe(404);
+      expect(denied.headers.get('ETag')).toBeNull();
+      expect(await denied.json()).toEqual({error:{code:'not_found',message:'Deck not available.'}});
+    }
+    await expectPermissions(owner,true,true);
+    await expectPermissions(editor,true,false);
+    await expectPermissions(readOnly,true,false);
+    expect((await apiRequest(readOnly,route,'PATCH',{title:'Denied'},{'If-Match':etag})).status).toBe(403);
+    if (visibility === 'SHARED') await expectPermissions(viewer,false,false);
+    else await expectPrivateDenied(viewer);
+    await db.prepare('DELETE FROM deck_collaborators WHERE deck_id = ? AND user_id = ?').bind(deck.id,'retrieve-editor').run();
+    if (visibility === 'SHARED') {
+      await expectPermissions(editor,false,false);
+      await expectPermissions(readOnly,false,false);
+      expect((await apiRequest(editor,route,'PATCH',{title:'Denied'},{'If-Match':etag})).status).toBe(403);
+    } else {
+      await expectPrivateDenied(editor);
+      await expectPrivateDenied(readOnly);
+      expect((await apiRequest(editor,route,'PATCH',{title:'Denied'},{'If-Match':etag})).status).toBe(404);
+    }
+  }
+});

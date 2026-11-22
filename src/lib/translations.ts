@@ -73,6 +73,6 @@ export function reconcileLanguage(preferred: string, available: string[]) {
 }
 
 export function validTranslation(value: Translation) {
-  return Boolean(value && typeof value.question === 'string' && typeof value.answer === 'string' && value.question.trim() && value.answer.trim() && value.question.length <= 2000 &&
+  return Boolean(value && typeof value.question === 'string' && typeof value.answer === 'string' && value.question.trim() && value.question.length <= 2000 &&
     value.answer.length <= 20000 && (value.questionDetails === undefined || (typeof value.questionDetails === 'string' && value.questionDetails.length <= 20000)) && sections.every(section => value[section] === undefined || (typeof value[section] === 'string' && value[section].length <= 20000)));
 }

@@ -64,7 +64,7 @@ export function parseV3(lines: string[]): BilingualDraft[] {
     catch (reason) { error ??= reason instanceof Error ? reason.message : 'metadata: invalid'; }
     for (const [language, translation] of Object.entries(card.translations)) {
       for (const field of ['question', 'answer'] as const) {
-        if (!translation[field]?.trim()) error ??= `${language}.${field}: required nonempty Markdown`;
+        if (field === 'question' && !translation[field]?.trim()) error ??= `${language}.${field}: required nonempty Markdown`;
         if (translation[field].length > (field === 'question' ? 2000 : 20000)) error ??= `${language}.${field}: exceeds character limit`;
       }
       if ((translation.questionDetails?.length ?? 0) > 20000) error ??= `${language}.questionDetails: exceeds 20000 characters`;

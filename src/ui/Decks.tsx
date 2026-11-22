@@ -61,7 +61,7 @@ function CardEditor({ deck, card, busy, save, close }: { deck: Deck; card?: Card
   const active = translations[language];
   const supplied = Object.entries(translations).filter(([, value]) =>
     Boolean(value.question.trim() || value.answer.trim() || value.questionDetails?.trim() || sections.some(section => value[section]?.trim())));
-  const invalid = !supplied.some(([code]) => code === (deck.primaryLanguage ?? card?.primary_language)) || supplied.some(([, value]) => !value.question.trim() || !value.answer.trim() || (metadata?.cardType === 'coding_task' && !value.questionDetails?.trim()));
+  const invalid = !supplied.some(([code]) => code === (deck.primaryLanguage ?? card?.primary_language)) || supplied.some(([, value]) => !value.question.trim() || (metadata?.cardType === 'coding_task' && !value.questionDetails?.trim()));
   return <form className="item stack" onSubmit={event => {
     event.preventDefault();
     if (!invalid) save({ id: card?.id, translations: Object.fromEntries(supplied), ...(metadata ? { metadata } : {}), method: 'save' });
@@ -82,7 +82,7 @@ function CardEditor({ deck, card, busy, save, close }: { deck: Deck; card?: Card
           setTranslations(current => ({ ...current, [language]: { ...(current[language] ?? { question: '', answer: '' }), [key]: value } }));
         }} />
     </label>)}
-    {invalid && <p className="muted">Add a question and an answer for every language you use. Coding tasks also require a task statement.</p>}
+    {invalid && <p className="muted">Add a question for every language you use. Coding tasks also require a task statement.</p>}
     <div className="row"><button className="primary" disabled={busy || invalid}>Save card</button><button type="button" onClick={close}>Cancel</button></div>
   </form>;
 }
