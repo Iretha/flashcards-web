@@ -1,9 +1,16 @@
 ﻿import { createElement } from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { expect, it } from 'vitest';
-import { buildChatGptPrompt, buildChatGptUrl } from '../src/lib/chatgpt';
+import { buildChatGptPrompt, buildChatGptUrl, defaultInstructions } from '../src/lib/chatgpt';
 import { selectTranslation } from '../src/lib/translations';
 import AskChatGpt from '../src/ui/AskChatGpt';
+
+it('preserves Cyrillic in universal defaults and the Bulgarian prompt heading', () => {
+  const instructions = defaultInstructions({ chatgpt_default: 'universal' }, 'bg');
+  expect(instructions).toContain('Обясни въпроса точно, ясно и логично.');
+  expect(instructions).not.toContain('??');
+  expect(buildChatGptPrompt('Тест', 'bg', instructions)).toContain('Въпрос:');
+});
 
 it.each(['en', 'bg'] as const)('encodes only the selected question in %s', language => {
   const translations = { en: { question: 'Java & ? # + "\ninterfaces', answer: 'SECRET ANSWER', questionDetails: 'SECRET NOTES' }, bg: { question: 'Какво е Java?', answer: 'SECRET BG' } };

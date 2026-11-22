@@ -49,16 +49,16 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
           <div className="row">
             <label>Target deck<select value={file.target} disabled={busy} onChange={event => {
               const target = event.target.value;
-              patch(file.key, { target, replace: false, preview: undefined, choices: {}, links: {} });
+              patch(file.key, { visibility: decks.find(deck => deck.id === target)?.visibility ?? file.visibility, target, replace: false, preview: undefined, choices: {}, links: {} });
             }}>
               <option value="">Match the Markdown deck ID</option><option value="new">Create a deck</option>
-              {decks.filter(deck => deck.owned).map(deck => <option key={deck.id} value={deck.id}>{deck.title}</option>)}
+              {decks.filter(deck => deck.permissions.canEdit).map(deck => <option key={deck.id} value={deck.id}>{deck.title}</option>)}
             </select></label>
-            <label>Visibility<select value={file.visibility} disabled={busy} onChange={event => patch(file.key, { visibility: event.target.value as FileDraft['visibility'] })}>
+            <label>Visibility<select value={file.visibility} disabled={busy || (!!file.target && file.target !== 'new' && !decks.find(deck => deck.id === file.target)?.permissions.canManageCollaborators)} onChange={event => patch(file.key, { visibility: event.target.value as FileDraft['visibility'] })}>
               <option value="PRIVATE">Private</option><option value="SHARED">Shared</option>
             </select></label>
           </div>
-          <label className="check"><input type="checkbox" checked={file.replace ?? false} disabled={busy || !file.target || file.target === 'new'} onChange={event => patch(file.key, { replace: event.target.checked, preview: undefined, choices: {}, links: {} })} />Replace all cards (re-import)</label>
+          <label className="check"><input type="checkbox" checked={file.replace ?? false} disabled={busy || !decks.find(deck => deck.id === file.target)?.permissions.canManageCollaborators || !file.target || file.target === 'new'} onChange={event => patch(file.key, { replace: event.target.checked, preview: undefined, choices: {}, links: {} })} />Replace all cards (re-import)</label>
           <button disabled={busy} onClick={() => void run(async () => {
             const result = await api<Preview>('import/preview', { source: file.source, target: file.target, replace: file.replace === true, links: file.links });
             patch(file.key, { preview: result, choices: {} });

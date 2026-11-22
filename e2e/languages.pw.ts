@@ -1,6 +1,6 @@
 import { test, expect } from '@playwright/test';
 
-test('mixed decks preserve global preference, disable missing card translations and update setup union', async ({ page }) => {
+test('mixed decks preserve global preference, fall back for missing card translations and update setup union', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Username').fill('Languages-' + Date.now());
   await page.getByLabel('Access code').fill('v3-e2e');
@@ -27,21 +27,16 @@ test('mixed decks preserve global preference, disable missing card translations 
   await page.getByRole('checkbox', { name: 'Language A', exact: true }).check();
   await page.getByRole('checkbox', { name: 'Language B', exact: true }).check();
   const setup = page.getByRole('group', { name: 'Study language', exact: true });
-  await expect(setup.getByRole('button')).toHaveText(['BG', 'DE', 'EN']);
+  await expect(setup.getByRole('button')).toHaveText(['EN', 'BG', 'DE']);
   await setup.getByRole('button', { name: 'DE', exact: true }).click();
   await page.getByRole('button', { name: 'Start studying', exact: true }).click();
   const stage = page.locator('.study-active');
   const global = stage.getByRole('group', { name: 'Study language', exact: true });
-  const local = stage.getByRole('group', { name: 'Card language', exact: true });
   await expect(global.getByRole('button')).toHaveCount(3);
   await expect(global.getByRole('button', { name: 'DE', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(stage.locator('.study-question')).toContainText('English original?');
-  await expect(local.getByRole('button', { name: 'EN', exact: true })).toBeEnabled();
-  await expect(local.getByRole('button', { name: 'EN', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(local.getByRole('button', { name: 'DE', exact: true })).toBeDisabled();
-  await expect(local.getByRole('button', { name: 'DE', exact: true })).toHaveAttribute('title', /unavailable/);
-  await local.getByRole('button', { name: 'DE', exact: true }).evaluate((button: HTMLButtonElement) => button.click());
-  await expect(stage.locator('.study-question')).toContainText('English original?');
+  await expect(stage.getByRole('status')).toContainText('DE unavailable');
+  await expect(stage.locator('.study-question')).toHaveAttribute('lang', 'en');
   const before = await (await page.request.get('/api/cards?deck=' + a)).json();
   await global.getByRole('button', { name: 'BG', exact: true }).click();
   await expect(global.getByRole('button', { name: 'BG', exact: true })).toHaveAttribute('aria-pressed', 'true');
@@ -51,11 +46,11 @@ test('mixed decks preserve global preference, disable missing card translations 
   const next = stage.locator('.study-navigation').getByRole('button', { name: 'Next', exact: true });
   await next.click();
   await expect(stage.locator('.study-question')).toContainText('Deutsche Frage?');
-  await expect(local.getByRole('button', { name: 'DE', exact: true })).toBeEnabled();
+  await expect(stage.locator('.study-question')).toHaveAttribute('lang', 'de');
   await next.click();
   await expect(stage.locator('.study-question')).toContainText('Bulgarian original two?');
-  await expect(local.getByRole('button', { name: 'BG', exact: true })).toHaveAttribute('aria-pressed', 'true');
-  await expect(local.getByRole('button', { name: 'DE', exact: true })).toBeDisabled();
+  await expect(stage.locator('.study-question')).toHaveAttribute('lang', 'bg');
+  await expect(stage.getByRole('status')).toContainText('DE unavailable');
   await expect(global.getByRole('button', { name: 'DE', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await stage.locator('.study-navigation').getByRole('button', { name: 'Prev', exact: true }).click();
   await expect(stage.locator('.study-question')).toContainText('Deutsche Frage?');

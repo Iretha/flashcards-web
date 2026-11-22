@@ -42,7 +42,7 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql']) {
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql', '0011_api_token_description.sql']) {
     if (file === '0008_deck_languages.sql') {
       await db.batch([
         db.prepare("INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at) VALUES ('migration-mixed', 'migrated', 'Mixed originals', '', 'PRIVATE', 0, 0)"),
@@ -52,6 +52,10 @@ beforeAll(async () => {
           .bind('migration-' + code, code, code, code, code, JSON.stringify({ [code]: { question: code, answer: 'Answer' }, de: { question: 'DE ' + code, answer: 'Antwort' } }))),
         db.prepare("INSERT INTO card_progress(user_id, card_id, times_shown) VALUES ('migrated', 'migration-bg', 9)"),
       ]);
+    }
+    if (file === '0010_personal_api_tokens.sql') {
+      await db.prepare('INSERT INTO api_tokens(token_hash,user_id,can_write,expires_at) VALUES (?,?,?,?)')
+        .bind(createHash('sha256').update('fc_' + 'a'.repeat(64)).digest('hex'), 'migrated', 1, 4102444800000).run();
     }
     const sql = readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8');
     await db.batch(sql.split(';').filter(statement => statement.trim()).map(statement => db.prepare(statement)));
@@ -163,7 +167,7 @@ async function apiToken(user: string, canWrite = 1, expires = Date.now() + 60_00
   await db.batch([
     db.prepare('INSERT INTO users(id, username, username_key, created_at, last_login_at) VALUES (?, ?, ?, 0, 0) ON CONFLICT(id) DO NOTHING')
       .bind(user, user, user),
-    db.prepare('INSERT INTO api_tokens VALUES (?, ?, ?, ?)').bind(hash, user, canWrite, expires),
+    db.prepare('INSERT INTO api_tokens(token_hash, user_id, can_write, expires_at) VALUES (?, ?, ?, ?)').bind(hash, user, canWrite, expires),
   ]);
   return token;
 }
@@ -796,4 +800,123 @@ it('migrates mixed and Bulgarian originals without guessing English, deleting tr
   expect(cards.results).toHaveLength(2);
   for (const card of cards.results) expect(JSON.parse(card.translations)).toEqual({ [card.primary_language]: { question: card.primary_language, answer: 'Answer' }, de: { question: 'DE ' + card.primary_language, answer: 'Antwort' } });
   expect(await db.prepare("SELECT times_shown FROM card_progress WHERE card_id = 'migration-bg'").first()).toEqual({ times_shown: 9 });
+});
+
+
+it('enforces collaborator permissions through browser and scoped API tokens without resetting progress', async () => {
+  const owner = new Browser(), editor = new Browser(), outsider = new Browser();
+  await owner.login('collab-owner'); await editor.login('collab-editor'); await outsider.login('collab-other');
+  const { id } = await owner.import('## Collaborator question\n\nOriginal answer');
+  const deck = () => owner.home().then(home => home.decks.find(deck => deck.id === id)!);
+  const [card] = await owner.cards(id);
+  const ownerId = (await deck()).owner_id;
+  expect((await outsider.request('collaborators', { deck: id, method: 'add', username: 'collab-other' })).response.status).toBe(404);
+  expect((await owner.request('collaborators', { deck: id, method: 'add', username: 'missing-collaborator' })).response.status).toBe(404);
+  expect((await owner.request('collaborators', { deck: id, method: 'add', username: 'collab-owner' })).response.status).toBe(400);
+  const added = await owner.ok<{id: string; username: string}[]>('collaborators', { deck: id, method: 'add', username: 'COLLAB-EDITOR' });
+  const editorId = added[0].id;
+  expect((await owner.request('collaborators', { deck: id, method: 'add', username: 'collab-editor' })).response.status).toBe(409);
+  expect((await editor.home()).decks.find(deck => deck.id === id)?.permissions).toEqual({ canEdit: true, canManageCollaborators: false, canDelete: false });
+  for (const method of ['add', 'remove']) expect((await editor.request('collaborators', { deck: id, method, username: 'collab-other', userId: ownerId })).response.status).toBe(403);
+  expect((await editor.request('deck/delete', { deck: id })).response.status).toBe(404);
+  expect((await editor.request('deck', { ...await deck(), visibility: 'SHARED' })).response.status).toBe(403);
+  expect((await editor.request('import/preview', { source: '## Replacement\n\nAnswer', target: id, replace: true })).response.status).toBe(403);
+  await db.prepare('INSERT INTO card_progress(user_id, card_id, times_shown) VALUES (?, ?, 7)').bind(editorId, card.id).run();
+  await editor.ok('card', { deck: id, id: card.id, method: 'save', translations: { en: { question: card.question, answer: 'Edited answer', example: 'Example', details: 'Explanation' } } });
+  expect((await editor.cards(id))[0]).toMatchObject({ id: card.id, times_shown: 7, answer: 'Edited answer' });
+  await editor.import('## Added by import\n\nImported answer', id);
+  expect((await editor.cards(id)).find(item => item.id === card.id)?.times_shown).toBe(7);
+  expect((await editor.ok<{cards: Card[]}>('export')).cards.some(item => item.id === card.id)).toBe(true);
+  const token = await apiToken(editorId), readOnly = await apiToken(editorId, 0);
+  const route = 'decks/' + id;
+  for (const field of ['chatgpt_default', 'chatgpt_en', 'chatgpt_bg']) {
+    const value = field === 'chatgpt_default' ? 'legacy' : 'Unauthorized instructions';
+    expect((await editor.request('deck', {id, title:'Denied', visibility:'PRIVATE', [field]:value})).response.status).toBe(403);
+    const revision = (await deck()).revision;
+    expect((await apiRequest(token, route, 'PATCH', {[field]:value}, {'If-Match': '"' + revision + '"'})).status).toBe(403);
+  }
+
+  expect((await apiRequest(readOnly, route, 'PATCH', { title: 'Denied' })).status).toBe(403);
+  const revision = (await deck()).revision;
+  expect((await apiRequest(token, route, 'PATCH', { visibility: 'SHARED' }, { 'If-Match': '"' + revision + '"' })).status).toBe(403);
+  expect((await apiRequest(token, route, 'PATCH', { title: 'Collaborative title' }, { 'If-Match': '"' + revision + '"' })).status).toBe(200);
+  expect((await apiRequest(token, route, 'PATCH', { title: 'Stale title' }, { 'If-Match': '"' + revision + '"' })).status).toBe(412);
+  const [foreign] = await outsider.import('## Foreign question\n\nForeign answer').then(async result => outsider.cards(result.id));
+  expect((await editor.request('card', { deck: id, id: foreign.id, method: 'save', question: 'Forged', answer: 'Forged' })).response.status).toBe(404);
+  const currentRevision = (await deck()).revision;
+  const patches = await Promise.all(['First', 'Second'].map(answer => apiRequest(token, route + '/cards/' + card.id, 'PATCH', { translations: { en: { answer, example: 'API example' } } }, { 'If-Match': '"' + currentRevision + '"' })));
+  expect(patches.map(response => response.status).sort()).toEqual([200, 412]);
+  await editor.ok('study/start', { decks: [id], version: 0, settings: { order: 'SEQUENTIAL', timer: false, seconds: 30, language: 'en' } });
+  expect((await editor.study()).status).toBe('ACTIVE');
+  await owner.ok('collaborators', { deck: id, method: 'remove', userId: editorId });
+  expect((await editor.request('card', { deck: id, id: card.id, method: 'delete' })).response.status).toBe(404);
+  expect((await apiRequest(token, route)).status).toBe(404);
+  expect((await owner.cards(id)).some(item => item.id === card.id)).toBe(true);
+  expect(await db.prepare('SELECT times_shown FROM card_progress WHERE user_id = ? AND card_id = ?').bind(editorId, card.id).first('times_shown')).toBe(8);
+  expect((await deck()).owner_id).toBe(ownerId);
+  await owner.ok('deck/delete', { deck: id });
+});
+
+
+
+describe('personal API tokens', () => {
+  it('creates secrets once, scopes metadata, enforces CSRF and revokes personal and legacy credentials', async () => {
+    const owner = new Browser(), other = new Browser();
+    await owner.login('token-owner'); await other.login('token-other');
+    expect((await new Browser().request('tokens', { name: 'Denied' })).response.status).toBe(401);
+    expect((await owner.request('tokens', { name: 'Denied' }, 'https://evil.example')).response.status).toBe(403);
+    expect((await owner.request('tokens', { name: 'Denied', user_id: 'token-other' })).response.status).toBe(400);
+    const made = await owner.request<{id: string; token: string}>('tokens', { name: 'Integration' });
+    expect((await owner.request('tokens', {action:'describe', id:made.data.id, description:'curl tests'})).response.status).toBe(200);
+    expect((await other.request('tokens', {action:'describe', id:made.data.id, description:'Denied'})).response.status).toBe(404);
+    expect((await owner.request('tokens', {action:'describe', id:made.data.id, description:'x'.repeat(501)})).response.status).toBe(400);
+    expect((await owner.request<Array<{description:string}>>('tokens')).data[0].description).toBe('curl tests');
+    expect(made.response.status).toBe(201); expect(made.response.headers.get('Cache-Control')).toBe('no-store');
+    expect(made.data.token).toMatch(/^fc_[a-f0-9]{64}$/);
+    const hash = createHash('sha256').update(made.data.token).digest('hex');
+    const stored = await db.prepare('SELECT * FROM api_tokens WHERE id = ?').bind(made.data.id).first<Record<string, unknown>>();
+    expect(stored?.token_hash).toBe(hash); expect(stored?.can_write).toBe(0);
+    expect(Number(stored?.expires_at) - Number(stored?.created_at)).toBe(90 * 86400000);
+    const listed = await owner.request<Array<Record<string, unknown>>>('tokens');
+    expect(JSON.stringify(listed.data)).not.toContain(hash); expect(JSON.stringify(listed.data)).not.toContain(made.data.token);
+    expect((await other.request<unknown[]>('tokens')).data).toEqual([]);
+    expect((await other.request('tokens', {action: 'revoke', id: made.data.id})).response.status).toBe(404);
+    expect((await apiRequest(made.data.token, 'tokens', 'POST', {name: 'No'}, {Origin: origin})).status).toBe(401);
+    expect((await apiRequest(made.data.token, 'decks')).status).toBe(200);
+    expect((await apiRequest(made.data.token, 'decks', 'POST', {title: 'No'}, {'Idempotency-Key': 'deny'})).status).toBe(403);
+    for (let i = 0; i < 2; i++) expect((await owner.request('tokens', {action: 'revoke', id: made.data.id})).response.status).toBe(200);
+    expect((await apiRequest(made.data.token, 'decks')).status).toBe(401);
+    const user = String(stored?.user_id);
+    const legacy = await apiToken(user);
+    expect((await apiRequest(legacy, 'decks')).status).toBe(200);
+    const legacyRow = (await owner.request<Array<{id: string}>>('tokens')).data.find(t => t.id.startsWith('legacy:'))!;
+    expect((await owner.request('tokens', {action: 'revoke', id: legacyRow.id})).response.status).toBe(200);
+    expect((await apiRequest(legacy, 'decks')).status).toBe(401);
+  });
+  it('enforces concurrent limits, expiration selections, validation and rate limits', async () => {
+    const browser = new Browser(); await browser.login('token-limits');
+    for (const days of [30,90,180,365]) {
+      const result = await browser.request<{id: string; token: string}>('tokens', {name: 'Write', can_write: true, days});
+      expect(result.response.status).toBe(201);
+      const row = await db.prepare('SELECT * FROM api_tokens WHERE id = ?').bind(result.data.id).first<Record<string, unknown>>();
+      expect(row?.can_write).toBe(1); expect(Number(row?.expires_at)-Number(row?.created_at)).toBe(days*86400000);
+      await db.prepare('UPDATE api_tokens SET expires_at = 0 WHERE id = ?').bind(result.data.id).run();
+      expect((await apiRequest(result.data.token, 'decks')).status).toBe(401);
+    }
+    expect((await browser.request('tokens', {name:'Invalid',days:0})).response.status).toBe(400);
+    const results = await Promise.all(Array.from({length: 12}, () => browser.request<{token: string}>('tokens', {name:'Concurrent'})));
+    expect(results.filter(r => r.response.status === 201)).toHaveLength(10);
+    expect(results.filter(r => r.response.status === 409)).toHaveLength(2);
+    expect(new Set(results.filter(r => r.response.status === 201).map(r => r.data.token)).size).toBe(10);
+    for(let i=0;i<43;i++) await browser.request('tokens', {name:'Limited'});
+    expect((await browser.request('tokens', {name:'Limited'})).response.status).toBe(429);
+  });
+});
+
+it('preserves an operator credential inserted before migration 0010', async () => {
+  const token = 'fc_' + 'a'.repeat(64);
+  expect((await apiRequest(token, 'decks')).status).toBe(200);
+  const row = await db.prepare('SELECT * FROM api_tokens WHERE token_hash = ?').bind(createHash('sha256').update(token).digest('hex')).first<Record<string,unknown>>();
+  expect(row?.can_write).toBe(1); expect(row?.expires_at).toBe(4102444800000);
+  expect(row?.name).toBeNull(); expect(row?.created_at).toBeNull(); expect(row?.revoked_at).toBeNull();
 });

@@ -39,7 +39,7 @@ test('imports v3 in the browser and studies with keyboard, history, repeats and 
   await expect(stage.locator('.question-details .token.keyword')).toContainText('int');
   await expect(stage.getByRole('link', { name: 'Interview account' })).toHaveAttribute('href', 'https://example.com/interview');
   const repeat = stage.getByRole('switch', { name: 'Repeat', exact: true });
-  const studyActions = stage.getByRole('group', { name: 'Study actions' });
+  const studyActions = stage.locator('.study-navigation');
   await repeat.focus(); await page.keyboard.press('Space');
   await expect(repeat).toBeChecked();
   await expect(stage.getByText('Implement a counter.', { exact: true })).toBeVisible();
@@ -53,11 +53,11 @@ test('imports v3 in the browser and studies with keyboard, history, repeats and 
   await stage.focus(); await page.keyboard.press('Enter');
   await expect(answer).toHaveJSProperty('open', true);
   await expect(stage.locator('.answer')).toContainText('Use AtomicInteger.');
-  await stage.getByRole('button', { name: 'Hide answer', exact: true }).click();
+  await answer.locator(':scope > summary').click();
   await expect(answer).toHaveJSProperty('open', false);
   await stage.focus(); await page.keyboard.press('ArrowRight');
   await expect(stage.getByText('What is atomicity?', { exact: true })).toBeVisible();
-  await stage.getByRole('button', { name: 'Previous', exact: true }).click();
+  await stage.getByRole('button', { name: 'Prev', exact: true }).click();
   await expect(repeat).toBeChecked();
   await studyActions.getByRole('button', { name: 'Next', exact: true }).click();
   await studyActions.getByRole('button', { name: 'Next', exact: true }).click();

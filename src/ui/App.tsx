@@ -1,3 +1,4 @@
+import { ApiTokens } from './ApiTokens';
 import { effectiveInstructions } from '../lib/chatgpt';
 import AskChatGpt from './AskChatGpt';
 import { useEffect, useRef, useState } from 'react';
@@ -14,7 +15,7 @@ import CardSources from './CardSources';
 import type { Theme } from './theme';
 import { readTheme, saveTheme } from './theme';
 
-type Screen = 'library' | 'import' | 'detail' | 'study';
+type Screen = 'library' | 'import' | 'detail' | 'study' | 'tokens' | 'edit';
 
 const answerSizeKey = 'flashcards-web:answer-text-size';
 const defaultAnswerSize = 100;
@@ -74,7 +75,6 @@ export default function App() {
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState('');
   const [create, setCreate] = useState(false);
-  const [editingDeck, setEditingDeck] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [session, setSession] = useState<Session | null>(null);
   const [answerSize, setAnswerSize] = useState(readAnswerSize);
@@ -295,6 +295,14 @@ export default function App() {
   }, [availableKey]);
   const toggleStudyAnswer = () => studyAction('show');
 
+  const themeButton = (<button type="button" className="theme-switch" title="Toggle Dark / Light theme" aria-label="Toggle Dark / Light theme" onClick={() => {
+        const next = theme === 'dark' ? 'light' : 'dark';
+        chooseTheme(next);
+      }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {theme === 'dark' ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></> : <path d="M20.9 13.1A9 9 0 0 1 10.9 3.1a9 9 0 1 0 10 10Z" />}
+        </svg>
+      </button>);
   return <div className="shell">
     <header className="top">
       <a className="brand" href="/" onClick={event => {
@@ -305,18 +313,28 @@ export default function App() {
         if (screen === 'study') exitStudy();
         else setScreen('library');
       }}><span aria-hidden="true" className="logo">▱</span> Flashcards</a>
-      {home && screen !== 'study' && <div className="row account">
-        <a className="button" href="/api/export">Export backup</a>
-        <a className="button" href="/api/replacement-report">Reload impact report</a>
+      {(!home || screen === 'study') && themeButton}
 
-      </div>}
       {home && screen !== 'study' && <div className="row account-actions">
-        <button type="button" disabled={busy} title="Reload decks, cards and the interface" onClick={() => {
+        <details className="settings-menu" onKeyDown={event => {
+        if (event.key === 'Escape') { event.currentTarget.open = false; event.currentTarget.querySelector('summary')?.focus(); }
+      }} onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) event.currentTarget.open = false; }}>
+        <summary aria-label="Settings" title="Settings">
+          <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="m9 3-1 3-3 1-2 3 2 2-1 3 3 3 3-1 2 2 3-2 1-3 3-1v-4l-3-1-1-3z"/><circle cx="12" cy="11" r="3"/></svg>
+          <svg className="settings-chevron" width="12" height="12" viewBox="0 0 16 16" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="m4 6 4 4 4-4" /></svg>
+        </summary>
+        <div className="settings-dropdown"><button type="button" onClick={event => {
+          event.currentTarget.closest('details')?.removeAttribute('open'); setScreen('tokens');
+        }}>API Tokens</button><a className="button" href="/api/export">Export backup</a></div>
+      </details>
+        <button type="button" disabled={busy} aria-label="Reload" title="Reload decks, cards and the interface" onClick={() => {
           const url = new URL(window.location.href);
           url.searchParams.set('_reload', Date.now().toString());
           window.location.replace(url.toString());
-        }}>↻ Reload</button>
-        <button className="sign-out" disabled={busy} onClick={() => void run(async () => {
+        }}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5"/><path d="M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1"/></svg></button>
+
+        {themeButton}
+        <button className="sign-out" aria-label={'Sign out ' + home.username} title="Sign out" disabled={busy} onClick={() => void run(async () => {
           await api('logout', {});
           setHome(null);
           themeUser.current = null;
@@ -324,18 +342,10 @@ export default function App() {
           setSelected([]);
           setCreate(false);
           setScreen('library');
-        })}>Sign out {home.username}</button></div>}
-      <button type="button" className="theme-switch" title="Toggle Dark / Light theme" aria-label="Toggle Dark / Light theme" onClick={() => {
-        const next = theme === 'dark' ? 'light' : 'dark';
-        chooseTheme(next);
-      }}>
-        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
-          {theme === 'dark' ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></> : <path d="M20.9 13.1A9 9 0 0 1 10.9 3.1a9 9 0 1 0 10 10Z" />}
-        </svg>
-        {theme === 'dark' ? 'Light' : 'Dark'}
-      </button>
+        })}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4H4v16h5M10 12h11m-4-4 4 4-4 4"/></svg><span>{home.username}</span></button></div>}
     </header>
     <main aria-busy={busy}>
+      {home && screen === 'tokens' && <div className="stack"><div><button onClick={() => setScreen('library')}>Back to library</button></div><ApiTokens key={home.username} /></div>}
       {error && <p className="error" role="alert">{error}</p>}
       {!loaded && <p role="status">Loading Flashcards…</p>}
       {loaded && !home && <section className="panel login stack">
@@ -350,8 +360,14 @@ export default function App() {
         <div><button onClick={() => setScreen('library')}>Back to library</button></div>
         <Import decks={home.decks} run={run} reload={reload} busy={busy} />
       </div>}
+      {home && screen === 'edit' && <section className="panel stack">
+        <div><button onClick={() => setScreen('library')}>Back to library</button></div>
+        {deck?.permissions.canEdit ? <DeckEditor key={deck.id} deck={deck} busy={busy} save={data => void run(async () => {
+          await api('deck', data); await reload(); setScreen('library');
+        })} close={() => setScreen('library')} /> : <p>Deck unavailable for editing.</p>}
+      </section>}
       {home && screen === 'detail' && (deck
-        ? <DeckDetail key={deck.id} deck={deck} busy={busy} run={run} reload={reload} close={() => setScreen('library')} />
+        ? <DeckDetail key={deck.id} deck={deck} busy={busy} run={run} reload={reload} edit={() => setScreen('edit')} close={() => setScreen('library')} />
         : <button onClick={() => setScreen('library')}>Back to library</button>)}
       {home && screen === 'library' && <div className="workspace">
         <section className="panel stack">
@@ -372,15 +388,10 @@ export default function App() {
               }} /> <strong>{item.title}</strong></label>
               <div className="row">
                 <button onClick={() => { setDetail(item.id); setScreen('detail'); }}>View deck</button>
-                {item.owned === 1 && <button disabled={busy} onClick={() => setEditingDeck(item.id)}>Edit deck</button>}
+                {item.permissions.canEdit && <button disabled={busy} onClick={() => { setDetail(item.id); setScreen('edit'); }}>Edit deck</button>}
               </div>
             </div>
             {item.description && <p>{item.description}</p>}
-            {editingDeck === item.id && item.owned === 1 && <DeckEditor deck={item} busy={busy} save={data => void run(async () => {
-              await api('deck', data);
-              await reload();
-              setEditingDeck(null);
-            })} close={() => setEditingDeck(null)} />}
             <p className="muted">{item.visibility === 'PRIVATE' ? 'Private' : 'Shared'} · {item.total} cards · {item.presentations} presentations</p>
           </article>)}
         </section>
