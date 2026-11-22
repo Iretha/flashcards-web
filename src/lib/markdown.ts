@@ -1,3 +1,4 @@
+import { parseV3 } from './markdown-v3';
 import { parse } from 'yaml';
 import { parseBilingual } from './markdown-v2';
 
@@ -8,21 +9,23 @@ export const questionKey = (value: string) => value.normalize('NFKC').trim().rep
 export function parseMarkdown(source: string) {
   const lines = source.replace(/^\uFEFF/, '').split(/\r?\n/);
   const metadata: Record<string, string> = {};
-  let version: 1 | 2 = 1;
+  let version: 1 | 2 | 3 = 1;
   if (lines[0]?.trim() === '---') {
     const end = lines.findIndex((line, index) => index > 0 && line.trim() === '---');
     if (end < 0) throw new Error('The Markdown frontmatter is missing its closing delimiter.');
     const data: unknown = parse(lines.splice(0, end + 1).slice(1, -1).join('\n'), { maxAliasCount: 0 });
     if (data && typeof data === 'object') {
       const declared: unknown = Reflect.get(data, 'formatVersion');
-      if (declared === 2 || declared === '2') version = 2;
+      if (declared === 3 || declared === '3') version = 3;
+      else if (declared === 2 || declared === '2') version = 2;
       else if (declared !== undefined && declared !== 1 && declared !== '1') throw new Error('Unsupported Markdown formatVersion.');
-      for (const key of ['deckId', 'title', 'description']) {
+      for (const key of ['deckId', 'title', 'description', 'visibility']) {
         const value: unknown = Reflect.get(data, key);
         if (typeof value === 'string') metadata[key] = value.trim();
       }
     }
   }
+  if (version === 3) return { version, metadata, cards: parseV3(lines) } as const;
   if (version === 2) return { version, metadata, cards: parseBilingual(lines) } as const;
   const cards: Draft[] = [];
   let question: string | undefined;

@@ -1,3 +1,4 @@
+import type { CardMetadata } from '../lib/metadata';
 import { questionKey } from '../lib/markdown';
 import type { parseMarkdown } from '../lib/markdown';
 import { languages, legacyLanguage, sections, validTranslation } from '../lib/translations';
@@ -5,6 +6,7 @@ import type { Language, Translation, Translations } from '../lib/translations';
 
 export interface ImportTarget {
   id: string;
+  metadata?: CardMetadata | null;
   import_key: string | null;
   primary_language: Language;
   translations: Translations;
@@ -24,10 +26,11 @@ interface PreviewRow {
   message?: string;
   candidates?: { id: string; question: string }[];
   allowNew?: boolean;
+  metadata?: CardMetadata | null;
 }
 
 const comparable = (value: Translation) => JSON.stringify([
-  questionKey(value.question), value.answer, ...sections.map(section => value[section] ?? ''),
+  questionKey(value.question), value.answer, value.questionDetails ?? '', ...sections.map(section => value[section] ?? ''),
 ]);
 
 export function planImport(
@@ -87,6 +90,7 @@ export function planImport(
     const isNew = !target;
     const id = target?.id ?? crypto.randomUUID();
     const next: ImportTarget = {
+      metadata: bilingual ? draft.metadata ?? target?.metadata ?? null : target?.metadata ?? null,
       id, import_key: key ?? target?.import_key ?? null,
       primary_language: target?.primary_language ?? primary, translations: { ...target?.translations },
       interview_priority: (bilingual ? draft.interviewPriority : undefined) ?? target?.interview_priority ?? null,
@@ -94,8 +98,8 @@ export function planImport(
     };
     if (bilingual) claimed.add(id);
     let dirty = isNew || next.import_key !== target?.import_key;
-    if (target && (next.interview_priority !== target.interview_priority || next.difficulty !== target.difficulty)) {
-      rows.push({ index: prefix + ':metadata', kind: 'metadata', question, key: key ?? undefined });
+    if (target && (next.interview_priority !== target.interview_priority || next.difficulty !== target.difficulty || JSON.stringify(next.metadata ?? null) !== JSON.stringify(target.metadata ?? null))) {
+      rows.push({ index: prefix + ':metadata', kind: 'metadata', question, key: key ?? undefined, metadata: next.metadata });
       dirty = true;
     }
     let first = true;
@@ -114,7 +118,7 @@ export function planImport(
       const kind = duplicate ? 'duplicate' : previous ? 'conflict' : isNew && first ? 'new' : 'translation';
       rows.push({
         index: rowIndex, kind, question: value.question, answer: value.answer, language: actual,
-        existingAnswer: previous?.answer, incoming: value, existingTranslation: previous, key: key ?? undefined,
+        metadata: next.metadata, existingAnswer: previous?.answer, incoming: value, existingTranslation: previous, key: key ?? undefined,
       });
       if (!bilingual) seenLegacy.add(signature);
       first = false;

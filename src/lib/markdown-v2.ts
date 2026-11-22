@@ -1,8 +1,10 @@
 import { isLanguage, isSection, languages, validTranslation } from './translations';
+import type { CardMetadata } from './metadata';
 import type { Language, Translation, Translations } from './translations';
 
 export interface BilingualDraft {
   key: string;
+  metadata?: CardMetadata;
   translations: Translations;
   interviewPriority?: number;
   difficulty?: number;
@@ -78,7 +80,7 @@ export function parseBilingual(lines: string[]): BilingualDraft[] {
       language = label;
       if (card.translations[language]) card.error = 'A language heading appears more than once.';
       card.translations[language] ??= { question: '', answer: '' };
-    } else if (card && language && header?.[1] === '####' && (label === 'question' || label === 'answer' || isSection(label))) {
+    } else if (card && language && header?.[1] === '####' && (label === 'question' || label === 'answer' || label === 'questionDetails' || isSection(label))) {
       saveField();
       field = label;
       const key = language + ':' + field;

@@ -1,3 +1,5 @@
+import { effectiveInstructions } from '../lib/chatgpt';
+import AskChatGpt from './AskChatGpt';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, SubmitEvent } from 'react';
 import MarkdownContent from './MarkdownContent';
@@ -8,14 +10,8 @@ import { DeckDetail, DeckEditor } from './Decks';
 import Import from './Import';
 import { defaults } from '../lib/study';
 import type { Settings, StudyAction } from '../lib/study';
-import { answerSizeLabels, languages, sections, selectExplanation, selectTranslation } from '../lib/translations';
-import type { Section } from '../lib/translations';
-
-const explanationLabels: Record<Section, { en: string; bg: string }> = {
-  simple: { en: 'Explain Simply', bg: 'Обясни просто' },
-  example: { en: 'Show Example', bg: 'Дай пример' },
-  details: { en: 'More Details', bg: 'По-подробно' },
-};
+import { answerSizeLabels, languages, selectTranslation } from '../lib/translations';
+import CardSources from './CardSources';
 
 type Screen = 'library' | 'import' | 'detail' | 'study';
 
@@ -24,6 +20,11 @@ const defaultAnswerSize = 100;
 const minAnswerSize = 60;
 const maxAnswerSize = 180;
 const answerSizeStep = 10;
+const buildTimestamp = import.meta.env.PUBLIC_BUILD_TIMESTAMP;
+const buildVersion = new Intl.DateTimeFormat('bg-BG', {
+  timeZone: 'Europe/Sofia', year: 'numeric', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', second: '2-digit', hourCycle: 'h23',
+}).format(new Date(buildTimestamp));
 
 function readAnswerSize() {
   try {
@@ -70,10 +71,9 @@ export default function App() {
   const [selected, setSelected] = useState<string[]>([]);
   const [detail, setDetail] = useState('');
   const [create, setCreate] = useState(false);
+  const [editingDeck, setEditingDeck] = useState<string | null>(null);
   const [settings, setSettings] = useState<Settings>(defaults);
   const [session, setSession] = useState<Session | null>(null);
-  const [hiddenAnswer, setHiddenAnswer] = useState<Session | null>(null);
-  const [hiddenExplanation, setHiddenExplanation] = useState<Session | null>(null);
   const [answerSize, setAnswerSize] = useState(readAnswerSize);
   const [now, setNow] = useState(Date.now);
   const stage = useRef<HTMLElement>(null);
@@ -87,12 +87,39 @@ export default function App() {
   function applyHome(result: Home) {
     setHome(result);
     setSession(result.session);
+    setSelected(current => current.filter(id => result.decks.some(deck => deck.id === id)));
     return result;
   }
 
   async function reload() {
     return applyHome(await api<Home>('home'));
   }
+
+  useEffect(() => {
+    if (!home) return;
+    let cancelled = false;
+    let checking = false;
+    async function refreshAccess() {
+      if (inFlight.current || checking) return;
+      checking = true;
+      try {
+        const result = await api<Home>('home');
+        if (!cancelled && !inFlight.current) applyHome(result);
+      } catch (problem) {
+        if (!cancelled && problem instanceof ApiError && problem.status === 401) {
+          setHome(null);
+          setSession(null);
+        }
+      } finally { checking = false; }
+    }
+    const interval = window.setInterval(() => void refreshAccess(), 5000);
+    window.addEventListener('focus', refreshAccess);
+    return () => {
+      cancelled = true;
+      window.clearInterval(interval);
+      window.removeEventListener('focus', refreshAccess);
+    };
+  }, [Boolean(home)]);
 
   useEffect(() => {
     void reload().then(result => {
@@ -136,10 +163,6 @@ export default function App() {
 
   function studyAction(action: StudyAction, values?: object) {
     if (session?.status !== 'ACTIVE' || inFlight.current) return;
-    if (action === 'show' && hiddenAnswer === session) {
-      setHiddenAnswer(null);
-      return;
-    }
     void run(async () => { await send(action, session, values); });
   }
 
@@ -187,15 +210,14 @@ export default function App() {
       }
       if (screen === 'study' && session?.status === 'ACTIVE') {
         let action: StudyAction | undefined;
-        const interactive = element?.closest('button, a, summary, pre.code-block');
+        const interactive = element?.closest('button, input, a, summary, pre.code-block');
         if ((event.key === ' ' || event.key === 'Enter') && !interactive) action = 'show';
         if (event.key === 'ArrowRight' && !interactive) action = 'next';
         if (event.key === 'ArrowLeft' && !interactive) action = 'previous';
-        if (event.key.toLowerCase() === 'l' && !session.historical) action = 'learn';
-        if (event.key.toLowerCase() === 'r' && !session.historical) action = 'repeat';
+        if (event.key.toLowerCase() === 'r') action = 'repeat';
         if (action) {
           event.preventDefault();
-          if (!event.repeat) studyAction(action);
+          if (!event.repeat) { if (action === 'show') toggleStudyAnswer(); else studyAction(action); }
           return;
         }
       }
@@ -221,7 +243,7 @@ export default function App() {
   function resume() {
     void run(async () => {
       let saved = await api<Session | null>('study');
-      if (saved?.status === 'ACTIVE' && saved.paused) saved = await send('resume', saved);
+      if (saved?.status === 'ACTIVE') saved = await send('resume', saved, { answersOpen: settings.answersOpen ?? false });
       setSession(saved);
       if (saved) setSettings(previous => ({ ...previous, language: saved.language }));
       setNow(Date.now());
@@ -231,38 +253,42 @@ export default function App() {
 
   const selectedDecks = home?.decks.filter(item => selected.includes(item.id)) ?? [];
   const total = selectedDecks.reduce((sum, item) => sum + item.total, 0);
-  const learned = selectedDecks.reduce((sum, item) => sum + item.learned, 0);
   const translations = session?.card?.translations ?? {};
   const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
-  const explanation = session?.explanation && selectExplanation(translations, selectedLanguage.language, session.explanation);
-  const answerVisible = Boolean(session?.revealed && hiddenAnswer !== session);
-  const explanationVisible = Boolean(answerVisible && explanation && hiddenExplanation !== session);
-  const toggleExplanation = (section: Section) => {
-    if (session?.explanation === section) {
-      setHiddenExplanation(current => current === session ? null : session);
-    } else {
-      studyAction('explanation', { section });
-    }
-  };
+  const answerVisible = Boolean(session?.revealed);
   const sizeLabels = answerSizeLabels[session?.language ?? settings.language];
   const activeCard = session?.status === 'ACTIVE' && session.card;
-  const toggleStudyAnswer = () => answerVisible ? setHiddenAnswer(session) : studyAction('show');
+  const toggleStudyAnswer = () => studyAction('show');
 
   return <div className="shell">
     <header className="top">
-      <div className="brand"><span aria-hidden="true" className="logo">▱</span> Flashcards</div>
+      <a className="brand" href="/" onClick={event => {
+        if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+        event.preventDefault();
+        if (busy) return;
+        setCreate(false);
+        if (screen === 'study') exitStudy();
+        else setScreen('library');
+      }}><span aria-hidden="true" className="logo">▱</span> Flashcards</a>
       {home && screen !== 'study' && <div className="row account">
-        <span>{home.username}</span>
         <a className="button" href="/api/export">Export backup</a>
-        <button disabled={busy} onClick={() => void run(async () => {
+        <a className="button" href="/api/replacement-report">Reload impact report</a>
+
+      </div>}
+      {home && screen !== 'study' && <div className="row account-actions">
+        <button type="button" disabled={busy} title="Reload decks, cards and the interface" onClick={() => {
+          const url = new URL(window.location.href);
+          url.searchParams.set('_reload', Date.now().toString());
+          window.location.replace(url.toString());
+        }}>↻ Reload</button>
+        <button className="sign-out" disabled={busy} onClick={() => void run(async () => {
           await api('logout', {});
           setHome(null);
           setSession(null);
           setSelected([]);
           setCreate(false);
           setScreen('library');
-        })}>Switch user / Sign out</button>
-      </div>}
+        })}>Sign out {home.username}</button></div>}
     </header>
     <main aria-busy={busy}>
       {error && <p className="error" role="alert">{error}</p>}
@@ -299,18 +325,24 @@ export default function App() {
               <label className="check"><input type="checkbox" checked={selected.includes(item.id)} onChange={event => {
                 setSelected(current => event.target.checked ? [...current, item.id] : current.filter(id => id !== item.id));
               }} /> <strong>{item.title}</strong></label>
-              <button onClick={() => { setDetail(item.id); setScreen('detail'); }}>View deck</button>
+              <div className="row">
+                <button onClick={() => { setDetail(item.id); setScreen('detail'); }}>View deck</button>
+                {item.owned === 1 && <button disabled={busy} onClick={() => setEditingDeck(item.id)}>Edit deck</button>}
+              </div>
             </div>
             {item.description && <p>{item.description}</p>}
-            <p className="muted">{item.visibility === 'PRIVATE' ? 'Private' : 'Shared'} · {item.learned}/{item.total} learned · {item.total - item.learned} remaining</p>
-            <progress max={Math.max(1, item.total)} value={item.learned} aria-label={'Progress for ' + item.title} />
+            {editingDeck === item.id && item.owned === 1 && <DeckEditor deck={item} busy={busy} save={data => void run(async () => {
+              await api('deck', data);
+              await reload();
+              setEditingDeck(null);
+            })} close={() => setEditingDeck(null)} />}
+            <p className="muted">{item.visibility === 'PRIVATE' ? 'Private' : 'Shared'} · {item.total} cards · {item.presentations} presentations</p>
           </article>)}
         </section>
         <section className="panel stack">
           <h2>Study setup</h2>
-          {session?.status === 'ACTIVE' && <button className="primary" disabled={busy} onClick={resume}>Resume session</button>}
-          {session?.status === 'INVALIDATED' && <p className="muted">The previous session ended after a deck or progress change.</p>}
-          <p>{total} cards selected · {learned} learned · {total - learned} remaining</p>
+          {session?.status === 'INVALIDATED' && <p className="muted">The previous session needs a restart after an application, deck or progress change.</p>}
+          <p>{total} cards selected. Every selected card appears in the first cycle.</p>
           <div className="row" role="group" aria-label="Study language">
             {languages.map(language => <button key={language} aria-pressed={settings.language === language}
               onClick={() => setSettings({ ...settings, language })}>{language === 'bg' ? 'Български' : 'English'}</button>)}
@@ -318,10 +350,13 @@ export default function App() {
           <label>Question order<select value={settings.order} onChange={event => setSettings({ ...settings, order: event.target.value as Settings['order'] })}>
             <option value="SEQUENTIAL">Deck order</option><option value="RANDOM">Random</option>
           </select></label>
-          <label className="check"><input type="checkbox" checked={settings.onlyUnlearned} onChange={event => setSettings({ ...settings, onlyUnlearned: event.target.checked })} />Only unlearned cards</label>
+
+          <label className="check"><input type="checkbox" checked={settings.answersOpen ?? false} onChange={event => setSettings({ ...settings, answersOpen: event.target.checked })} />Show answers by default</label>
           <label className="check"><input type="checkbox" checked={settings.timer} onChange={event => setSettings({ ...settings, timer: event.target.checked })} />Enable timer</label>
           <label>Seconds per question<input type="number" min={1} max={3600} value={settings.seconds || ''} disabled={!settings.timer} onChange={event => setSettings({ ...settings, seconds: Number(event.target.value) })} /></label>
-          <button className="primary" disabled={busy || !total || (settings.onlyUnlearned && total === learned)} onClick={() => {
+          <div className="session-start-actions">
+          {session?.status === 'ACTIVE' && <button className="primary" disabled={busy} onClick={resume}>Resume session</button>}
+          <button className="primary" disabled={busy || !total} onClick={() => {
             if (session?.status === 'ACTIVE' && !window.confirm('Replace the current study session?')) return;
             void run(async () => {
               const next = await api<Session>('study/start', {
@@ -333,11 +368,15 @@ export default function App() {
               setScreen('study');
             });
           }}>{session?.status === 'ACTIVE' ? 'Start new session' : 'Start studying'}</button>
+          </div>
         </section>
       </div>}
       {home && screen === 'study' && <section className={activeCard ? 'panel study stack study-active' : 'panel study stack'} ref={stage} tabIndex={-1}
         style={{ '--answer-scale': answerSize / 100 } as CSSProperties}>
         {activeCard ? <>
+          <div className="between">
+            <span>{session.remaining} remaining {session.historical && '· History'}</span>
+            <div className="study-toolbar" role="group" aria-label="Study controls">
           <div className="answer-size-sidebar" role="group" aria-label={sizeLabels.group}>
             {[
               { text: 'A−', label: sizeLabels.decrease, disabled: answerSize === minAnswerSize,
@@ -352,60 +391,85 @@ export default function App() {
               <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{label}</span>
             </button>)}
           </div>
-          <div className="between">
-            <span>{session.remaining} remaining {session.historical && '· History'}</span>
-            <div className="row">
+              <span className="toolbar-dot" aria-hidden="true">·</span>
               <div className="row language-controls" role="group" aria-label="Study language">
                 {languages.map(language => <button key={language} aria-disabled={busy} aria-pressed={session.language === language}
-                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}</button>)}
+                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{language === 'bg' ? 'Български' : 'English'}</span></button>)}
               </div>
+              <span className="toolbar-dot" aria-hidden="true">·</span>
+              <button type="button" aria-label="Refresh for latest version" onClick={() => void run(async () => {
+                if (session?.status === 'ACTIVE') await send('pause', session);
+                const url = new URL(window.location.href);
+                url.searchParams.set('_reload', String(Date.now()));
+                window.location.replace(url.toString());
+              })} disabled={busy}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" /></svg>
+                <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Refresh for latest version</span>
+              </button>
+              <span className="toolbar-dot" aria-hidden="true">·</span>
               {deadline !== null && deadline !== undefined && <span className="timer" aria-label="Seconds remaining">{Math.max(0, Math.ceil((deadline - now) / 1000))}s</span>}
-              {session.paused && <button disabled={busy} onClick={() => studyAction('resume')}>Resume timer</button>}
-              {document.fullscreenEnabled && <button onClick={() => void run(async () => {
+              {session.paused && <button disabled={busy} onClick={() => studyAction('resume')}>Resume timer<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Resume timer</span></button>}
+              {document.fullscreenEnabled && <button aria-label="Toggle fullscreen" onClick={() => void run(async () => {
                 if (document.fullscreenElement) await document.exitFullscreen();
                 else await stage.current?.requestFullscreen();
-              })}>Fullscreen</button>}
-              <button disabled={busy} onClick={exitStudy}>Pause / Exit</button>
+              })}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg><span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Toggle fullscreen</span></button>}
+              <button disabled={busy} aria-label="Pause / Exit" onClick={exitStudy}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg><span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Pause / Exit</span></button>
             </div>
           </div>
           {error && <button disabled={busy} onClick={() => void run(async () => {
             setSession(await api<Session>('study'));
             setNow(Date.now());
           })}>Reload session</button>}
-          <p className="muted study-note">{activeCard.title}</p>
+          <div className="study-deck-row">
+            <p className="muted study-note">{activeCard.title}</p>
+            <label className="answer-toggle">
+              <input type="checkbox" role="switch" checked={session.repeat} disabled={busy} onChange={() => studyAction('repeat')} />
+              <span className="answer-toggle-track" aria-hidden="true" />
+              <span>Repeat</span>
+            </label>
+          </div>
           {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
+          <div className="study-question-row">
+          {activeCard.metadata?.provenance.sources[0] && <a className="question-source-link"
+            href={activeCard.metadata.provenance.sources[0].sourceUrl} target="_blank" rel="noopener noreferrer"
+            aria-label="Open question source in a new tab" title={activeCard.metadata.provenance.sources[0].sourceName + ' (opens in a new tab)'}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+              <path d="M10 13a5 5 0 0 0 7 .1l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7" />
+              <path d="M14 11a5 5 0 0 0-7-.1l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7" />
+            </svg>
+          </a>}
           <div className="study-question markdown" role="heading" aria-level={1} lang={selectedLanguage.language}>
             <MarkdownContent>{selectedLanguage.translation?.question}</MarkdownContent>
+            {activeCard.metadata && <span className="question-occurrences" title="Independent interview occurrences">({activeCard.metadata.provenance.type === 'generated' ? 0 : activeCard.metadata.occurrenceCount})</span>}
           </div>
-          {answerVisible && <>
-            <div className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent></div>
-            <div className="row" role="group" aria-label="Explanations">
-              {sections.map(section => {
-                const available = selectExplanation(translations, selectedLanguage.language, section);
-                return available.content && <button key={section} aria-disabled={busy} aria-expanded={Boolean(explanationVisible && session.explanation === section)}
-                  onClick={() => toggleExplanation(section)}>
-                  {explanationVisible && session.explanation === section ? (selectedLanguage.language === 'bg' ? 'Скрий' : 'Hide') : explanationLabels[section][selectedLanguage.language]}{available.language !== selectedLanguage.language ? ' · ' + available.language.toUpperCase() : ''}
-                </button>;
-              })}
+          </div>
+          <details className="answer-panel" open={answerVisible}>
+            <summary aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) toggleStudyAnswer(); }}>Answer <AskChatGpt question={selectedLanguage.translation?.question ?? ''} language={session.language} instructions={effectiveInstructions(home.decks.find(deck => deck.id === activeCard.deck_id) ?? {}, session.language)} /></summary>
+            <div id="study-answer" className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>
+              {activeCard.metadata?.answerReferences?.length ? <details><summary>Answer references</summary>{activeCard.metadata.answerReferences.map((reference, index) => <p key={index}><a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a></p>)}</details> : null}
             </div>
-            {explanationVisible && explanation && explanation.content && <div className="answer study-explanation markdown" lang={explanation.language}>
-              <MarkdownContent>{explanation.content}</MarkdownContent>
-            </div>}
-          </>}
-          <div className="row actions">
-            <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Previous</button>
-            <button className="primary" disabled={busy} aria-expanded={answerVisible} onClick={toggleStudyAnswer}>{answerVisible ? 'Hide answer' : 'Show answer'}</button>
-            <button disabled={busy || session.historical} onClick={() => studyAction('learn')}>Learned</button>
-            <button disabled={busy || session.historical} onClick={() => studyAction('repeat')}>Repeat</button>
-            <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
+          </details>
+          {activeCard.metadata ? <CardSources key={activeCard.id} metadata={activeCard.metadata}>
+            {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
+          </CardSources> : selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
+          <div className="study-navigation actions">
+            <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5m7-7-7 7 7 7" /></svg>Prev</button>
+            <div className="study-navigation-next">
+              <button disabled={busy} onClick={() => studyAction('next')}>Next<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7" /></svg></button>
+            </div>
           </div>
           <StudySidebar language={session.language} busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
-            answerVisible={answerVisible} onAction={studyAction} onToggleAnswer={toggleStudyAnswer} />
+            repeat={session.repeat} answerVisible={answerVisible} onAction={studyAction} onToggleAnswer={toggleStudyAnswer} />
         </> : <>
           <h1>{session?.status === 'COMPLETE' ? 'Session complete' : 'Session unavailable'}</h1>
           <button onClick={exitStudy}>Back to library</button>
         </>}
       </section>}
     </main>
+    <footer className="version-footer">
+      <time className="build-version" dateTime={buildTimestamp} title="Дата и час на изграждане • Europe/Sofia">
+        v{buildVersion}
+      </time>
+    </footer>
   </div>;
 }

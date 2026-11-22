@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+
 import type { StudyAction } from '../lib/study';
 import { studyControlLabels } from '../lib/translations';
 import type { Language } from '../lib/translations';
@@ -20,97 +20,29 @@ function Icon({ name }: { name: keyof typeof icons }) {
   </svg>;
 }
 
-export default function StudySidebar({ language, busy, hasPrevious, historical, answerVisible, onAction, onToggleAnswer }: {
+export default function StudySidebar({ language, busy, hasPrevious, repeat = false, answerVisible, onAction, onToggleAnswer }: {
   language: Language;
   busy: boolean;
   hasPrevious: boolean;
   historical: boolean;
+  repeat?: boolean;
   answerVisible: boolean;
   onAction: (action: StudyAction) => void;
   onToggleAnswer: () => void;
 }) {
-  const [hovered, setHovered] = useState(false);
-  const [pinned, setPinned] = useState(false);
-  const [focused, setFocused] = useState(false);
-  const sidebar = useRef<HTMLDivElement>(null);
-  const dismissed = useRef(false);
-  const open = hovered || pinned || focused;
   const labels = studyControlLabels[language];
 
-  useEffect(() => {
-    let inside = false;
-    let closeTimer: number | undefined;
-
-    function leave() {
-      dismissed.current = false;
-      if (!inside) return;
-      inside = false;
-      closeTimer = window.setTimeout(() => {
-        setHovered(false);
-        setPinned(false);
-      }, 250);
-    }
-
-    function move(event: PointerEvent) {
-      if (event.pointerType !== 'mouse') return;
-      // Detect the edge without putting an overlay over the study content.
-      if (event.clientX < 40 || (event.target instanceof Node && sidebar.current?.contains(event.target))) {
-        window.clearTimeout(closeTimer);
-        inside = true;
-        if (!dismissed.current) setHovered(true);
-      } else {
-        leave();
-      }
-    }
-
-    function pointerOut(event: PointerEvent) {
-      if (event.pointerType === 'mouse' && event.relatedTarget === null) leave();
-    }
-
-    function outsidePress(event: PointerEvent) {
-      if (event.target instanceof Node && !sidebar.current?.contains(event.target)) setPinned(false);
-    }
-
-    window.addEventListener('pointermove', move, { passive: true });
-    window.addEventListener('pointerout', pointerOut);
-    window.addEventListener('pointerdown', outsidePress);
-    return () => {
-      window.clearTimeout(closeTimer);
-      window.removeEventListener('pointermove', move);
-      window.removeEventListener('pointerout', pointerOut);
-      window.removeEventListener('pointerdown', outsidePress);
-    };
-  }, []);
-
-  const actions: { icon: keyof typeof icons; label: string; disabled?: boolean; run: () => void }[] = [
+  const actions: { icon: keyof typeof icons; label: string; disabled?: boolean; pressed?: boolean; run: () => void }[] = [
     { icon: 'arrow-left', label: labels.previous, disabled: !hasPrevious, run: () => onAction('previous') },
     { icon: answerVisible ? 'eye-off' : 'eye', label: answerVisible ? labels.hide : labels.show, run: onToggleAnswer },
-    { icon: 'check', label: labels.learn, disabled: historical, run: () => onAction('learn') },
-    { icon: 'repeat-2', label: labels.repeat, disabled: historical, run: () => onAction('repeat') },
+    { icon: 'repeat-2', label: labels.repeat, pressed: repeat, run: () => onAction('repeat') },
     { icon: 'arrow-right', label: labels.next, run: () => onAction('next') },
   ];
 
-  return <div ref={sidebar} className="study-sidebar" data-pointer-hover={hovered || undefined}>
-    <button type="button" className="study-sidebar-tab" aria-label={labels.controls}
-      aria-controls="study-sidebar-actions" aria-expanded={open}
-      onClick={() => {
-        if (pinned || focused) {
-          dismissed.current = true;
-          setHovered(false);
-          setPinned(false);
-          setFocused(false);
-        } else {
-          setPinned(true);
-        }
-      }}>
-      <Icon name="grip" />
-      <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{labels.controls}</span>
-    </button>
-    <div id="study-sidebar-actions" className="study-sidebar-actions" role="group" aria-label={labels.actions}
-      hidden={!open} onFocus={event => setFocused(event.target.matches(':focus-visible'))}
-      onBlur={event => { if (!event.currentTarget.contains(event.relatedTarget)) setFocused(false); }}>
-      {actions.map(({ icon, label, disabled, run }) => <button key={icon === 'eye-off' ? 'eye' : icon} type="button"
-        className="study-sidebar-action" aria-label={label} aria-disabled={busy || Boolean(disabled)}
+  return <div className="study-sidebar">
+    <div id="study-sidebar-actions" className="study-sidebar-actions" role="group" aria-label={labels.actions}>
+      {actions.map(({ icon, label, disabled, pressed, run }) => <button key={icon === 'eye-off' ? 'eye' : icon} type="button"
+        className="study-sidebar-action" aria-label={label} aria-pressed={pressed} aria-disabled={busy || Boolean(disabled)}
         onClick={() => { if (!busy && !disabled) run(); }}>
         <Icon name={icon} />
         <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{label}</span>

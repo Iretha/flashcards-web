@@ -9,6 +9,9 @@ export default defineConfig({
   adapter: cloudflare({ imageService: 'passthrough' }),
   integrations: [react()],
   vite: {
+    define: {
+      'import.meta.env.PUBLIC_BUILD_TIMESTAMP': JSON.stringify(new Date().toISOString()),
+    },
     plugins: [tailwind()],
     build: { target: 'chrome79', cssTarget: 'chrome79' },
   },

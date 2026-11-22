@@ -9,27 +9,27 @@ description: Generate, rewrite and review Senior Java interview flashcards for t
 
 Act as a Senior Java engineer (Java, JVM, concurrency, Spring and backend), technical interviewer, computer science educator, learning experience designer and critical QA reviewer. Apply these rules to every new or reviewed card, in Bulgarian or English.
 
-Read the repository instructions, relevant existing cards and `docs/FLASHCARDS-IMPORT-TEMPLATE.md` before file work. The logical contract below describes future content, NOT a production schema or an import format. Do not change the app, schema, production template, migrate cards or recreate decks as part of updating this skill. Those require a separate explicit task.
+Read the repository instructions, relevant existing cards and `docs/FLASHCARDS-IMPORT-TEMPLATE.md` before file work. Markdown v3 is supported. Do not change app/schema or recreate decks during content generation unless separately tasked. Preserve stable deckId/card keys and omitted languages. Legacy simple/example/details are compatibility data, not required learning layers.
 
-Until the template supports the contract, present new-contract content as a clearly labeled draft, not import-ready v2. Do not invent importer fields, hide question code in answers, or discard provenance to make a file importable. For explicitly requested legacy edits, preserve the actual schema, stable deckId/card keys, omitted languages and unaffected fields; report unsupported requirements separately. Legacy `simple/example/details` are compatibility fields, not mandatory learning layers for future cards.
+## Supported content contract
 
-## Logical content contract
-
-A proposed Markdown v3 serialization exists in the repository template, but it is not yet supported by the importer. Its field names and placement must be validated against parser and storage implementation:
+Serialize according to the template. The stable id is written as `## card: id`; metadata headings precede language sections, and provenance/reference bodies use YAML.
 
 | Field | Requirement |
 | --- | --- |
 | `id` | Required, stable and unique within its deck |
+| `cardType` | Required: `question` or `coding_task` |
+| `occurrenceCount` | Required integer >= 0, distinct documented interview occurrence IDs |
 | `topic` | Required, specific topic |
 | `question` | Required Question Title: short, concrete, standalone question |
 | `questionDetails` | Optional Markdown prompt context, code, task, inputs, constraints or tables |
 | `answer` | Required Markdown direct answer, brief reasoning and essential qualifications |
 | `provenance.type` | Required: `sourced`, `generated` or `mixed` |
-| `provenance.sourceName` | Required for sourced/mixed; otherwise optional |
-| `provenance.sourceUrl` | Required real URL for sourced/mixed; otherwise optional |
+| `provenance.sources[].sourceName` | Required on every supplied source; sourced/mixed need at least one source |
+| `provenance.sources[].sourceUrl` | Required real HTTP(S) URL on every supplied source |
 | `answerReferences` | Optional technical verification references, separate from provenance |
 
-Provenance must be visible on the question side in the future UI. Question Details must be visible before revealing the answer and must not disclose the solution. For compile/output/code-analysis questions, put all code needed to solve the task there. Keep long context out of the title.
+Provenance is available on the question side. Question Details must be visible before revealing the answer and must not disclose the solution. For compile/output/code-analysis questions, put all code needed to solve the task there. Keep long context out of the title.
 
 Start the answer with the decisive response to the exact question, then explain why and include material conditions. Answer why/how/when/comparison questions with the corresponding cause/mechanism/conditions/distinction. A true but merely related explanation fails alignment. Prefer natural spoken interview prose; no fixed word quota, filler introductions, conclusions, repetition or keyword-only answers. Preserve necessary nuance over brevity.
 
@@ -53,7 +53,11 @@ Determine provenance from how the question was obtained, independently of answer
 - `generated` — UI label `AI Generated`: independently authored by the agent. Do not attribute it to an external publisher or invent a URL or interview occurrence. Later verification of its answer against documentation does not change its origin.
 - `mixed` — UI label `AI Adapted`: created from or substantially adapted using a concrete source. Record real name, URL and the relationship/adaptation. Documentation used to create a question implies mixed, not sourced. Do not claim the adapted wording appears verbatim.
 
-Never invent sources, links or quotations. A page about the topic alone does not establish sourced provenance. Never claim a question is common or was asked in an interview without evidence. If a source cannot be confirmed, flag it as unverified for review. Unknown origins of existing questions must remain unresolved, not be relabeled generated; generated is valid only for genuinely agent-authored questions. Unresolved provenance prevents full approval. Keep provenance evidence and rephrasing notes in the review artifact until their serialization is agreed.
+Never invent sources, links or quotations. A page about the topic alone does not establish sourced provenance. Never claim a question is common or was asked in an interview without evidence. If a source cannot be confirmed, flag it as unverified for review. Unknown origins of existing questions must remain unresolved, not be relabeled generated; generated is valid only for genuinely agent-authored questions. Unresolved provenance prevents full approval. Store sources in provenance.sources and keep detailed verification/rephrasing notes in the review artifact.
+
+Every supplied source requires sourceName/sourceUrl. Optional company, location (job location), interviewLocation (only explicitly evidenced) and publishedAt (publication date, YYYY-MM-DD) must never be invented. An adaptation source may be technical documentation without interview evidence. Use occurrenceId only when a source documents an actual interview; reuse that ID for reposts/accounts of the same interview. occurrenceCount equals DISTINCT evidenced occurrenceId values, not URL count. Generated cards without documented interviews use 0. Answer references are separate {title, url} technical links and never increase occurrenceCount. Validation checks consistency, not truth or source independence.
+
+Coding tasks require questionDetails in every supplied language. Put the task statement and optional starter code there; never include the solution before reveal. Optional examples and solution explanation belong in answer. Do not request IDE/compiler/code execution in the app.
 
 ## Generation and review workflow
 

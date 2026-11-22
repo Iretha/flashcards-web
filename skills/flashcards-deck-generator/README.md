@@ -18,12 +18,16 @@ sourced и mixed примери и процедурата за проверка.
 Skill-ът не е самостоятелна CLI програма; зареди инструкциите изрично, ако средата
 не открива skills автоматично.
 
-Новият логически договор изисква id, topic, question, answer и provenance.type;
-questionDetails и answerReferences са optional, а sourceName/sourceUrl са задължителни
-за sourced/mixed. Provenance и условието се виждат от страната на въпроса.
-Предложеният Markdown v3 синтаксис е документиран в
-[template](../../docs/FLASHCARDS-IMPORT-TEMPLATE.md), но още не се поддържа от приложението.
-Полетата и правилата трябва да се потвърдят при реализацията на parser-а.
-Новият договор се издава като UTF-8 Markdown draft, без обещание за import съвместимост.
-Legacy import се генерира само при изрична заявка според действителния template,
-с отчет за неподдържаните нови изисквания. Следващата фаза изисква отделна задача.
+Markdown v3 се поддържа от приложението. Използвай
+[template](../../docs/FLASHCARDS-IMPORT-TEMPLATE.md): стабилен `## card: id`,
+`cardType`, `topic`, `occurrenceCount`, `provenance` и поне един пълен BG/EN вариант.
+Coding Task изисква `questionDetails`; решението и примерите са в `answer`.
+
+`provenance.sources` съдържа реални източници за произход или адаптация.
+Само доказано интервю получава `occurrenceId`; препубликациите споделят същия ID.
+`occurrenceCount` брои уникалните доказани интервюта, не URL. Документацията и
+`answerReferences` не доказват интервю. Не измисляй дати, компании или места.
+
+Валидирай файла с parser-а и изпълни A/B/C review за всяка карта и език.
+Разграничавай синтактична валидация, технически self-review и независим review.
+Не импортирай и не пресъздавай тестета без възложена операция.

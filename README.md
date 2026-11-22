@@ -62,14 +62,28 @@ npm run deploy
 
 Open the resulting HTTPS Worker URL and verify sign-in.
 
-## Markdown
+## Markdown v3
 
-Use the [Markdown v2 template](docs/FLASHCARDS-IMPORT-TEMPLATE.md) for new decks and the [Flashcards Deck Generator skill](skills/flashcards-deck-generator/README.md) to generate import files. In v2, a stable `## card: key` links BG and EN content to one card and its progress. Keep both `deckId` and existing card keys when sending revisions or additional translations. Reuse an existing v1 card through the import preview when its translation needs an explicit match.
+Use the [import template](docs/FLASHCARDS-IMPORT-TEMPLATE.md) and [deck generator](skills/flashcards-deck-generator/README.md). One file represents a deck; `## card: id` provides a stable unique key shared by BG/EN. Both `question` and `coding_task` cards support Markdown question details and answers, tables and highlighted fenced code. Task statements and source metadata are available before revealing the answer.
 
-Legacy v1 files still use `## Question` followed by a Markdown answer, with optional `deckId`, `title`, and `description` frontmatter. For a file without a deck ID, select the existing target deck when re-importing.
+Required v3 card metadata: `cardType`, `topic`, `occurrenceCount`, `provenance`. Optional: integer 1?5 `interviewPriority` and `difficulty`, and `answerReferences`. Each supplied language needs `question` and `answer`; coding tasks also need `questionDetails`. Metadata is stored as JSON and preserved through import, reimport, editing, study and JSON backup export. Apply `0005_v3.sql` to local D1 with `npm run db:local` before using v3. It adds nullable storage without rewriting existing cards.
 
-The deck's card list filters by optional interview priority and difficulty ratings from v2. The Hardest first and Easiest first sorts use the presentation count from your study history.
+Provenance sources establish origin/adaptation. Optional `occurrenceId` marks evidence of a documented interview; multiple sources for the same interview share one ID. `occurrenceCount` equals distinct interview IDs, never the number of URLs. Technical documentation does not establish interview occurrences. Answer references are separate technical verification links. The importer checks syntax and internal consistency; it cannot verify external evidence or detect reposts automatically.
+
+The card library filters by card type, topic, company, provenance, difficulty and priority. Legacy v1/v2 imports remain available for compatibility; legacy content is not automatically converted to v3. New decks should use v3. The manual card editor supports independently authored generated cards with type, topic and question details; use Markdown import to author provenance sources and answer references. Existing metadata is preserved on manual edits. A v3 import into a legacy deck requires deliberate replacement or a new target deck.
 
 ## Study controls
 
-Use Tab or direction keys to move between controls and Enter/OK to activate them. With focus on the study panel, Enter/Space reveals the answer and Left/Right browses cards. Use L for Learned, R for Repeat, and Escape/Back to pause and return to the library. On-screen controls are available throughout the session.
+Use Next/Previous to navigate independently of the Repeat checkbox. Every selected card appears in the first cycle. Later cycles contain only cards still marked Repeat, in the session's initial order. Unchecking a pending repeat removes it from the next presentation; first-cycle cards are always shown. Changing a historical card updates global session membership, including across cycle boundaries. A newly marked historical card joins the next cycle snapshot. History navigation replays already presented entries without recording another presentation. At a cycle boundary with no marked cards, Next completes the session. Completed sessions can be replaced by starting a new session.
+
+Show answer / Hide answer toggles visibility. Timer expiry reveals the answer without navigating or changing Repeat. Navigating resets the answer and timer for that view. Tab moves through controls; Space activates a focused checkbox. With focus on the study panel, Enter/Space toggles the answer, Left/Right browses, R toggles Repeat, and Escape/Back pauses and returns to the library. The L shortcut and Learned/explanation buttons have been removed. Controls wrap on narrow screens. Existing sidebar navigation, language switching, fullscreen and answer sizing remain available.
+
+## Safe card recreation
+
+No existing card content is migrated. See the [reload runbook](docs/FLASHCARDS-V3-RELOAD.md). Import previews show a read-only impact report; `/api/replacement-report` downloads the affected owned decks, card counts, progress counts and active sessions. Normal import updates cards by stable key. Replacement is a separate, guarded operation tested only against isolated D1; production recreation requires separate explicit approval. No production deployment or deletion was performed for this implementation.
+
+Pre-v3 active sessions must be restarted; card content and saved progress are not converted or deleted.
+
+Browser regression checks: `npm run test:e2e` uses Microsoft Edge and isolated local D1 at `.wrangler/v3-e2e`, with a test-only access code. It checks real import, Study UI, keyboard controls and 320/375px layouts.
+
+See the [verification and acceptance matrix](docs/FLASHCARDS-V3-VERIFICATION.md) and [read-only production impact inventory](docs/FLASHCARDS-V3-IMPACT.md).

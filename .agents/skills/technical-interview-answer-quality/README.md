@@ -34,18 +34,23 @@ B Educator, C Learner. Не редактирай файла; върни проб
 
 При разрешена редакция поправи проблемите и повтори трите проверки. Проверката на Markdown не доказва техническа коректност.
 
-## Бъдещ формат
+## Поддържан Markdown v3 формат
 
-Задължителни логически полета: `id`, `topic`, `question`, `answer`, `provenance.type`.
-Незадължителни: `questionDetails`, `answerReferences`; `provenance.sourceName` и
-`provenance.sourceUrl` са задължителни при sourced/mixed. Предложената Markdown v3 сериализация е описана в template-а, но все още не е
-поддържана от importer-а. Метаданните за преформулиране и структурата на references
-трябва да се финализират при реализацията.
+Задължителни: стабилен `## card: id`, `cardType`, `topic`, `occurrenceCount`,
+`provenance` и question/answer за всеки включен език. Coding Task изисква
+questionDetails. `provenance.sources` описва произхода или адаптацията.
+Източник за доказано независимо интервю има `occurrenceId`; препубликациите
+споделят ID. `occurrenceCount` брои уникалните доказани ID, не URL.
+Документация може да е източник за адаптация без интервю и тогава няма occurrenceId.
+Answer references са отделни технически референции. Не измисляй източници,
+дати, компании или места.
 Question Details и Answer са Markdown. Кодът за анализ и provenance се виждат преди отговора.
 Примерите са контекстуални, без отделен задължителен UI елемент.
 
-Това са **draft примери**, не import синтаксис. [Template документът](../../../docs/FLASHCARDS-IMPORT-TEMPLATE.md) вече описва предложен v3 договор,
-но действащият importer все още е v2 и не го реализира. Не добавяй неподдържани полета към import файл и не представяй draft като готов за import.
+Следващите примери са редакционни илюстрации, не import синтаксис.
+За import използвай [template](../../../docs/FLASHCARDS-IMPORT-TEMPLATE.md),
+с cardType и occurrenceCount (0 за примерите без доказано интервю).
+Поддържаният v3 importer проверява структурата; това не заменя A/B/C review.
 
 ## Концептуална карта, AI Generated, без необходимост от код
 
