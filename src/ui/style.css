@@ -422,3 +422,11 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
 .token-description { display: flex; align-items: center; gap: .5rem; }
 .token-description > span { min-width: 0; overflow-wrap: anywhere; }
 .token-description-edit { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-height: 32px; min-width: 32px; padding: .35rem; }
+
+/* Shared theme tokens and existing controls keep TV/mobile authentication consistent. */
+.auth-methods { width: 100%; }
+.auth-qr-image { max-width: 100%; height: auto; background: white; align-self: center; }
+.activation-code { font-size: 1.7rem; letter-spacing: .12em; overflow-wrap: anywhere; }
+.auth-google { min-height: 3rem; font-weight: bold; }
+.auth-methods a { overflow-wrap: anywhere; }
+.auth-methods button:focus-visible, .auth-methods input:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
