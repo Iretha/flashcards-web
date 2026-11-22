@@ -340,10 +340,6 @@ export default function App() {
       {!loaded && <p role="status">Loading Flashcards…</p>}
       {loaded && !home && <section className="panel login stack">
         <h1>Sign in</h1>
-        <div className="row" role="group" aria-label="Theme">
-          <button type="button" aria-pressed={theme === 'dark'} onClick={() => chooseTheme('dark')}><span aria-hidden="true">?</span> Dark</button>
-          <button type="button" aria-pressed={theme === 'light'} onClick={() => chooseTheme('light')}><span aria-hidden="true">?</span> Light</button>
-        </div>
         <form className="stack" method="post" onSubmit={submitSignIn}>
           <label>Username<input name="username" autoComplete="username" required maxLength={64} /></label>
           <label>Access code<input name="code" type="password" autoComplete="current-password" required maxLength={256} /></label>

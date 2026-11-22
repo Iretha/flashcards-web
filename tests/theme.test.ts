@@ -28,3 +28,18 @@ it('keeps separate preferences for each signed-in user', () => {
   saveTheme('dark', 'alice');
   expect(readTheme('alice')).toBe('dark');
 });
+
+it('defaults safely when no preference exists or storage is invalid or blocked', () => {
+  for (const saved of [null, '', 'invalid']) {
+    vi.stubGlobal('localStorage', { getItem: () => saved });
+    expect(readTheme()).toBe('dark');
+    expect(readTheme('existing-user')).toBe('dark');
+  }
+  vi.stubGlobal('localStorage', {
+    getItem: () => { throw new Error('Storage blocked'); },
+    setItem: () => { throw new Error('Storage blocked'); },
+  });
+  vi.stubGlobal('document', { documentElement: { dataset: {} } });
+  expect(readTheme('existing-user')).toBe('dark');
+  expect(() => saveTheme('light', 'existing-user')).not.toThrow();
+});
