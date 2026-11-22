@@ -1,3 +1,4 @@
+import AskChatGpt from './AskChatGpt';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, SubmitEvent } from 'react';
 import MarkdownContent from './MarkdownContent';
@@ -442,7 +443,7 @@ export default function App() {
           </div>
           </div>
           <details className="answer-panel" open={answerVisible}>
-            <summary aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) toggleStudyAnswer(); }}>Answer</summary>
+            <summary aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) toggleStudyAnswer(); }}>Answer <AskChatGpt question={selectedLanguage.translation?.question ?? ''} language={session.language} /></summary>
             <div id="study-answer" className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>
               {activeCard.metadata?.answerReferences?.length ? <details><summary>Answer references</summary>{activeCard.metadata.answerReferences.map((reference, index) => <p key={index}><a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a></p>)}</details> : null}
             </div>
