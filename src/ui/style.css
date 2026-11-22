@@ -190,7 +190,6 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   transition: visibility 0s linear 450ms;
 }
 .study-sidebar button:focus-visible > .study-sidebar-tooltip { visibility: visible; transition: none; }
-.study.study-active { padding-right: 3.5rem; }
 .study .answer-size-sidebar {
   display: flex;
   gap: 4px;

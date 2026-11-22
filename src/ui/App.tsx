@@ -3,7 +3,6 @@ import AskChatGpt from './AskChatGpt';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, SubmitEvent } from 'react';
 import MarkdownContent from './MarkdownContent';
-import StudySidebar from './StudySidebar';
 import { api, ApiError, signIn } from './api';
 import type { Home, Session } from './api';
 import { DeckDetail, DeckEditor } from './Decks';
@@ -213,8 +212,13 @@ export default function App() {
         const interactive = element?.closest('button, input, a, summary, pre.code-block');
         if (!interactive && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
           event.preventDefault();
-          const shouldReveal = event.key === 'ArrowDown';
-          if (!event.repeat && !busy && Boolean(session.revealed) !== shouldReveal) toggleStudyAnswer();
+          if (!event.repeat && !busy) {
+            if (event.key === 'ArrowUp') toggleStudyAnswer();
+            else {
+              const metadata = document.querySelector<HTMLDetailsElement>('.study .card-sources');
+              if (metadata) metadata.open = !metadata.open;
+            }
+          }
           return;
         }
         if ((event.key === ' ' || event.key === 'Enter') && !interactive) action = 'show';
@@ -440,7 +444,6 @@ export default function App() {
             </label>
           </div>
           {!selectedLanguage.translation && <p role="alert">Primary language content is missing or incomplete. Edit this card before studying.</p>}
-          {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <div className="study-question-row">
           {activeCard.metadata?.provenance.sources[0] && <a className="question-source-link"
             href={activeCard.metadata.provenance.sources[0].sourceUrl} target="_blank" rel="noopener noreferrer"
@@ -455,6 +458,7 @@ export default function App() {
             {activeCard.metadata && <span className="question-occurrences" title="Independent interview occurrences">({activeCard.metadata.provenance.type === 'generated' ? 0 : activeCard.metadata.occurrenceCount})</span>}
           </div>
           </div>
+          {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <details className="answer-panel" open={answerVisible}>
             <summary aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) toggleStudyAnswer(); }}>Answer <AskChatGpt question={selectedLanguage.translation?.question ?? ''} language={session.language} instructions={effectiveInstructions(home.decks.find(deck => deck.id === activeCard.deck_id) ?? {}, session.language)} /></summary>
             <div id="study-answer" className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>
@@ -470,8 +474,6 @@ export default function App() {
               <button disabled={busy} onClick={() => studyAction('next')}>Next<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7" /></svg></button>
             </div>
           </div>
-          <StudySidebar language={session.language} busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
-            repeat={session.repeat} answerVisible={answerVisible} onAction={studyAction} onToggleAnswer={toggleStudyAnswer} />
         </> : <>
           <h1>{session?.status === 'COMPLETE' ? 'Session complete' : 'Session unavailable'}</h1>
           <button onClick={exitStudy}>Back to library</button>
