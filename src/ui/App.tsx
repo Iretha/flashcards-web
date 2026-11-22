@@ -339,7 +339,6 @@ export default function App() {
         </section>
         <section className="panel stack">
           <h2>Study setup</h2>
-          {session?.status === 'ACTIVE' && <button className="primary" disabled={busy} onClick={resume}>Resume session</button>}
           {session?.status === 'INVALIDATED' && <p className="muted">The previous session needs a restart after an application, deck or progress change.</p>}
           <p>{total} cards selected. Every selected card appears in the first cycle.</p>
           <div className="row" role="group" aria-label="Study language">
@@ -353,6 +352,8 @@ export default function App() {
           <label className="check"><input type="checkbox" checked={settings.answersOpen ?? false} onChange={event => setSettings({ ...settings, answersOpen: event.target.checked })} />Show answers by default</label>
           <label className="check"><input type="checkbox" checked={settings.timer} onChange={event => setSettings({ ...settings, timer: event.target.checked })} />Enable timer</label>
           <label>Seconds per question<input type="number" min={1} max={3600} value={settings.seconds || ''} disabled={!settings.timer} onChange={event => setSettings({ ...settings, seconds: Number(event.target.value) })} /></label>
+          <div className="session-start-actions">
+          {session?.status === 'ACTIVE' && <button className="primary" disabled={busy} onClick={resume}>Resume session</button>}
           <button className="primary" disabled={busy || !total} onClick={() => {
             if (session?.status === 'ACTIVE' && !window.confirm('Replace the current study session?')) return;
             void run(async () => {
@@ -365,6 +366,7 @@ export default function App() {
               setScreen('study');
             });
           }}>{session?.status === 'ACTIVE' ? 'Start new session' : 'Start studying'}</button>
+          </div>
         </section>
       </div>}
       {home && screen === 'study' && <section className={activeCard ? 'panel study stack study-active' : 'panel study stack'} ref={stage} tabIndex={-1}
@@ -416,7 +418,14 @@ export default function App() {
             setSession(await api<Session>('study'));
             setNow(Date.now());
           })}>Reload session</button>}
-          <p className="muted study-note">{activeCard.title}</p>
+          <div className="study-deck-row">
+            <p className="muted study-note">{activeCard.title}</p>
+            <label className="answer-toggle">
+              <input type="checkbox" role="switch" checked={session.repeat} disabled={busy} onChange={() => studyAction('repeat')} />
+              <span className="answer-toggle-track" aria-hidden="true" />
+              <span>Repeat</span>
+            </label>
+          </div>
           {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <div className="study-question-row">
           {activeCard.metadata?.provenance.sources[0] && <a className="question-source-link"
@@ -442,14 +451,9 @@ export default function App() {
             {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
           </CardSources> : selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
           <div className="study-navigation actions">
-            <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}>Prev</button>
+            <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5m7-7-7 7 7 7" /></svg>Prev</button>
             <div className="study-navigation-next">
-              <label className="answer-toggle">
-                <input type="checkbox" role="switch" checked={session.repeat} disabled={busy} onChange={() => studyAction('repeat')} />
-                <span className="answer-toggle-track" aria-hidden="true" />
-                <span>Repeat</span>
-              </label>
-              <button disabled={busy} onClick={() => studyAction('next')}>Next</button>
+              <button disabled={busy} onClick={() => studyAction('next')}>Next<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7" /></svg></button>
             </div>
           </div>
           <StudySidebar language={session.language} busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
