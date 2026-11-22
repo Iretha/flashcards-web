@@ -11,6 +11,8 @@ import { defaults } from '../lib/study';
 import type { Settings, StudyAction } from '../lib/study';
 import { answerSizeLabels, primaryLanguageFirst, reconcileLanguage, selectTranslation } from '../lib/translations';
 import CardSources from './CardSources';
+import type { Theme } from './theme';
+import { readTheme, saveTheme } from './theme';
 
 type Screen = 'library' | 'import' | 'detail' | 'study';
 
@@ -61,6 +63,8 @@ function moveFocus(key: string, active: HTMLElement | null) {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState(readTheme);
+  useEffect(() => { saveTheme(theme); }, [theme]);
   const [home, setHome] = useState<Home | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -83,7 +87,21 @@ export default function App() {
     catch { /* Keep the current size in memory if storage is unavailable. */ }
   }, [answerSize]);
 
+  const themeUser = useRef<string | null>(null);
+  const loginThemeChoice = useRef<Theme | null>(null);
+  function chooseTheme(next: Theme) {
+    if (!home) loginThemeChoice.current = next;
+    setTheme(next);
+    saveTheme(next, home?.username);
+  }
   function applyHome(result: Home) {
+    if (themeUser.current !== result.username) {
+      themeUser.current = result.username;
+      const savedTheme = loginThemeChoice.current ?? readTheme(result.username);
+      loginThemeChoice.current = null;
+      setTheme(savedTheme);
+      saveTheme(savedTheme, result.username);
+    }
     setHome(result);
     setSession(result.session);
     setSelected(current => current.filter(id => result.decks.some(deck => deck.id === id)));
@@ -107,6 +125,7 @@ export default function App() {
       } catch (problem) {
         if (!cancelled && problem instanceof ApiError && problem.status === 401) {
           setHome(null);
+          themeUser.current = null;
           setSession(null);
         }
       } finally { checking = false; }
@@ -139,6 +158,7 @@ export default function App() {
       setError(problem instanceof Error ? problem.message : 'The request failed.');
       if (problem instanceof ApiError && problem.status === 401) {
         setHome(null);
+          themeUser.current = null;
         setSession(null);
         setScreen('library');
       }
@@ -299,17 +319,31 @@ export default function App() {
         <button className="sign-out" disabled={busy} onClick={() => void run(async () => {
           await api('logout', {});
           setHome(null);
+          themeUser.current = null;
           setSession(null);
           setSelected([]);
           setCreate(false);
           setScreen('library');
         })}>Sign out {home.username}</button></div>}
+      <button type="button" className="theme-switch" title="Toggle Dark / Light theme" aria-label="Toggle Dark / Light theme" onClick={() => {
+        const next = theme === 'dark' ? 'light' : 'dark';
+        chooseTheme(next);
+      }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {theme === 'dark' ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></> : <path d="M20.9 13.1A9 9 0 0 1 10.9 3.1a9 9 0 1 0 10 10Z" />}
+        </svg>
+        {theme === 'dark' ? 'Light' : 'Dark'}
+      </button>
     </header>
     <main aria-busy={busy}>
       {error && <p className="error" role="alert">{error}</p>}
       {!loaded && <p role="status">Loading Flashcards…</p>}
       {loaded && !home && <section className="panel login stack">
         <h1>Sign in</h1>
+        <div className="row" role="group" aria-label="Theme">
+          <button type="button" aria-pressed={theme === 'dark'} onClick={() => chooseTheme('dark')}><span aria-hidden="true">?</span> Dark</button>
+          <button type="button" aria-pressed={theme === 'light'} onClick={() => chooseTheme('light')}><span aria-hidden="true">?</span> Light</button>
+        </div>
         <form className="stack" method="post" onSubmit={submitSignIn}>
           <label>Username<input name="username" autoComplete="username" required maxLength={64} /></label>
           <label>Access code<input name="code" type="password" autoComplete="current-password" required maxLength={256} /></label>
