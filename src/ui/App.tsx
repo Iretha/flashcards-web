@@ -3,15 +3,16 @@ import AskChatGpt from './AskChatGpt';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, SubmitEvent } from 'react';
 import MarkdownContent from './MarkdownContent';
-import StudySidebar from './StudySidebar';
 import { api, ApiError, signIn } from './api';
 import type { Home, Session } from './api';
 import { DeckDetail, DeckEditor } from './Decks';
 import Import from './Import';
 import { defaults } from '../lib/study';
 import type { Settings, StudyAction } from '../lib/study';
-import { answerSizeLabels, languages, selectTranslation } from '../lib/translations';
+import { answerSizeLabels, primaryLanguageFirst, reconcileLanguage, selectTranslation } from '../lib/translations';
 import CardSources from './CardSources';
+import type { Theme } from './theme';
+import { readTheme, saveTheme } from './theme';
 
 type Screen = 'library' | 'import' | 'detail' | 'study';
 
@@ -62,6 +63,8 @@ function moveFocus(key: string, active: HTMLElement | null) {
 }
 
 export default function App() {
+  const [theme, setTheme] = useState(readTheme);
+  useEffect(() => { saveTheme(theme); }, [theme]);
   const [home, setHome] = useState<Home | null>(null);
   const [loaded, setLoaded] = useState(false);
   const [busy, setBusy] = useState(false);
@@ -84,7 +87,21 @@ export default function App() {
     catch { /* Keep the current size in memory if storage is unavailable. */ }
   }, [answerSize]);
 
+  const themeUser = useRef<string | null>(null);
+  const loginThemeChoice = useRef<Theme | null>(null);
+  function chooseTheme(next: Theme) {
+    if (!home) loginThemeChoice.current = next;
+    setTheme(next);
+    saveTheme(next, home?.username);
+  }
   function applyHome(result: Home) {
+    if (themeUser.current !== result.username) {
+      themeUser.current = result.username;
+      const savedTheme = loginThemeChoice.current ?? readTheme(result.username);
+      loginThemeChoice.current = null;
+      setTheme(savedTheme);
+      saveTheme(savedTheme, result.username);
+    }
     setHome(result);
     setSession(result.session);
     setSelected(current => current.filter(id => result.decks.some(deck => deck.id === id)));
@@ -108,6 +125,7 @@ export default function App() {
       } catch (problem) {
         if (!cancelled && problem instanceof ApiError && problem.status === 401) {
           setHome(null);
+          themeUser.current = null;
           setSession(null);
         }
       } finally { checking = false; }
@@ -140,6 +158,7 @@ export default function App() {
       setError(problem instanceof Error ? problem.message : 'The request failed.');
       if (problem instanceof ApiError && problem.status === 401) {
         setHome(null);
+          themeUser.current = null;
         setSession(null);
         setScreen('library');
       }
@@ -211,6 +230,17 @@ export default function App() {
       if (screen === 'study' && session?.status === 'ACTIVE') {
         let action: StudyAction | undefined;
         const interactive = element?.closest('button, input, a, summary, pre.code-block');
+        if (!interactive && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+          event.preventDefault();
+          if (!event.repeat && !busy) {
+            if (event.key === 'ArrowUp') toggleStudyAnswer();
+            else {
+              const metadata = document.querySelector<HTMLDetailsElement>('.study .card-sources');
+              if (metadata) metadata.open = !metadata.open;
+            }
+          }
+          return;
+        }
         if ((event.key === ' ' || event.key === 'Enter') && !interactive) action = 'show';
         if (event.key === 'ArrowRight' && !interactive) action = 'next';
         if (event.key === 'ArrowLeft' && !interactive) action = 'previous';
@@ -254,10 +284,15 @@ export default function App() {
   const selectedDecks = home?.decks.filter(item => selected.includes(item.id)) ?? [];
   const total = selectedDecks.reduce((sum, item) => sum + item.total, 0);
   const translations = session?.card?.translations ?? {};
-  const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
+  const availableLanguages = primaryLanguageFirst([...new Set(selectedDecks.flatMap(deck => deck.supportedLanguages))], selectedDecks[0]?.primaryLanguage);
+  const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language, session?.card?.primaryLanguage ?? 'en', session?.card?.metadata?.cardType);
   const answerVisible = Boolean(session?.revealed);
-  const sizeLabels = answerSizeLabels[session?.language ?? settings.language];
+  const sizeLabels = answerSizeLabels[(session?.language ?? settings.language) === 'bg' ? 'bg' : 'en'];
   const activeCard = session?.status === 'ACTIVE' && session.card;
+  const availableKey = availableLanguages.join(',');
+  useEffect(() => {
+    setSettings(current => ({ ...current, language: reconcileLanguage(current.language, availableLanguages) }));
+  }, [availableKey]);
   const toggleStudyAnswer = () => studyAction('show');
 
   return <div className="shell">
@@ -284,11 +319,21 @@ export default function App() {
         <button className="sign-out" disabled={busy} onClick={() => void run(async () => {
           await api('logout', {});
           setHome(null);
+          themeUser.current = null;
           setSession(null);
           setSelected([]);
           setCreate(false);
           setScreen('library');
         })}>Sign out {home.username}</button></div>}
+      <button type="button" className="theme-switch" title="Toggle Dark / Light theme" aria-label="Toggle Dark / Light theme" onClick={() => {
+        const next = theme === 'dark' ? 'light' : 'dark';
+        chooseTheme(next);
+      }}>
+        <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+          {theme === 'dark' ? <><circle cx="12" cy="12" r="4" /><path d="M12 2v2m0 16v2M2 12h2m16 0h2M4.93 4.93l1.42 1.42m11.3 11.3 1.42 1.42M4.93 19.07l1.42-1.42m11.3-11.3 1.42-1.42" /></> : <path d="M20.9 13.1A9 9 0 0 1 10.9 3.1a9 9 0 1 0 10 10Z" />}
+        </svg>
+        {theme === 'dark' ? 'Light' : 'Dark'}
+      </button>
     </header>
     <main aria-busy={busy}>
       {error && <p className="error" role="alert">{error}</p>}
@@ -344,8 +389,8 @@ export default function App() {
           {session?.status === 'INVALIDATED' && <p className="muted">The previous session needs a restart after an application, deck or progress change.</p>}
           <p>{total} cards selected. Every selected card appears in the first cycle.</p>
           <div className="row" role="group" aria-label="Study language">
-            {languages.map(language => <button key={language} aria-pressed={settings.language === language}
-              onClick={() => setSettings({ ...settings, language })}>{language === 'bg' ? 'Български' : 'English'}</button>)}
+            {availableLanguages.map(language => <button key={language} aria-pressed={settings.language === language}
+              onClick={() => setSettings({ ...settings, language })}>{language.toUpperCase()}</button>)}
           </div>
           <label>Question order<select value={settings.order} onChange={event => setSettings({ ...settings, order: event.target.value as Settings['order'] })}>
             <option value="SEQUENTIAL">Deck order</option><option value="RANDOM">Random</option>
@@ -393,8 +438,8 @@ export default function App() {
           </div>
               <span className="toolbar-dot" aria-hidden="true">·</span>
               <div className="row language-controls" role="group" aria-label="Study language">
-                {languages.map(language => <button key={language} aria-disabled={busy} aria-pressed={session.language === language}
-                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{language === 'bg' ? 'Български' : 'English'}</span></button>)}
+                {primaryLanguageFirst(session.availableLanguages, session.card?.primaryLanguage).map(language => <button key={language} disabled={busy} aria-pressed={session.language === language}
+                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{language.toUpperCase()}</span></button>)}
               </div>
               <span className="toolbar-dot" aria-hidden="true">·</span>
               <button type="button" aria-label="Refresh for latest version" onClick={() => void run(async () => {
@@ -428,7 +473,7 @@ export default function App() {
               <span>Repeat</span>
             </label>
           </div>
-          {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
+          {!selectedLanguage.translation && <p role="alert">Primary language content is missing or incomplete. Edit this card before studying.</p>}
           <div className="study-question-row">
           {activeCard.metadata?.provenance.sources[0] && <a className="question-source-link"
             href={activeCard.metadata.provenance.sources[0].sourceUrl} target="_blank" rel="noopener noreferrer"
@@ -443,6 +488,7 @@ export default function App() {
             {activeCard.metadata && <span className="question-occurrences" title="Independent interview occurrences">({activeCard.metadata.provenance.type === 'generated' ? 0 : activeCard.metadata.occurrenceCount})</span>}
           </div>
           </div>
+          {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <details className="answer-panel" open={answerVisible}>
             <summary aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) toggleStudyAnswer(); }}>Answer <AskChatGpt question={selectedLanguage.translation?.question ?? ''} language={session.language} instructions={effectiveInstructions(home.decks.find(deck => deck.id === activeCard.deck_id) ?? {}, session.language)} /></summary>
             <div id="study-answer" className="answer markdown" lang={selectedLanguage.language}><MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>
@@ -458,8 +504,6 @@ export default function App() {
               <button disabled={busy} onClick={() => studyAction('next')}>Next<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7" /></svg></button>
             </div>
           </div>
-          <StudySidebar language={session.language} busy={busy} hasPrevious={session.hasPrevious} historical={session.historical}
-            repeat={session.repeat} answerVisible={answerVisible} onAction={studyAction} onToggleAnswer={toggleStudyAnswer} />
         </> : <>
           <h1>{session?.status === 'COMPLETE' ? 'Session complete' : 'Session unavailable'}</h1>
           <button onClick={exitStudy}>Back to library</button>
@@ -473,3 +517,4 @@ export default function App() {
     </footer>
   </div>;
 }
+

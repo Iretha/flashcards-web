@@ -28,7 +28,7 @@ it('retains Bulgarian instructions with the existing English fallback', () => {
 });
 
 it('stops bubbling without cancelling native link navigation', () => {
-  const link = AskChatGpt({ question: 'Java?', language: 'en' });
+  const link = AskChatGpt({ question: 'Java?', language: 'en' }).props.children[0];
   let stopped = false;
   link.props.onClick({ stopPropagation() { stopped = true; } });
   expect(stopped).toBe(true);

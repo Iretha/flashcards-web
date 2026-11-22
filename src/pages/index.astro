@@ -9,6 +9,9 @@ import '../ui/style.css';
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <meta name="theme-color" content="#111827" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
+    <script is:inline>
+      try { document.documentElement.dataset.theme = localStorage.getItem('flashcards-web:theme') === 'light' ? 'light' : 'dark'; } catch {}
+    </script>
     <title>Flashcards</title>
   </head>
   <body><App client:only="react" /><noscript>JavaScript is required to use Flashcards.</noscript></body>

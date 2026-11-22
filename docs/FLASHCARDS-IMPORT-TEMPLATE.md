@@ -3,6 +3,8 @@ deckId: java-memory-model
 title: Java Memory Model
 description: Senior Java interview preparation — bilingual, structured flashcards
 formatVersion: 3
+primaryLanguage: en
+supportedLanguages: [en, bg]
 # Markdown v3 — supported by parser, validation, persistence, API and Study UI.
 # One stable card key connects BG and EN variants. One file represents one deck.
 # Required per card: provenance; at least one language with question and answer.

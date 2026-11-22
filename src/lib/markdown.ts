@@ -19,9 +19,14 @@ export function parseMarkdown(source: string) {
       if (declared === 3 || declared === '3') version = 3;
       else if (declared === 2 || declared === '2') version = 2;
       else if (declared !== undefined && declared !== 1 && declared !== '1') throw new Error('Unsupported Markdown formatVersion.');
-      for (const key of ['deckId', 'title', 'description', 'visibility']) {
+      for (const key of ['deckId', 'title', 'description', 'visibility', 'primaryLanguage']) {
         const value: unknown = Reflect.get(data, key);
         if (typeof value === 'string') metadata[key] = value.trim();
+      }
+      const supported: unknown = Reflect.get(data, 'supportedLanguages');
+      if (supported !== undefined) {
+        if (!Array.isArray(supported) || !supported.every(code => typeof code === 'string')) throw new Error('supportedLanguages must be a list of language codes.');
+        metadata.supportedLanguages = JSON.stringify(supported);
       }
     }
   }

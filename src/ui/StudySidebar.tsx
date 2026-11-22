@@ -30,7 +30,7 @@ export default function StudySidebar({ language, busy, hasPrevious, repeat = fal
   onAction: (action: StudyAction) => void;
   onToggleAnswer: () => void;
 }) {
-  const labels = studyControlLabels[language];
+  const labels = studyControlLabels[language === 'bg' ? 'bg' : 'en'];
 
   const actions: { icon: keyof typeof icons; label: string; disabled?: boolean; pressed?: boolean; run: () => void }[] = [
     { icon: 'arrow-left', label: labels.previous, disabled: !hasPrevious, run: () => onAction('previous') },

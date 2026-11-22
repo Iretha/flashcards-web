@@ -1,4 +1,4 @@
-import { isLanguage, isSection, languages, validTranslation } from './translations';
+import { isLanguage, isSection, validTranslation } from './translations';
 import type { CardMetadata } from './metadata';
 import type { Language, Translation, Translations } from './translations';
 
@@ -42,7 +42,7 @@ export function parseBilingual(lines: string[]): BilingualDraft[] {
   function saveCard() {
     saveField();
     if (card) {
-      if (!languages.some(lang => card?.translations[lang]) ||
+      if (!Object.keys(card.translations).length ||
         Object.values(card.translations).some(value => !validTranslation(value))) {
         card.error ??= 'Each language needs a question and answer within the field limits.';
       }

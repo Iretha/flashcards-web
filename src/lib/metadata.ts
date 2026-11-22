@@ -38,12 +38,12 @@ export function validateMetadata(input: unknown): CardMetadata {
     if (unknown) fail(field + '.' + unknown, 'unsupported field');
   };
   keys(data, ['cardType', 'topic', 'occurrenceCount', 'provenance', 'answerReferences'], 'metadata');
-  if (!['question', 'coding_task'].includes(String(data.cardType))) fail('cardType', 'expected question or coding_task');
+  if (data.cardType !== 'question' && data.cardType !== 'coding_task') fail('cardType', 'expected question or coding_task');
   text(data.topic, 'topic');
   if (!Number.isSafeInteger(data.occurrenceCount) || Number(data.occurrenceCount) < 0) fail('occurrenceCount', 'expected an integer >= 0');
   const provenance = record(data.provenance, 'provenance');
   keys(provenance, ['type', 'sources'], 'provenance');
-  if (!['sourced', 'mixed', 'generated'].includes(String(provenance.type))) fail('provenance.type', 'expected sourced, mixed or generated');
+  if (provenance.type !== 'sourced' && provenance.type !== 'mixed' && provenance.type !== 'generated') fail('provenance.type', 'expected sourced, mixed or generated');
   const sources = provenance.sources === undefined ? [] : provenance.sources;
   if (!Array.isArray(sources)) fail('provenance.sources', 'expected a list');
   const evidence = new Set<string>();

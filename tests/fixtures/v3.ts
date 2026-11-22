@@ -3,6 +3,8 @@ export const v3Fixture = `---
 deckId: v3-test
 title: V3 mixed deck
 formatVersion: 3
+primaryLanguage: en
+supportedLanguages: [en, bg]
 ---
 ## card: task
 ### cardType: coding_task

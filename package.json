@@ -6,15 +6,19 @@
     "node": ">=24.0.0"
   },
   "scripts": {
-    "dev": "astro dev",
+    "dev": "astro build --outDir dist-local && wrangler dev --config dist-local/server/wrangler.json --local --ip 127.0.0.1 --port 4335 --persist-to .wrangler/state",
     "build": "astro build",
     "preview": "astro preview",
     "typecheck": "astro check",
     "test": "vitest run",
-    "db:local": "wrangler d1 migrations apply DB --local",
-    "deploy": "astro build && wrangler deploy",
+    "db:local": "npm run db:migrate:local",
+    "deploy": "astro build && npm run db:migrate:remote && wrangler deploy",
+    "db:migrate:remote": "wrangler d1 migrations apply DB --remote --config wrangler.jsonc",
     "test:e2e": "playwright test",
-    "db:e2e": "wrangler d1 migrations apply DB --local --persist-to .wrangler/v3-e2e"
+    "db:e2e": "wrangler d1 migrations apply DB --local --persist-to .wrangler/v3-e2e",
+    "db:migrate:local": "wrangler d1 migrations apply DB --local --persist-to .wrangler/state",
+    "db:status:local": "wrangler d1 migrations list DB --local --persist-to .wrangler/state",
+    "db:reset:local": "node scripts/reset-local.mjs"
   },
   "dependencies": {
     "@astrojs/cloudflare": "14.4.9",

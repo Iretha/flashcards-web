@@ -4,22 +4,31 @@ import CardSources from './CardSources';
 import MarkdownContent from './MarkdownContent';
 import { api } from './api';
 import type { Card, Deck } from './api';
-import { languages, sections } from '../lib/translations';
+import { languages, sections, primaryLanguageFirst } from '../lib/translations';
 import type { CardMetadata } from '../lib/metadata';
 import type { Language, Translation } from '../lib/translations';
 
 type Run = (work: () => Promise<void>) => Promise<void>;
 
 export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boolean; save: (input: object) => void; close: () => void }) {
+  const [primaryLanguage, setPrimaryLanguage] = useState(deck ? deck.primaryLanguage ?? '' : 'en');
+  const [supportedLanguages, setSupportedLanguages] = useState<string[]>(deck ? deck.supportedLanguages : ['en']);
   const [title, setTitle] = useState(deck?.title ?? '');
   const [description, setDescription] = useState(deck?.description ?? '');
   const [visibility, setVisibility] = useState(deck?.visibility ?? 'PRIVATE');
-  const [instructionLanguage, setInstructionLanguage] = useState<Language>('en');
+  const [instructionLanguage, setInstructionLanguage] = useState<'en' | 'bg'>('en');
+  const [newLanguage, setNewLanguage] = useState('');
+  const [confirmPrimaryLanguageChange, setConfirmPrimaryLanguageChange] = useState(false);
   const config = deck ?? { chatgpt_default: 'universal' };
   const [instructions, setInstructions] = useState({ en: effectiveInstructions(config, 'en'), bg: effectiveInstructions(config, 'bg') });
   const dirty = languages.some(lang => instructions[lang] !== effectiveInstructions(config, lang));
-  return <form className="item stack" onSubmit={event => { event.preventDefault(); save({ id: deck?.id, title, description, visibility, ...Object.fromEntries(languages.map(lang => [lang === 'en' ? 'chatgpt_en' : 'chatgpt_bg', instructions[lang] === defaultInstructions(config, lang) ? null : instructions[lang]])) }); }}>
+  return <form className="item stack" onSubmit={event => { event.preventDefault(); save({ id: deck?.id, title, description, visibility, primaryLanguage, supportedLanguages, confirmPrimaryLanguageChange, ...Object.fromEntries(languages.map(lang => [lang === 'en' ? 'chatgpt_en' : 'chatgpt_bg', instructions[lang] === defaultInstructions(config, lang) ? null : instructions[lang]])) }); }}>
     <h2>{deck ? 'Edit deck' : 'New deck'}</h2>
+    <label>Primary language<select required value={primaryLanguage} onChange={event => { setPrimaryLanguage(event.target.value); setSupportedLanguages(current => [...new Set([...current, event.target.value])]); }}><option value="" disabled>Choose the original language</option>{primaryLanguageFirst([...new Set([...languages, ...supportedLanguages])], primaryLanguage).map(code => <option key={code}>{code}</option>)}</select></label>
+    <fieldset><legend>Supported languages</legend>{primaryLanguageFirst([...new Set([...languages, ...supportedLanguages])], primaryLanguage).map(code => <label key={code}><input type="checkbox" checked={supportedLanguages.includes(code)} disabled={code === primaryLanguage} onChange={event => setSupportedLanguages(current => event.target.checked ? [...current, code] : current.filter(item => item !== code))} />{code}</label>)}</fieldset>
+    {deck && primaryLanguage !== deck.primaryLanguage && <label className="check"><input type="checkbox" required checked={confirmPrimaryLanguageChange} onChange={event => setConfirmPrimaryLanguageChange(event.target.checked)} />Designate this language as the original for every card. All cards must contain complete content in this language; existing translations will be preserved.</label>}
+    <label>Add supported language (BCP 47)<input value={newLanguage} placeholder="de or pt-BR" onChange={event => setNewLanguage(event.target.value)} /></label>
+    <button type="button" onClick={() => { try { const code = Intl.getCanonicalLocales(newLanguage)[0]; if (code) { setSupportedLanguages(current => [...new Set([...current, code])]); setNewLanguage(''); } } catch { /* Keep invalid input for correction. */ } }}>Add language</button>
     <label>Title<input value={title} maxLength={160} required onChange={event => setTitle(event.target.value)} /></label>
     <label>Description<textarea value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} /></label>
     <label>Visibility<select value={visibility} onChange={event => setVisibility(event.target.value as Deck['visibility'])}>
@@ -36,8 +45,8 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
   </form>;
 }
 
-function CardEditor({ card, busy, save, close }: { card?: Card; busy: boolean; save: (input: object) => void; close: () => void }) {
-  const [language, setLanguage] = useState<Language>(card?.primary_language ?? 'en');
+function CardEditor({ deck, card, busy, save, close }: { deck: Deck; card?: Card; busy: boolean; save: (input: object) => void; close: () => void }) {
+  const [language, setLanguage] = useState<Language>(deck.primaryLanguage ?? card?.primary_language ?? 'en');
   const [translations, setTranslations] = useState(card?.translations ?? {});
   const [metadata, setMetadata] = useState<CardMetadata | null>(card ? card.metadata ?? null : {
     cardType: 'question', topic: '', occurrenceCount: 0, provenance: { type: 'generated', sources: [] },
@@ -49,7 +58,7 @@ function CardEditor({ card, busy, save, close }: { card?: Card; busy: boolean; s
   const active = translations[language];
   const supplied = Object.entries(translations).filter(([, value]) =>
     Boolean(value.question.trim() || value.answer.trim() || value.questionDetails?.trim() || sections.some(section => value[section]?.trim())));
-  const invalid = !supplied.length || supplied.some(([, value]) => !value.question.trim() || !value.answer.trim() || (metadata?.cardType === 'coding_task' && !value.questionDetails?.trim()));
+  const invalid = !supplied.some(([code]) => code === (deck.primaryLanguage ?? card?.primary_language)) || supplied.some(([, value]) => !value.question.trim() || !value.answer.trim() || (metadata?.cardType === 'coding_task' && !value.questionDetails?.trim()));
   return <form className="item stack" onSubmit={event => {
     event.preventDefault();
     if (!invalid) save({ id: card?.id, translations: Object.fromEntries(supplied), ...(metadata ? { metadata } : {}), method: 'save' });
@@ -60,14 +69,14 @@ function CardEditor({ card, busy, save, close }: { card?: Card; busy: boolean; s
       {!card && <p className="muted">New independently authored cards use generated provenance with zero documented interview occurrences. Use Markdown v3 import for sourced or adapted content and source references.</p>}
     </>}
     <div className="row" role="group" aria-label="Translation tabs">
-      {languages.map(item => <button key={item} type="button" aria-pressed={item === language}
+      {primaryLanguageFirst(deck.supportedLanguages, deck.primaryLanguage).map(item => <button key={item} type="button" aria-pressed={item === language}
         onClick={() => setLanguage(item)}>{item.toUpperCase()}</button>)}
     </div>
     {fields.map(({ key, label }) => <label key={key}>{label}
       <textarea lang={language} value={active?.[key] ?? ''} maxLength={key === 'question' ? 2000 : 20000}
         rows={key === 'question' ? 2 : 4} onChange={event => {
           const value = event.target.value;
-          setTranslations(current => ({ ...current, [language]: { question: '', answer: '', ...current[language], [key]: value } }));
+          setTranslations(current => ({ ...current, [language]: { ...(current[language] ?? { question: '', answer: '' }), [key]: value } }));
         }} />
     </label>)}
     {invalid && <p className="muted">Add a question and an answer for every language you use. Coding tasks also require a task statement.</p>}
@@ -130,7 +139,7 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
       }}>Reset deck progress</button>
     </div>
     {editingDeck && <DeckEditor deck={deck} busy={busy} save={data => mutate('deck', data, () => setEditingDeck(false))} close={() => setEditingDeck(false)} />}
-    {editor === 'new' && <CardEditor busy={busy} save={data => mutate('card', data, () => setEditor(null))} close={() => setEditor(null)} />}
+    {editor === 'new' && <CardEditor deck={deck} busy={busy} save={data => mutate('card', data, () => setEditor(null))} close={() => setEditor(null)} />}
     <label>Sort cards<select value={sort} onChange={event => setSort(event.target.value)}>
       <option value="position">Deck order</option><option value="hard">Hardest first</option>
       <option value="easy">Easiest first</option><option value="status">Learned first</option><option value="recent">Recently shown</option>
@@ -164,7 +173,7 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
       </p>}
       <p className="muted">{card.times_shown} shown · {card.times_failed} failed{!card.metadata && <> · Legacy status: {card.status === 'LEARNED' ? 'Learned' : 'Unlearned'} · {card.times_learned} learned</>}</p>
       {!card.metadata && <p className="muted">Explanations opened · {card.simple_opens} simple · {card.example_opens} example · {card.details_opens} detailed</p>}
-      {languages.map(language => {
+      {primaryLanguageFirst(deck.supportedLanguages, deck.primaryLanguage).map(language => {
         const translation = card.translations[language];
         return translation && <details key={language}><summary>View {language.toUpperCase()} content</summary>
           <div className="markdown" lang={language}>
@@ -184,7 +193,7 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
         </>}
         {card.status === 'LEARNED' && <button disabled={busy} onClick={() => mutate('reset', { card: card.id })}>Reset card</button>}
       </div>
-      {editor === card.id && <CardEditor key={card.id} card={card} busy={busy} save={data => mutate('card', data, () => setEditor(null))} close={() => setEditor(null)} />}
+      {editor === card.id && <CardEditor deck={deck} key={card.id} card={card} busy={busy} save={data => mutate('card', data, () => setEditor(null))} close={() => setEditor(null)} />}
     </article>)}
   </section>;
 }
