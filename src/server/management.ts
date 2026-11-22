@@ -215,6 +215,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
     const mutation = crypto.randomUUID();
     let batch: D1PreparedStatement[];
     if (!cardsRoute) {
+      if (deck && deck.owner_id !== user) check(!['chatgpt_default', 'chatgpt_en', 'chatgpt_bg'].some(key => key in (value as Record<string, unknown>)), 'Only the owner may change chat instructions.', 403);
       const values = deckValues(value, deck);
       if (deck) check(deck.owner_id === user || values[2] === deck.visibility, 'Only the owner may change visibility.', 403);
       const config = deckLanguages(value as Record<string, unknown>, deck);

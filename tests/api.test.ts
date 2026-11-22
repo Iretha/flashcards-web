@@ -42,7 +42,7 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql']) {
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql', '0011_api_token_description.sql']) {
     if (file === '0008_deck_languages.sql') {
       await db.batch([
         db.prepare("INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at) VALUES ('migration-mixed', 'migrated', 'Mixed originals', '', 'PRIVATE', 0, 0)"),
@@ -829,6 +829,13 @@ it('enforces collaborator permissions through browser and scoped API tokens with
   expect((await editor.ok<{cards: Card[]}>('export')).cards.some(item => item.id === card.id)).toBe(true);
   const token = await apiToken(editorId), readOnly = await apiToken(editorId, 0);
   const route = 'decks/' + id;
+  for (const field of ['chatgpt_default', 'chatgpt_en', 'chatgpt_bg']) {
+    const value = field === 'chatgpt_default' ? 'legacy' : 'Unauthorized instructions';
+    expect((await editor.request('deck', {id, title:'Denied', visibility:'PRIVATE', [field]:value})).response.status).toBe(403);
+    const revision = (await deck()).revision;
+    expect((await apiRequest(token, route, 'PATCH', {[field]:value}, {'If-Match': '"' + revision + '"'})).status).toBe(403);
+  }
+
   expect((await apiRequest(readOnly, route, 'PATCH', { title: 'Denied' })).status).toBe(403);
   const revision = (await deck()).revision;
   expect((await apiRequest(token, route, 'PATCH', { visibility: 'SHARED' }, { 'If-Match': '"' + revision + '"' })).status).toBe(403);
@@ -860,6 +867,10 @@ describe('personal API tokens', () => {
     expect((await owner.request('tokens', { name: 'Denied' }, 'https://evil.example')).response.status).toBe(403);
     expect((await owner.request('tokens', { name: 'Denied', user_id: 'token-other' })).response.status).toBe(400);
     const made = await owner.request<{id: string; token: string}>('tokens', { name: 'Integration' });
+    expect((await owner.request('tokens', {action:'describe', id:made.data.id, description:'curl tests'})).response.status).toBe(200);
+    expect((await other.request('tokens', {action:'describe', id:made.data.id, description:'Denied'})).response.status).toBe(404);
+    expect((await owner.request('tokens', {action:'describe', id:made.data.id, description:'x'.repeat(501)})).response.status).toBe(400);
+    expect((await owner.request<Array<{description:string}>>('tokens')).data[0].description).toBe('curl tests');
     expect(made.response.status).toBe(201); expect(made.response.headers.get('Cache-Control')).toBe('no-store');
     expect(made.data.token).toMatch(/^fc_[a-f0-9]{64}$/);
     const hash = createHash('sha256').update(made.data.token).digest('hex');

@@ -7,7 +7,8 @@ for (const colorScheme of ['light', 'dark'] as const) test(`personal token lifec
   await page.getByLabel('Username', {exact:true}).fill('Tokens-' + colorScheme + Date.now());
   await page.getByLabel('Access code').fill('v3-e2e');
   await page.getByRole('button', {name:'Sign in',exact:true}).click();
-  await page.getByText('Settings ? API Tokens', {exact:true}).click();
+  await page.getByLabel('Settings', {exact:true}).click();
+  await page.getByRole('button', {name:'API Tokens',exact:true}).click();
   await page.getByLabel('Token name').fill('Integration');
   await page.getByRole('button', {name:'Generate token',exact:true}).click();
   const code = page.locator('code').filter({hasText:/^fc_/});
@@ -18,7 +19,8 @@ for (const colorScheme of ['light', 'dark'] as const) test(`personal token lifec
   expect(page.url()).not.toContain(token);
   expect(await page.evaluate(() => JSON.stringify([localStorage,sessionStorage]))).not.toContain(token);
   await page.reload();
-  await page.getByText('Settings ? API Tokens', {exact:true}).click();
+  await page.getByLabel('Settings', {exact:true}).click();
+  await page.getByRole('button', {name:'API Tokens',exact:true}).click();
   await expect(code).toHaveCount(0);
   await expect(page.getByText('Integration', {exact:true})).toBeVisible();
   page.once('dialog', dialog => dialog.dismiss());
@@ -26,5 +28,5 @@ for (const colorScheme of ['light', 'dark'] as const) test(`personal token lifec
   await expect(page.getByRole('button',{name:'Revoke',exact:true})).toBeVisible();
   page.once('dialog', dialog => dialog.accept());
   await page.getByRole('button',{name:'Revoke',exact:true}).click();
-  await expect(page.getByText('Read only ? Revoked',{exact:true})).toBeVisible();
+  await expect(page.getByRole('cell', {name:'Revoked',exact:true})).toBeVisible();
 });

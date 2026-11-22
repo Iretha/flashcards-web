@@ -19,10 +19,11 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
   const [instructionLanguage, setInstructionLanguage] = useState<'en' | 'bg'>('en');
   const [newLanguage, setNewLanguage] = useState('');
   const [confirmPrimaryLanguageChange, setConfirmPrimaryLanguageChange] = useState(false);
+  const canEditInstructions = !deck || deck.owned;
   const config = deck ?? { chatgpt_default: 'universal' };
   const [instructions, setInstructions] = useState({ en: effectiveInstructions(config, 'en'), bg: effectiveInstructions(config, 'bg') });
   const dirty = languages.some(lang => instructions[lang] !== effectiveInstructions(config, lang));
-  return <form className="item stack" onSubmit={event => { event.preventDefault(); save({ id: deck?.id, title, description, visibility, primaryLanguage, supportedLanguages, confirmPrimaryLanguageChange, ...Object.fromEntries(languages.map(lang => [lang === 'en' ? 'chatgpt_en' : 'chatgpt_bg', instructions[lang] === defaultInstructions(config, lang) ? null : instructions[lang]])) }); }}>
+  return <form className="item stack" onSubmit={event => { event.preventDefault(); save({ id: deck?.id, title, description, visibility, primaryLanguage, supportedLanguages, confirmPrimaryLanguageChange, ...(canEditInstructions ? Object.fromEntries(languages.map(lang => [lang === 'en' ? 'chatgpt_en' : 'chatgpt_bg', instructions[lang] === defaultInstructions(config, lang) ? null : instructions[lang]])) : {}) }); }}>
     {deck?.permissions.canManageCollaborators && <Collaborators deck={deck} />}
     <h2>{deck ? 'Edit deck' : 'New deck'}</h2>
     <label>Primary language<select required value={primaryLanguage} onChange={event => { setPrimaryLanguage(event.target.value); setSupportedLanguages(current => [...new Set([...current, event.target.value])]); }}><option value="" disabled>Choose the original language</option>{primaryLanguageFirst([...new Set([...languages, ...supportedLanguages])], primaryLanguage).map(code => <option key={code}>{code}</option>)}</select></label>
@@ -38,8 +39,9 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
     {deck && <p className="muted">Private decks are accessible to the owner and collaborators. Switching a shared deck to Private removes access for other users and invalidates active study sessions for non-owners.</p>}
     <fieldset disabled={busy}><legend>ChatGPT Instructions</legend>
       <div className="row">{languages.map(lang => <button type="button" key={lang} aria-pressed={instructionLanguage === lang} onClick={() => setInstructionLanguage(lang)}>{lang.toUpperCase()}</button>)}</div>
-      <label>Instructions<textarea lang={instructionLanguage} rows={10} required maxLength={10000} value={instructions[instructionLanguage]} onChange={event => setInstructions({ ...instructions, [instructionLanguage]: event.target.value })} /></label>
-      <button type="button" onClick={() => setInstructions({ ...instructions, [instructionLanguage]: defaultInstructions(config, instructionLanguage) })}>Restore default</button>
+      <label>Instructions<textarea readOnly={!canEditInstructions} lang={instructionLanguage} rows={10} required maxLength={10000} value={instructions[instructionLanguage]} onChange={event => setInstructions({ ...instructions, [instructionLanguage]: event.target.value })} /></label>
+      <button type="button" disabled={!canEditInstructions} onClick={() => setInstructions({ ...instructions, [instructionLanguage]: defaultInstructions(config, instructionLanguage) })}>Restore default</button>
+      {!canEditInstructions && <p className="muted">Only the deck owner can edit chat instructions.</p>}
       {dirty && <p role="status">Unsaved changes</p>}
     </fieldset>
     <div className="row"><button className="primary" disabled={busy || languages.some(lang => !instructions[lang].trim())}>Save deck</button><button type="button" onClick={close}>Cancel</button></div>
@@ -85,7 +87,7 @@ function CardEditor({ deck, card, busy, save, close }: { deck: Deck; card?: Card
   </form>;
 }
 
-export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; busy: boolean; run: Run; reload: () => Promise<unknown>; close: () => void }) {
+export function DeckDetail({ deck, busy, run, reload, close, edit }: { deck: Deck; busy: boolean; run: Run; reload: () => Promise<unknown>; close: () => void; edit: () => void }) {
   const [cards, setCards] = useState<Card[] | null>(null);
   const [sort, setSort] = useState('position');
   const [priority, setPriority] = useState('');
@@ -95,7 +97,6 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
   const [company, setCompany] = useState('');
   const [provenance, setProvenance] = useState('');
   const [editor, setEditor] = useState<string | null>(null);
-  const [editingDeck, setEditingDeck] = useState(false);
   const load = async () => setCards(await api<Card[]>('cards?deck=' + encodeURIComponent(deck.id)));
   useEffect(() => { void run(load); }, [deck.id]);
 
@@ -129,7 +130,7 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
     <p>{deck.presentations} presentations · {deck.failures} failed attempts</p>
     <div className="row">
       {deck.permissions.canEdit && <>
-        <button disabled={busy} onClick={() => setEditingDeck(true)}>Edit deck</button>
+        <button disabled={busy} onClick={edit}>Edit deck</button>
         <button disabled={busy} onClick={() => setEditor('new')}>Add card</button>
         <button className="danger" hidden={!deck.permissions.canDelete} disabled={busy} onClick={() => {
           if (window.confirm('Delete this deck and its cards?')) mutate('deck/delete', {}, close);
@@ -139,7 +140,6 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
         if (window.confirm('Reset learned status for this deck?')) mutate('reset', {});
       }}>Reset deck progress</button>
     </div>
-    {editingDeck && <DeckEditor deck={deck} busy={busy} save={data => mutate('deck', data, () => setEditingDeck(false))} close={() => setEditingDeck(false)} />}
     {editor === 'new' && <CardEditor deck={deck} busy={busy} save={data => mutate('card', data, () => setEditor(null))} close={() => setEditor(null)} />}
     <label>Sort cards<select value={sort} onChange={event => setSort(event.target.value)}>
       <option value="position">Deck order</option><option value="hard">Hardest first</option>

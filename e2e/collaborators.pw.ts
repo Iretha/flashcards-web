@@ -26,6 +26,8 @@ test('owners manage collaborators and collaborator controls respect permissions 
   await expect(editor.getByRole('button', { name: 'Add card', exact: true })).toBeVisible();
   await expect(editor.getByRole('button', { name: 'Delete deck', exact: true })).not.toBeVisible();
   await editor.getByRole('button', { name: 'Edit deck', exact: true }).click();
+  await expect(editor.locator('textarea[readonly]')).toHaveAttribute('readonly', '');
+  await expect(editor.getByRole('button', {name:'Restore default',exact:true})).toBeDisabled();
   await expect(editor.getByRole('combobox', { name: 'Visibility', exact: true })).toBeDisabled();
   await expect(editor.getByRole('group', { name: 'Collaborators', exact: true })).toHaveCount(0);
   for (const colorScheme of ['light', 'dark'] as const) {
@@ -38,3 +40,4 @@ test('owners manage collaborators and collaborator controls respect permissions 
   expect(denied.status()).toBe(404);
   await editorContext.close();
 });
+

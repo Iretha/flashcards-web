@@ -379,7 +379,7 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
   .study .markdown:not(.answer) :not(pre) > code { font-size: max(.875rem, .9em); }
   .study .markdown:not(.answer) .code-block { font-size: .875rem; }
 }
-@media (min-width: 1450px) { :root { font-size: 20px; } button, .button { min-height: 58px; } }
+@media (min-width: 1450px) { :root { font-size: 20px; } button, .button, .settings-menu > summary { min-height: 58px; } }
 @media (max-width: 420px) { .shell { padding-left: .75rem; padding-right: .75rem; } }
 
 /* Keep study controls together while allowing narrow screens to wrap. */
@@ -396,3 +396,29 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
 
 .theme-switch { display: inline-flex; align-items: center; gap: .45rem; }
 .theme-switch svg { flex: none; }
+
+.settings-menu { position: relative; }
+.settings-menu > summary { display: flex; align-items: center; justify-content: center; list-style: none; }
+.settings-menu > summary::-webkit-details-marker { display: none; }
+.settings-menu > summary:focus-visible { outline: 2px solid currentColor; outline-offset: 3px; }
+.settings-dropdown { position: absolute; right: 0; top: calc(100% + .5rem); z-index: 20; min-width: 10rem; }
+.settings-dropdown button, .settings-dropdown .button { width: 100%; text-align: left; }
+.settings-dropdown > * + * { margin-top: .25rem; }
+
+.sign-out { display: inline-flex; align-items: center; justify-content: center; gap: .5rem; }
+.sign-out svg { flex-shrink: 0; }
+
+.settings-menu > summary { gap: .4rem; }
+.settings-chevron { flex-shrink: 0; }
+.settings-menu[open] .settings-chevron { transform: rotate(180deg); }
+
+.token-table-scroll { max-width: 100%; overflow-x: auto; }
+.token-table { width: 100%; border-collapse: collapse; text-align: left; }
+.token-table th, .token-table td { padding: .8rem; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.token-table thead { background: var(--control); }
+.token-table th[scope="row"] { min-width: 10rem; overflow-wrap: anywhere; }
+.token-table td { min-width: 7rem; }
+
+.token-description { display: flex; align-items: center; gap: .5rem; }
+.token-description > span { min-width: 0; overflow-wrap: anywhere; }
+.token-description-edit { margin-left: auto; display: inline-flex; align-items: center; justify-content: center; flex-shrink: 0; min-height: 32px; min-width: 32px; padding: .35rem; }

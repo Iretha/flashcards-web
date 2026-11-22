@@ -130,7 +130,7 @@ Migration `0009_deck_collaborators.sql` is additive and retains existing `owner_
 
 ## Self-service tokens
 
-Open Settings ? API Tokens outside study mode. Name the token (1?80 characters), select Read only (default) or Read & Write, and an expiration of 30, 90 (default), 180 or 365 days. Copy the token immediately: it cannot be retrieved again. Keep it in a secret manager, never publish it or put it in URLs. Send `Authorization: Bearer <token>` over HTTPS. Revoke compromised tokens immediately.
+Open the Settings icon in the toolbar and select API Tokens outside study mode. Name the token (1?80 characters), select Read only (default) or Read & Write, and an expiration of 30, 90 (default), 180 or 365 days. Copy the token immediately: it cannot be retrieved again. Keep it in a secret manager, never publish it or put it in URLs. Send `Authorization: Bearer <token>` over HTTPS. Revoke compromised tokens immediately.
 
 Browser-session endpoints (bearer tokens cannot manage tokens):
 - GET /api/tokens returns metadata only, never hashes or plaintext.
@@ -142,3 +142,7 @@ Mutations require same Origin and application/json. Unsupported fields including
 Migration 0010 preserves operator credentials and expiration. Missing historical metadata remains null; legacy tokens can be revoked by their owner in Settings. Personal token revocation and expiration are checked on each subsequent authentication. Write scope intersects current owner/collaborator permissions.
 
 Future MCP integration may require OAuth depending on client requirements. No MCP or OAuth is implemented, and manual token-entry support in ChatGPT is not asserted.
+
+Token descriptions are optional text of up to 500 characters, accepted as `description` at creation and returned in listings. Update your own token using POST /api/tokens with `{action: "describe", id, description}`. The same session, CSRF and rate limits apply. Migration 0011 adds a nullable description column without changing credentials. Legacy tokens without descriptions display "Used for curl requests and other testing purposes."; this label is editable and is not usage telemetry.
+
+Only deck owners can change `chatgpt_default`, `chatgpt_en` or `chatgpt_bg`. Browser saves and Management API patches from collaborators containing these fields return 403. Collaborators may read instructions and edit other permitted deck content.

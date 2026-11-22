@@ -117,6 +117,7 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
   }
   const existingDeck = input.id ? await getDeck(db, user, String(input.id), true) : null;
   if (existingDeck) check(existingDeck.owner_id === user || scope === existingDeck.visibility, 'Only the owner may change visibility.', 403);
+  if (existingDeck && existingDeck.owner_id !== user) check(!['chatgpt_default', 'chatgpt_en', 'chatgpt_bg'].some(key => key in input), 'Only the owner may change chat instructions.', 403);
   const config = deckLanguages(input, existingDeck);
   const { primaryLanguage, supportedLanguages } = config;
   const configCards = existingDeck ? await listCards(db, user, existingDeck.id) : [];
