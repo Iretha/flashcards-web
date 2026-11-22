@@ -1,11 +1,12 @@
+import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { authenticateClient, digest } from './auth';
-import { deckWithCards, getDeck, listCards, listDecks, writeCards } from './decks';
+import { deckWithCards, getDeck, listCards, listDecks, writeCards, primaryLanguageStatements, decodeDeck } from './decks';
 import type { Deck } from './decks';
 import { check, HttpError, json } from './http';
 import { uniqueQuestions } from './import-plan';
 import type { ImportTarget } from './import-plan';
 import { validateMetadata } from '../lib/metadata';
-import { isLanguage, languages, sections, validTranslation } from '../lib/translations';
+import { isLanguage, sections, validTranslation } from '../lib/translations';
 import type { Translation, Translations } from '../lib/translations';
 
 class InvalidField extends HttpError {
@@ -35,8 +36,9 @@ function identifier(value: string, name: string, max: number) {
 }
 
 function deckData(deck: Deck, user: string) {
+  deck = decodeDeck(deck);
   const { id, title, description, visibility, source_key, chatgpt_default, chatgpt_en, chatgpt_bg, revision } = deck;
-  return { id, title, description, visibility, source_key, chatgpt_default, chatgpt_en, chatgpt_bg, revision, owned: deck.owner_id === user };
+  return { primaryLanguage: deck.primaryLanguage, supportedLanguages: deck.supportedLanguages, id, title, description, visibility, source_key, chatgpt_default, chatgpt_en, chatgpt_bg, revision, owned: deck.owner_id === user };
 }
 
 function cardData(card: ImportTarget & { deck_id: string; position: number }, revision: number) {
@@ -45,7 +47,7 @@ function cardData(card: ImportTarget & { deck_id: string; position: number }, re
 }
 
 function deckValues(value: unknown, current?: Deck) {
-  const input = fields(value, 'body', ['title', 'description', 'visibility', 'source_key', 'chatgpt_default', 'chatgpt_en', 'chatgpt_bg']);
+  const input = fields(value, 'body', ['title', 'description', 'visibility', 'source_key', 'chatgpt_default', 'chatgpt_en', 'chatgpt_bg', 'primaryLanguage', 'supportedLanguages', 'confirmPrimaryLanguageChange']);
   const title = text('title' in input ? input.title : current?.title, 'title', 160).trim();
   const description = text('description' in input ? input.description : current?.description ?? '', 'description', 2000, false).trim();
   const visibility = 'visibility' in input ? input.visibility : current?.visibility ?? 'PRIVATE';
@@ -64,8 +66,9 @@ function cardValues(value: unknown, id: string, current?: ImportTarget): ImportT
   const input = fields(value, 'body', ['translations', 'primary_language', 'import_key', 'metadata', 'interview_priority', 'difficulty']);
   const translations: Translations = { ...current?.translations };
   if ('translations' in input) {
-    const entries = fields(input.translations, 'translations', languages);
-    for (const language of languages) {
+    const entries = fields(input.translations, 'translations', Object.keys(input.translations && typeof input.translations === 'object' ? input.translations : {}));
+    requireField(Object.keys(entries).every(isLanguage), 'translations', 'Use canonical BCP 47 language codes.');
+    for (const language of Object.keys(entries)) {
       if (!(language in entries)) continue;
       const path = 'translations.' + language;
       const keys = ['question', 'answer', 'questionDetails', ...sections] as const;
@@ -80,8 +83,8 @@ function cardValues(value: unknown, id: string, current?: ImportTarget): ImportT
       translations[language] = next;
     }
   }
-  const primary = 'primary_language' in input ? input.primary_language : current?.primary_language ?? languages.find(language => translations[language]);
-  requireField(isLanguage(primary) && translations[primary], 'primary_language', 'Provide a BG or EN translation for the primary language.');
+  const primary = 'primary_language' in input ? input.primary_language : current?.primary_language ?? Object.keys(translations)[0];
+  requireField(isLanguage(primary) && translations[primary], 'primary_language', 'Provide a complete translation for the primary language.');
   let metadata = current?.metadata ?? null;
   if ('metadata' in input) {
     try { metadata = input.metadata === null ? null : validateMetadata(input.metadata); }
@@ -91,7 +94,7 @@ function cardValues(value: unknown, id: string, current?: ImportTarget): ImportT
     }
   }
   if (metadata?.cardType === 'coding_task') {
-    for (const language of languages) {
+    for (const language of Object.keys(translations)) {
       const translation = translations[language];
       requireField(!translation || translation.questionDetails?.trim(), 'translations.' + language + '.questionDetails', 'Coding tasks require a task statement.');
     }
@@ -212,19 +215,29 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
     let batch: D1PreparedStatement[];
     if (!cardsRoute) {
       const values = deckValues(value, deck);
+      const config = deckLanguages(value as Record<string, unknown>, deck);
+      const { primaryLanguage: primary, supportedLanguages: supported } = config;
+      const configCards = deck ? await listCards(db, user, deck.id) : [];
+      if (deck) validateLanguageChange(value as Record<string, unknown>, deck, config, configCards);
       batch = [deck
-        ? db.prepare(`UPDATE decks SET title = ?, description = ?, visibility = ?, source_key = ?, chatgpt_default = ?, chatgpt_en = ?, chatgpt_bg = ?,
+        ? db.prepare(`UPDATE decks SET title = ?, description = ?, visibility = ?, source_key = ?, chatgpt_default = ?, chatgpt_en = ?, chatgpt_bg = ?, primaryLanguage = ?, supportedLanguages = ?,
             revision = revision + 1, updated_at = ?, mutation = ? WHERE id = ? AND owner_id = ? AND revision = ?`)
-          .bind(...values, now, mutation, id, user, deck.revision)
+          .bind(...values, primary, JSON.stringify(supported), now, mutation, id, user, deck.revision)
         : db.prepare(`INSERT INTO decks(title, description, visibility, source_key, chatgpt_default, chatgpt_en, chatgpt_bg,
-            created_at, updated_at, mutation, id, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
-          .bind(...values, now, now, mutation, id, user)];
+            primaryLanguage, supportedLanguages, created_at, updated_at, mutation, id, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
+          .bind(...values, primary, JSON.stringify(supported), now, now, mutation, id, user)];
+      if (deck) batch.push(...primaryLanguageStatements(db, id, mutation, primary!, deck.primaryLanguage !== primary, configCards));
     } else {
       check(deck, 'Deck not available.', 404);
       const cards = await listCards(db, user, deck.id);
       const current = cardId ? cards.find(card => card.id === cardId) : undefined;
       check(!cardId || current, 'Card not available.', 404);
-      const next = cardValues(value, id, current);
+      const next = cardValues({ ...(value as object), primary_language: (value as Record<string, unknown>).primary_language ?? deck.primaryLanguage ?? current?.primary_language ?? Object.keys(((value as Record<string, unknown>).translations ?? {}) as object)[0] }, id, current);
+      validateCardLanguages(next, deck);
+      const supported = deck.supportedLanguages as string[];
+      requireField(Object.keys(next.translations).every(code => supported.includes(code)), 'translations', 'Language is not supported by this deck.');
+      requireField(!deck.primaryLanguage || next.translations[deck.primaryLanguage as keyof Translations], 'translations', 'Primary language content is required.');
+      requireField(!deck.primaryLanguage || next.primary_language === deck.primaryLanguage, 'primary_language', 'Use the deck primary language.');
       if (!uniqueQuestions([...cards.filter(card => card.id !== id), next])) {
         const retry = await replay();
         if (retry) return retry;

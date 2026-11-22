@@ -1,9 +1,9 @@
 export const languages = ['bg', 'en'] as const;
-export type Language = typeof languages[number];
+export type Language = string;
 export const sections = ['simple', 'example', 'details'] as const;
 export type Section = typeof sections[number];
 export type Translation = { question: string; answer: string; questionDetails?: string } & Partial<Record<Section, string>>;
-export type Translations = Partial<Record<Language, Translation>>;
+export type Translations = Record<Language, Translation>;
 
 export const studyControlLabels = {
   en: {
@@ -32,7 +32,8 @@ export const answerSizeLabels = {
 };
 
 export function isLanguage(value: unknown): value is Language {
-  return value === 'bg' || value === 'en';
+  if (typeof value !== 'string' || !value) return false;
+  try { return Intl.getCanonicalLocales(value)[0] === value; } catch { return false; }
 }
 
 export function isSection(value: unknown): value is Section {
@@ -43,20 +44,35 @@ export function legacyLanguage(question: string): Language {
   return /[А-Яа-я]/u.test(question) ? 'bg' : 'en';
 }
 
-export function selectTranslation(translations: Translations, preferred: Language) {
-  const other = preferred === 'bg' ? 'en' : 'bg';
-  const language = translations[preferred] ? preferred : other;
-  const translation = translations[language];
+export function completeTranslation(value: Translation | undefined, cardType?: string): value is Translation {
+  return Boolean(value && validTranslation(value) && (cardType !== 'coding_task' || value.questionDetails?.trim()));
+}
+
+export function selectTranslation(translations: Translations, preferred: Language, primary: Language = 'en', cardType?: string) {
+  const language = completeTranslation(translations[preferred], cardType) ? preferred : primary;
+  const translation = completeTranslation(translations[language], cardType) ? translations[language] : undefined;
   return { language, translation, fallback: language !== preferred };
 }
 
-export function selectExplanation(translations: Translations, language: Language, section: Section) {
-  const other = language === 'bg' ? 'en' : 'bg';
+export function selectExplanation(translations: Translations, language: Language, section: Section, primary: string = language === 'en' ? 'bg' : 'en') {
   const content = translations[language]?.[section];
-  return content ? { language, content } : { language: other, content: translations[other]?.[section] };
+  return content ? { language, content } : { language: primary, content: translations[primary]?.[section] };
+}
+
+export function primaryLanguageFirst(languages: string[], primary?: string | null) {
+  const sorted = [...languages].sort((a, b) => a.localeCompare(b));
+  return primary && sorted.includes(primary) ? [primary, ...sorted.filter(language => language !== primary)] : sorted;
+}
+
+export function languageUnion(decks: { supportedLanguages: string[] }[]) {
+  return [...new Set(decks.flatMap(deck => deck.supportedLanguages))].sort();
+}
+
+export function reconcileLanguage(preferred: string, available: string[]) {
+  return available.includes(preferred) ? preferred : available[0] ?? 'en';
 }
 
 export function validTranslation(value: Translation) {
-  return Boolean(value.question.trim() && value.answer.trim() && value.question.length <= 2000 &&
-    value.answer.length <= 20000 && (value.questionDetails?.length ?? 0) <= 20000 && sections.every(section => (value[section]?.length ?? 0) <= 20000));
+  return Boolean(value && typeof value.question === 'string' && typeof value.answer === 'string' && value.question.trim() && value.answer.trim() && value.question.length <= 2000 &&
+    value.answer.length <= 20000 && (value.questionDetails === undefined || (typeof value.questionDetails === 'string' && value.questionDetails.length <= 20000)) && sections.every(section => value[section] === undefined || (typeof value[section] === 'string' && value[section].length <= 20000)));
 }

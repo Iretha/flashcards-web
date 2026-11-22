@@ -1,7 +1,7 @@
 import type { CardMetadata } from '../lib/metadata';
 import { questionKey } from '../lib/markdown';
 import type { parseMarkdown } from '../lib/markdown';
-import { languages, legacyLanguage, sections, validTranslation } from '../lib/translations';
+import { legacyLanguage, sections, validTranslation } from '../lib/translations';
 import type { Language, Translation, Translations } from '../lib/translations';
 
 export interface ImportTarget {
@@ -46,8 +46,8 @@ export function planImport(
 
   for (const [index, draft] of parsed.cards.entries()) {
     const bilingual = 'translations' in draft;
-    const incoming: Translations = bilingual ? draft.translations : { [legacyLanguage(draft.question)]: draft };
-    const primary = languages.find(language => incoming[language]);
+    const incoming: Translations = bilingual ? draft.translations : { [parsed.metadata.primaryLanguage ?? legacyLanguage(draft.question)]: draft };
+    const primary = (parsed.metadata.primaryLanguage && incoming[parsed.metadata.primaryLanguage] ? parsed.metadata.primaryLanguage : Object.keys(incoming)[0]);
     const question = (primary && incoming[primary]?.question) || '';
     const key = bilingual ? draft.key : null;
     const prefix = String(index);
@@ -103,11 +103,11 @@ export function planImport(
       dirty = true;
     }
     let first = true;
-    for (const language of languages) {
+    for (const language of Object.keys(incoming)) {
       const value = incoming[language];
       if (!value) continue;
       const actual = !bilingual && target
-        ? languages.find(lang => questionKey(target.translations[lang]?.question ?? '') === questionKey(value.question)) ?? language
+        ? Object.keys(target.translations).find(lang => questionKey(target.translations[lang]?.question ?? '') === questionKey(value.question)) ?? language
         : language;
       const previous = bilingual ? next.translations[actual]
         : (legacyBaselines.get(id) ?? target?.translations)?.[actual];
@@ -139,7 +139,7 @@ export function planImport(
 export function uniqueQuestions(cards: ImportTarget[]) {
   const seen = new Map<string, string>();
   for (const card of cards) {
-    for (const language of languages) {
+    for (const language of Object.keys(card.translations)) {
       const translation = card.translations[language];
       if (!translation) continue;
       const key = language + ':' + questionKey(translation.question);

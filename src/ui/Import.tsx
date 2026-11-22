@@ -7,7 +7,7 @@ import { api } from './api';
 
 type FileDraft = {
   key: string; filename: string; source: string; target: string; title: string; description: string; visibility: 'PRIVATE' | 'SHARED';
-  replace?: boolean; preview?: Preview; choices: Record<string, 'keep' | 'update'>; links: Record<string, string>; imported?: boolean;
+  primaryLanguage?: string; replace?: boolean; preview?: Preview; choices: Record<string, 'keep' | 'update'>; links: Record<string, string>; imported?: boolean;
 };
 type Run = (work: () => Promise<void>) => Promise<void>;
 
@@ -31,6 +31,7 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
             key: String(index), filename, source, target: '',
             title: metadata.title || filename, description: metadata.description ?? '',
             visibility: metadata.visibility?.toUpperCase() === 'SHARED' ? 'SHARED' : 'PRIVATE',
+            primaryLanguage: metadata.primaryLanguage,
             choices: {}, links: {},
           };
         }));
@@ -65,6 +66,10 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
           {preview && <>
             {file.replace && preview.impact && <p role="alert">This will delete all {preview.impact.cards} existing cards and {preview.impact.progressRecords} progress records, and invalidate {preview.impact.activeSessions} active sessions. Only the cards from this file will remain.</p>}
             {!file.replace && preview.impact && <details><summary>Replacement impact report (read only)</summary><p>{preview.impact.cards} cards; {preview.impact.progressRecords} progress records would be lost; {preview.impact.activeSessions} active sessions would be invalidated. {preview.impact.retainedHistoricalEvents} historical events would remain. Normal import does not delete these records. See the reload runbook for separately approved replacement.</p></details>}
+            {!preview.deck && <label>Primary language<select value={file.primaryLanguage ?? ''} disabled={busy} onChange={event => patch(file.key, { primaryLanguage: event.target.value })}>
+              <option value="">Choose the original language</option>
+              {[...new Set(preview.rows.flatMap(row => row.language ? [row.language] : []))].sort().map(code => <option key={code}>{code}</option>)}
+            </select></label>}
             <p>Target: {file.title}</p>
             <p>{count('new')} new cards · {preview.existing} existing cards · {count('translation')} additional translations · {preview.rows.filter(row => file.choices[row.index] === 'update').length} translation updates · {count('metadata')} metadata updates · {count('duplicate')} duplicates · {count('conflict')} conflicts · {count('invalid')} invalid</p>
             {preview.rows.filter(row => row.metadata).filter((row, index, all) => all.findIndex(other => other.key === row.key) === index).map(row => <div key={'metadata-' + row.index}>{row.metadata && <CardSources metadata={row.metadata} />}</div>)}
@@ -97,12 +102,13 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
               })}><option value="">Choose a translation</option><option value="keep">Keep existing</option><option value="update">Use incoming</option></select></label>
             </fieldset>)}
             {Object.keys(file.links).length > 0 && <button disabled={busy} onClick={() => patch(file.key, { links: {}, choices: {}, preview: undefined })}>Clear card matches</button>}
-            <button className="primary" disabled={busy || !file.title.trim() || preview.rows.some(row => row.kind === 'invalid') ||
+            <button className="primary" disabled={busy || (!preview.deck && !file.primaryLanguage && new Set(preview.rows.map(row => row.language).filter(Boolean)).size > 1) || !file.title.trim() || preview.rows.some(row => row.kind === 'invalid') ||
               preview.rows.some(row => row.kind === 'link' || (row.kind === 'conflict' && !file.choices[row.index]))}
               onClick={() => void run(async () => {
                 if (file.replace && !window.confirm(`Replace all cards in ${preview.deck?.title}? Existing cards and their study progress will be deleted.`)) return;
                 await api('import/apply', {
                   replace: file.replace === true, confirmReplacement: file.replace ? preview.deck?.id : undefined,
+                  primaryLanguage: file.primaryLanguage || undefined,
                   source: file.source, filename: file.filename, title: file.title, description: file.description, target: file.target, visibility: file.visibility,
                   choices: file.choices, links: file.links, previewId: preview.deck?.id ?? null, revision: preview.deck?.revision ?? null,
                 });

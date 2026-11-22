@@ -1,4 +1,5 @@
 import type { Language } from './translations';
+import { buildAiUrl } from './ai-providers';
 export type ChatGptConfig = { chatgpt_default?: string; chatgpt_en?: string | null; chatgpt_bg?: string | null };
 export const legacyInstructions = { en: `I am preparing for a Senior Java Developer technical interview.
 
@@ -24,11 +25,11 @@ Please answer the question following these instructions:
 7. Ако въпросът съдържа неправилно предположение, обясни и коригирай грешката.
 8. Не измисляй факти и не представяй контекстно зависими твърдения като безусловно верни.` };
 export const universalInstructions = { en: 'Explain the question accurately, clearly and logically. Start with a concise answer, include a useful practical example, and highlight common misconceptions. Correct incorrect assumptions and acknowledge uncertainty.', bg: '?????? ??????? ?????, ???? ? ???????. ??????? ? ?????? ???????, ??? ??????? ??????????? ?????? ? ?????? ????? ??????? ???????. ????????? ???????????? ????????????? ? ?????? ?????????????.' };
-export function defaultInstructions(config: ChatGptConfig, language: Language) { return (config.chatgpt_default === 'universal' ? universalInstructions : legacyInstructions)[language]; }
-export function effectiveInstructions(config: ChatGptConfig, language: Language) { return config[language === 'en' ? 'chatgpt_en' : 'chatgpt_bg']?.trim() || defaultInstructions(config, language); }
-export function buildChatGptPrompt(question: string, language: Language, instructions = legacyInstructions[language]): string {
- return `${language === 'bg' ? '??????' : 'Question'}:\n"${question}"\n\n${instructions}\n\n${language === 'bg' ? `Отговори изцяло на български език, като запазиш утвърдените английски технически термини, когато е уместно.` : `Respond entirely in English.`}`;
+export function defaultInstructions(config: ChatGptConfig, language: Language) { return (config.chatgpt_default === 'universal' ? universalInstructions : legacyInstructions)[language === 'bg' ? 'bg' : 'en']; }
+export function effectiveInstructions(config: ChatGptConfig, language: Language) { return (language === 'en' ? config.chatgpt_en : language === 'bg' ? config.chatgpt_bg : null)?.trim() || defaultInstructions(config, language); }
+export function buildChatGptPrompt(question: string, language: Language, instructions = legacyInstructions[language === 'bg' ? 'bg' : 'en']): string {
+ return `${language === 'bg' ? '??????' : 'Question'}:\n"${question}"\n\n${instructions}\n\n${language === 'bg' ? `Отговори изцяло на български език, като запазиш утвърдените английски технически термини, когато е уместно.` : language === 'en' ? 'Respond entirely in English.' : `Respond entirely in the language identified by BCP 47 code "${language}".`}`;
 }
 export function buildChatGptUrl(prompt: string): string {
-  return `https://chatgpt.com/?${new URLSearchParams({ q: prompt })}`;
+  return buildAiUrl('chatgpt', prompt);
 }

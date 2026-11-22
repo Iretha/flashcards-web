@@ -333,6 +333,7 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
 .study .actions .check { width: auto; margin: 0; }
 .question-details, .card-sources { min-width: 0; overflow-wrap: anywhere; }
 
+.ai-providers { display: inline-flex; flex-wrap: wrap; vertical-align: middle; }
 .ask-chatgpt { display: inline-flex; vertical-align: middle; margin-left: .35rem; padding: .2rem; border-radius: .3rem; color: inherit; }
 .ask-chatgpt:hover { background: var(--border, #ddd); }
 .ask-chatgpt:focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }

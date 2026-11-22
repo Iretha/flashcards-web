@@ -1,15 +1,17 @@
+import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { validateMetadata } from '../lib/metadata';
 import { MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR } from '../lib/import-limits';
 import type { CardMetadata } from '../lib/metadata';
 import { parseMarkdown, questionKey } from '../lib/markdown';
 import type { ImportCard } from '../lib/markdown';
-import { isLanguage, languages, legacyLanguage, sections } from '../lib/translations';
+import { isLanguage, sections } from '../lib/translations';
 import type { Translations } from '../lib/translations';
 import { planImport, uniqueQuestions } from './import-plan';
 import type { ImportTarget } from './import-plan';
 import { check, HttpError, object, string } from './http';
 
 export interface Deck {
+  primaryLanguage: string | null; supportedLanguages: string[];
   id: string; owner_id: string; source_key: string | null; title: string; description: string;
   chatgpt_default: string; chatgpt_en: string | null; chatgpt_bg: string | null;
   visibility: 'PRIVATE' | 'SHARED'; revision: number;
@@ -24,7 +26,7 @@ export interface Card extends ImportCard, ImportTarget {
 export async function getDeck(db: D1Database, user: string, id: string, write = false) {
   const deck = await db.prepare('SELECT * FROM decks WHERE id = ?').bind(id).first<Deck>();
   check(deck && (deck.owner_id === user || (!write && deck.visibility === 'SHARED')), 'Deck not available.', 404);
-  return deck;
+  return decodeDeck(deck);
 }
 
 export async function listDecks(db: D1Database, user: string) {
@@ -34,11 +36,15 @@ export async function listDecks(db: D1Database, user: string) {
     FROM decks d LEFT JOIN cards c ON c.deck_id = d.id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
     WHERE d.owner_id = ? OR d.visibility = 'SHARED' GROUP BY d.id ORDER BY d.title, d.id`)
-    .bind(user, user, user).all<Deck & { owned: number; total: number; learned: number; presentations: number; failures: number }>()).results;
+    .bind(user, user, user).all<Deck & { owned: number; total: number; learned: number; presentations: number; failures: number }>()).results.map(decodeDeck);
 }
 
 export async function listCards(db: D1Database, user: string, deck: string) {
   return (await cardsForDeck(db, user, deck).all<CardRow>()).results.map(decodeCard);
+}
+
+export function decodeDeck<T extends Deck>(deck: T): T {
+  return { ...deck, supportedLanguages: typeof deck.supportedLanguages === 'string' ? JSON.parse(deck.supportedLanguages) : deck.supportedLanguages };
 }
 
 type CardRow = Omit<Card, 'translations' | 'metadata'> & { translations: string; metadata: string | null };
@@ -54,7 +60,7 @@ export async function deckWithCards(db: D1Database, user: string, id: string, ca
   ]);
   const deck = parent.results[0] as unknown as Deck | undefined;
   check(deck, 'Deck not available.', 404);
-  return { deck, cards: (cards.results as unknown as CardRow[]).map(decodeCard) };
+  return { deck: decodeDeck(deck), cards: (cards.results as unknown as CardRow[]).map(decodeCard) };
 }
 
 function cardsForDeck(db: D1Database, user: string, deck: string, cardId?: string) {
@@ -72,10 +78,9 @@ function cardsForDeck(db: D1Database, user: string, deck: string, cardId?: strin
 
 function readTranslations(input: unknown): Translations {
   const fields = object(input);
-  check(Object.keys(fields).every(isLanguage), 'Choose BG or EN.');
+  check(Object.keys(fields).every(isLanguage), 'Use canonical BCP 47 language codes.');
   const translations: Translations = {};
-  for (const language of languages) {
-    if (!(language in fields)) continue;
+  for (const language of Object.keys(fields)) {
     const entry = object(fields[language]);
     function markdown(field: string, max: number, optional = false) {
       const value = entry[field] ?? '';
@@ -107,17 +112,24 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
     check(value === undefined || value === null || (typeof value === 'string' && value.trim().length > 0 && value.length <= 10000), 'Invalid ChatGPT instructions (1?10000 characters).');
     overrides.push(typeof value === 'string' ? value : null);
   }
+  const existingDeck = input.id ? await getDeck(db, user, String(input.id), true) : null;
+  const config = deckLanguages(input, existingDeck);
+  const { primaryLanguage, supportedLanguages } = config;
+  const configCards = existingDeck ? await listCards(db, user, existingDeck.id) : [];
+  if (existingDeck) validateLanguageChange(input, existingDeck, config, configCards);
+  const mutation = crypto.randomUUID();
   const now = Date.now();
   if (input.id) {
     const id = string(input.id, 'deck ID', 80);
-    const result = await db.prepare(`UPDATE decks SET title = ?, description = ?, visibility = ?, updated_at = ?,
-      chatgpt_en = CASE WHEN ? THEN ? ELSE chatgpt_en END, chatgpt_bg = CASE WHEN ? THEN ? ELSE chatgpt_bg END, revision = revision + 1 WHERE id = ? AND owner_id = ?`).bind(title, description, scope, now, 'chatgpt_en' in input, overrides[0], 'chatgpt_bg' in input, overrides[1], id, user).run();
-    check(result.meta.changes, 'Deck not available.', 404);
+    const header = db.prepare(`UPDATE decks SET primaryLanguage = ?, supportedLanguages = ?, title = ?, description = ?, visibility = ?, updated_at = ?,
+      chatgpt_en = CASE WHEN ? THEN ? ELSE chatgpt_en END, chatgpt_bg = CASE WHEN ? THEN ? ELSE chatgpt_bg END, revision = revision + 1, mutation = ? WHERE id = ? AND owner_id = ? AND revision = ?`).bind(primaryLanguage, JSON.stringify(supportedLanguages), title, description, scope, now, 'chatgpt_en' in input, overrides[0], 'chatgpt_bg' in input, overrides[1], mutation, id, user, existingDeck!.revision);
+    const [result] = await db.batch([header, ...primaryLanguageStatements(db, id, mutation, primaryLanguage!, existingDeck!.primaryLanguage !== primaryLanguage, configCards)]);
+    check(result.meta.changes, 'Deck changed. Reload and retry.', 409);
     return { id };
   }
   const id = crypto.randomUUID();
-  await db.prepare(`INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at, chatgpt_en, chatgpt_bg)
-    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, user, title, description, scope, now, now, ...overrides).run();
+  await db.prepare(`INSERT INTO decks(primaryLanguage, supportedLanguages, id, owner_id, title, description, visibility, created_at, updated_at, chatgpt_en, chatgpt_bg)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(primaryLanguage, JSON.stringify(supportedLanguages), id, user, title, description, scope, now, now, ...overrides).run();
   return { id };
 }
 
@@ -149,10 +161,13 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     } else {
       const question = string(input.question, 'question', 2000);
       const answer = string(input.answer, 'answer', 20000);
-      const language = current?.primary_language ?? legacyLanguage(question);
+      const language = deck.primaryLanguage ?? current?.primary_language;
+      check(language, 'Resolve the deck primary language before adding cards.');
       translations = { ...current?.translations, [language]: { ...current?.translations[language], question, answer } };
     }
-    const primary = current?.primary_language ?? languages.find(language => translations[language]);
+    const primary = deck.primaryLanguage ?? current?.primary_language;
+    check(Object.keys(translations).every(code => deck.supportedLanguages.includes(code)), 'Unsupported deck language.');
+    check(primary && translations[primary], 'Primary language content is required.');
     check(primary, 'Add at least one translation.');
     let cardMetadata = current?.metadata ?? null;
     if (input.metadata !== undefined) {
@@ -162,6 +177,7 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     if (cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
     const next = { metadata: cardMetadata, id, primary_language: primary, import_key: current?.import_key ?? null, translations,
       interview_priority: current?.interview_priority ?? null, difficulty: current?.difficulty ?? null };
+    validateCardLanguages(next, deck);
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
@@ -187,6 +203,7 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
   const deck = input.target === 'new' ? null : input.target
     ? await getDeck(db, user, string(input.target, 'target deck', 80), true)
     : key ? await db.prepare('SELECT * FROM decks WHERE owner_id = ? AND source_key = ?').bind(user, key).first<Deck>() : null;
+  if (deck) Object.assign(deck, decodeDeck(deck));
   const existing = deck ? await listCards(db, user, deck.id) : [];
   if (parsed.version === 3 && existing.some(card => !card.metadata) && input.replace !== true) check(false, 'Target contains legacy cards. Use a new deck or separately approved v3 replacement; legacy cards are not migrated.');
   const links = object(input.links ?? {});
@@ -236,6 +253,16 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
     check(row.kind !== 'link', 'Resolve how each card matches the existing deck.');
     if (row.kind === 'conflict') check(['keep', 'update'].includes(String(updates[row.index])), 'Resolve every content conflict.');
   }
+  const declaredPrimary = input.primaryLanguage ?? metadata.primaryLanguage;
+  const declaredSupported = input.supportedLanguages ?? (metadata.supportedLanguages ? JSON.parse(metadata.supportedLanguages) : undefined);
+  const inferredLanguages = [...new Set(cards.flatMap(card => Object.keys(card.translations)))].sort();
+  const inferredPrimary = inferredLanguages.length === 1 ? inferredLanguages[0] : null;
+  const languageConfig = deck ? { primaryLanguage: deck.primaryLanguage, supportedLanguages: deck.supportedLanguages }
+    : declaredPrimary !== undefined || declaredSupported !== undefined
+      ? deckLanguages({ primaryLanguage: declaredPrimary ?? inferredPrimary, supportedLanguages: declaredSupported ?? inferredLanguages })
+      : deckLanguages({ primaryLanguage: inferredPrimary, supportedLanguages: inferredLanguages });
+  for (const card of cards) validateCardLanguages(card, languageConfig);
+  if (languageConfig.primaryLanguage) for (const card of changed) card.primary_language = languageConfig.primaryLanguage;
   check(uniqueQuestions(cards), 'A matching question already exists.', 409);
   check(rows.some(row => row.kind !== 'invalid'), 'There are no valid cards to import.');
   if (deck && !changed.length && deck.visibility === scope && deck.title === title && deck.description === description) return { id: deck.id, imported: 0, updatedTranslations: 0 };
@@ -245,8 +272,8 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
   const header = deck
     ? db.prepare(`UPDATE decks SET title = ?, description = ?, visibility = ?, revision = revision + 1, mutation = ?, updated_at = ?
       WHERE id = ? AND owner_id = ? AND revision = ?`).bind(title, description, scope, mutation, now, id, user, deck.revision)
-    : db.prepare(`INSERT INTO decks(id, owner_id, source_key, title, description, visibility, mutation, created_at, updated_at)
-      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, user, key, title, description, scope, mutation, now, now);
+    : db.prepare(`INSERT INTO decks(primaryLanguage, supportedLanguages, id, owner_id, source_key, title, description, visibility, mutation, created_at, updated_at)
+      VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(languageConfig.primaryLanguage, JSON.stringify(languageConfig.supportedLanguages), id, user, key, title, description, scope, mutation, now, now);
   const batch = [header];
   if (input.replace === true) {
     // All changes share the revision-checked mutation and one atomic D1 batch.
@@ -266,4 +293,13 @@ export async function replacementImpact(db: D1Database, deck: string) {
     (SELECT count(*) FROM study_sessions WHERE status = 'ACTIVE' AND ? IN (SELECT value FROM json_each(selected_deck_ids))) AS activeSessions,
     (SELECT count(*) FROM study_events WHERE deck_id = ?) AS retainedHistoricalEvents`)
     .bind(deck, deck, deck, deck).first<{ cards: number; progressRecords: number; activeSessions: number; retainedHistoricalEvents: number }>();
+}
+
+export function primaryLanguageStatements(db: D1Database, id: string, mutation: string, language: string, changed: boolean, cards: Card[]) {
+  return changed ? cards.map(card => {
+    const content = card.translations[language];
+    return db.prepare(`UPDATE cards SET primary_language = ?, question = ?, answer = ?, question_key = ?
+      WHERE id = ? AND deck_id = ? AND EXISTS (SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
+      .bind(language, content.question, content.answer, questionKey(content.question), card.id, id, id, mutation);
+  }) : [];
 }

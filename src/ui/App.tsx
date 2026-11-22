@@ -10,7 +10,7 @@ import { DeckDetail, DeckEditor } from './Decks';
 import Import from './Import';
 import { defaults } from '../lib/study';
 import type { Settings, StudyAction } from '../lib/study';
-import { answerSizeLabels, languages, selectTranslation } from '../lib/translations';
+import { answerSizeLabels, primaryLanguageFirst, reconcileLanguage, selectTranslation } from '../lib/translations';
 import CardSources from './CardSources';
 
 type Screen = 'library' | 'import' | 'detail' | 'study';
@@ -254,10 +254,15 @@ export default function App() {
   const selectedDecks = home?.decks.filter(item => selected.includes(item.id)) ?? [];
   const total = selectedDecks.reduce((sum, item) => sum + item.total, 0);
   const translations = session?.card?.translations ?? {};
-  const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language);
+  const availableLanguages = primaryLanguageFirst([...new Set(selectedDecks.flatMap(deck => deck.supportedLanguages))], selectedDecks[0]?.primaryLanguage);
+  const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language, session?.card?.primaryLanguage ?? 'en', session?.card?.metadata?.cardType);
   const answerVisible = Boolean(session?.revealed);
-  const sizeLabels = answerSizeLabels[session?.language ?? settings.language];
+  const sizeLabels = answerSizeLabels[(session?.language ?? settings.language) === 'bg' ? 'bg' : 'en'];
   const activeCard = session?.status === 'ACTIVE' && session.card;
+  const availableKey = availableLanguages.join(',');
+  useEffect(() => {
+    setSettings(current => ({ ...current, language: reconcileLanguage(current.language, availableLanguages) }));
+  }, [availableKey]);
   const toggleStudyAnswer = () => studyAction('show');
 
   return <div className="shell">
@@ -344,8 +349,8 @@ export default function App() {
           {session?.status === 'INVALIDATED' && <p className="muted">The previous session needs a restart after an application, deck or progress change.</p>}
           <p>{total} cards selected. Every selected card appears in the first cycle.</p>
           <div className="row" role="group" aria-label="Study language">
-            {languages.map(language => <button key={language} aria-pressed={settings.language === language}
-              onClick={() => setSettings({ ...settings, language })}>{language === 'bg' ? 'Български' : 'English'}</button>)}
+            {availableLanguages.map(language => <button key={language} aria-pressed={settings.language === language}
+              onClick={() => setSettings({ ...settings, language })}>{language.toUpperCase()}</button>)}
           </div>
           <label>Question order<select value={settings.order} onChange={event => setSettings({ ...settings, order: event.target.value as Settings['order'] })}>
             <option value="SEQUENTIAL">Deck order</option><option value="RANDOM">Random</option>
@@ -393,8 +398,8 @@ export default function App() {
           </div>
               <span className="toolbar-dot" aria-hidden="true">·</span>
               <div className="row language-controls" role="group" aria-label="Study language">
-                {languages.map(language => <button key={language} aria-disabled={busy} aria-pressed={session.language === language}
-                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{language === 'bg' ? 'Български' : 'English'}</span></button>)}
+                {primaryLanguageFirst(session.availableLanguages, session.card?.primaryLanguage).map(language => <button key={language} disabled={busy} aria-pressed={session.language === language}
+                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{language.toUpperCase()}</span></button>)}
               </div>
               <span className="toolbar-dot" aria-hidden="true">·</span>
               <button type="button" aria-label="Refresh for latest version" onClick={() => void run(async () => {
@@ -428,6 +433,7 @@ export default function App() {
               <span>Repeat</span>
             </label>
           </div>
+          {!selectedLanguage.translation && <p role="alert">Primary language content is missing or incomplete. Edit this card before studying.</p>}
           {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <div className="study-question-row">
           {activeCard.metadata?.provenance.sources[0] && <a className="question-source-link"
@@ -473,3 +479,4 @@ export default function App() {
     </footer>
   </div>;
 }
+

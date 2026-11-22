@@ -3,7 +3,7 @@ import { advance, defaults, startStudy } from '../lib/study';
 import type { Settings, StudyAction, StudyState } from '../lib/study';
 import type { User } from './auth';
 import { check, object, string } from './http';
-import { isLanguage, isSection, selectExplanation, selectTranslation } from '../lib/translations';
+import { isLanguage, isSection, selectExplanation, selectTranslation, languageUnion, reconcileLanguage, completeTranslation } from '../lib/translations';
 import type { Language, Section, Translations } from '../lib/translations';
 
 interface SessionRow {
@@ -19,7 +19,7 @@ function settings(input: Record<string, unknown>): Settings {
   const seconds = input.seconds;
   check(typeof seconds === 'number' && Number.isInteger(seconds) && seconds >= 1 && seconds <= 3600, 'Timer must be between 1 and 3600 seconds.');
   const language = input.language ?? defaults.language;
-  check(isLanguage(language), 'Choose BG or EN.');
+  check(isLanguage(language), 'Use a canonical BCP 47 language code.');
   check(input.answersOpen === undefined || typeof input.answersOpen === 'boolean', 'Invalid answer visibility setting.');
   return { order: input.order, timer: input.timer, seconds, onlyUnlearned: false, language, answersOpen: input.answersOpen ?? false };
 }
@@ -28,10 +28,11 @@ const read = (db: D1Database, user: string) =>
   db.prepare('SELECT * FROM study_sessions WHERE user_id = ?').bind(user).first<SessionRow>();
 
 async function studyCard(db: D1Database, user: string, id: string) {
-  const card = await db.prepare(`SELECT c.deck_id, c.id, c.question, c.answer, c.translations, c.metadata, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
+  const card = await db.prepare(`SELECT c.deck_id, c.id, c.question, c.answer, c.translations, c.metadata, c.primary_language, d.primaryLanguage, d.supportedLanguages, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
     WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED')`).bind(id, user)
-    .first<{ deck_id: string; id: string; question: string; answer: string; title: string; metadata: string | null; translations: string }>();
-  return card && { ...card, metadata: card.metadata ? JSON.parse(card.metadata) as CardMetadata : null, translations: JSON.parse(card.translations) as Translations };
+    .first<{ deck_id: string; id: string; question: string; answer: string; title: string; primary_language: string; primaryLanguage: string | null; supportedLanguages: string; metadata: string | null; translations: string }>();
+  const decoded = card && { ...card, primaryLanguage: card.primaryLanguage ?? card.primary_language, supportedLanguages: JSON.parse(card.supportedLanguages) as string[], metadata: card.metadata ? JSON.parse(card.metadata) as CardMetadata : null, translations: JSON.parse(card.translations) as Translations };
+  return decoded && completeTranslation(decoded.translations[decoded.primaryLanguage], decoded.metadata?.cardType) ? decoded : null;
 }
 
 export async function studyView(db: D1Database, user: string) {
@@ -39,9 +40,10 @@ export async function studyView(db: D1Database, user: string) {
   if (!row) return null;
   const deckIds: string[] = JSON.parse(row.selected_deck_ids);
   const state: StudyState = JSON.parse(row.session_state);
-  const language = state.language ?? defaults.language;
+  const availableLanguages = await sessionLanguages(db, user, deckIds);
+  const language = reconcileLanguage(state.language ?? defaults.language, availableLanguages);
   const status = row.status === 'ACTIVE' && !state.cycles ? 'INVALIDATED' as const : row.status;
-  if (status !== 'ACTIVE') return { id: row.id, version: row.version, status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds, language, repeat: false, explanation: null };
+  if (status !== 'ACTIVE') return { id: row.id, version: row.version, status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds, language, availableLanguages, repeat: false, explanation: null };
   const historical = state.cursor < state.history.length - 1;
   const id = state.history[state.cursor];
   const card = await studyCard(db, user, id);
@@ -51,7 +53,7 @@ export async function studyView(db: D1Database, user: string) {
     remaining: state.cycles ? state.cycles.pending.length + (state.current ? 1 : 0) : state.queue.length, historical, hasPrevious: state.cursor > 0,
     revealed: historical ? Boolean(state.historyRevealed) : state.revealed,
     deadline: state.deadline, paused: state.remainingMs !== null, seconds: row.timer_seconds, deckIds,
-    language, explanation: state.explanation ?? null,
+    language, availableLanguages, explanation: state.explanation ?? null,
   };
 }
 
@@ -68,9 +70,10 @@ export async function startSession(db: D1Database, user: User, input: Record<str
   const prior = await read(db, user.id);
   check((prior?.version ?? 0) === input.version, 'The session changed on another device.', 409);
   const serialized = JSON.stringify(deckIds);
-  const snapshot = await db.prepare(`SELECT id, revision FROM decks WHERE (owner_id = ? OR visibility = 'SHARED')
-    AND id IN (SELECT value FROM json_each(?))`).bind(user.id, serialized).all<{ id: string; revision: number }>();
+  const snapshot = await db.prepare(`SELECT id, revision, supportedLanguages FROM decks WHERE (owner_id = ? OR visibility = 'SHARED')
+    AND id IN (SELECT value FROM json_each(?))`).bind(user.id, serialized).all<{ id: string; revision: number; supportedLanguages: string }>();
   check(snapshot.results.length === deckIds.length, 'One or more decks are unavailable.', 404);
+  config.language = reconcileLanguage(config.language, languageUnion(snapshot.results.map(deck => ({ supportedLanguages: JSON.parse(deck.supportedLanguages) }))));
   const cards = (await db.prepare(`SELECT c.id, coalesce(p.status, 'UNLEARNED') AS status,
     coalesce(p.times_failed, 0) AS times_failed FROM json_each(?) selection
     JOIN cards c ON c.deck_id = selection.value JOIN decks d ON d.id = c.deck_id
@@ -131,9 +134,12 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
       if (input.answersOpen) { state.deadline = null; state.remainingMs = null; }
     }
   }
-  let language: Language | undefined;
+  const available = await sessionLanguages(db, user.id, JSON.parse(row.selected_deck_ids));
+  state.language = reconcileLanguage(state.language ?? defaults.language, available);
+  let language: Language | undefined = state.language !== previous.language ? state.language : undefined;
   if (action === 'language') {
-    check(isLanguage(input.language), 'Choose BG or EN.');
+    check(isLanguage(input.language), 'Use a canonical BCP 47 language code.');
+    check(available.includes(input.language), 'Language is not supported by the selected decks.');
     if (input.language !== (previous.language ?? defaults.language)) {
       language = input.language;
       state.language = language;
@@ -147,7 +153,7 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
     const id = previous.history[previous.cursor];
     const card = await studyCard(db, user.id, id);
     check(card, 'Card not available.', 404);
-    const selected = selectTranslation(card.translations, state.language ?? defaults.language);
+    const selected = selectTranslation(card.translations, state.language ?? defaults.language, card.primaryLanguage, card.metadata?.cardType);
     check(selectExplanation(card.translations, selected.language, section).content, 'Explanation not available.', 404);
     state.explanation = state.explanation === section ? null : section;
     if (state.explanation) opened = { id, section };
@@ -195,4 +201,10 @@ export async function reset(db: D1Database, user: string, deck: string, card: st
       .bind(now, deck, user, deck, user),
   ]);
   return {};
+}
+
+async function sessionLanguages(db: D1Database, user: string, ids: string[]) {
+  const rows = await db.prepare(`SELECT supportedLanguages FROM decks WHERE id IN (SELECT value FROM json_each(?))
+    AND (owner_id = ? OR visibility = 'SHARED')`).bind(JSON.stringify(ids), user).all<{ supportedLanguages: string }>();
+  return languageUnion(rows.results.map(row => ({ supportedLanguages: JSON.parse(row.supportedLanguages) })));
 }
