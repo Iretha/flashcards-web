@@ -5,7 +5,7 @@ import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { beforeAll, afterAll, afterEach, expect, it, vi } from 'vitest';
 import { handle } from '../src/server/api';
 import { authenticate, digest, lifetime } from '../src/server/auth';
-import { validateClaims } from '../src/server/supabase-auth';
+import { findOrCreateUserByVerifiedSubject, validateClaims } from '../src/server/supabase-auth';
 import type { AuthConfig } from '../src/server/supabase-auth';
 const origin = 'https://cards.example';
 const sub = '11111111-1111-4111-8111-111111111111';
@@ -86,9 +86,41 @@ it('email OTP converges on existing identity, rotates cookie and never returns p
  expect(await r.text()).not.toContain('never-forward');expect((await call('home',undefined,old)).status).toBe(401);
  expect((await db.prepare('SELECT count(*) n FROM users').first<number>('n'))).toBe(before);
 });
-it('rejects unmapped valid identities without provisioning a D1 user',async()=>{
+it('provisions an unmapped verified identity without attaching the legacy account',async()=>{
  mockProvider();await db.prepare('UPDATE users SET supabase_sub=NULL WHERE supabase_sub=?').bind(sub).run();
- const r=await call('auth/email/verify',{email:'unknown@example.test',code:'123456'});expect(r.status).toBe(403);expect(cookie(r)).toBe('');
+ const legacy=await db.prepare("SELECT id FROM users WHERE username='existing-owner'").first<{id:string}>();
+ const r=await call('auth/email/verify',{email:'fixture@example.test',code:'123456'});expect(r.status).toBe(200);
+ const user=await authenticate(db,new Request(origin,{headers:{Cookie:cookie(r)}}));expect(user!.id).not.toBe(legacy!.id);
+ expect((await call('home',undefined,cookie(r))).status).toBe(200);
+ await db.prepare('UPDATE users SET supabase_sub=NULL WHERE supabase_sub=?').bind(sub).run();
+ await db.prepare("UPDATE users SET supabase_sub=? WHERE username='existing-owner'").bind(sub).run();
+});
+it('serializes first registration, isolates subjects and rejects invalid subjects',async()=>{
+ const subject=crypto.randomUUID();
+ const users=await Promise.all(Array.from({length:20},()=>findOrCreateUserByVerifiedSubject(db,subject)));
+ expect(new Set(users.map(u=>u.id)).size).toBe(1);
+ expect(await db.prepare('SELECT count(*) n FROM users WHERE supabase_sub=?').bind(subject).first<number>('n')).toBe(1);
+ expect((await findOrCreateUserByVerifiedSubject(db,crypto.randomUUID())).id).not.toBe(users[0].id);
+ for(const invalid of ['', 'bad']) await expect(findOrCreateUserByVerifiedSubject(db,invalid)).rejects.toThrow();
+});
+it('retries username collisions without taking a legacy username',async()=>{
+ const fixed='aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa';await login('Learner-'+fixed);
+ const random=vi.spyOn(crypto,'randomUUID');random.mockReturnValueOnce(fixed).mockReturnValueOnce(fixed);
+ const user=await findOrCreateUserByVerifiedSubject(db,'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb');
+ expect(user.username).not.toBe('Learner-'+fixed);expect(user.username.length).toBeLessThanOrEqual(64);
+});
+it('fails closed on provisioning failure and reuses account after session failure',async()=>{
+ mockProvider();await db.prepare('UPDATE users SET supabase_sub=NULL WHERE supabase_sub=?').bind(sub).run();
+ await db.prepare("CREATE TRIGGER reject_user BEFORE INSERT ON users BEGIN SELECT RAISE(ABORT,'fixture failure'); END").run();
+ try {const r=await call('auth/email/verify',{email:'failure@example.test',code:'123456'});expect(cookie(r)).toBe('');expect(await db.prepare('SELECT id FROM users WHERE supabase_sub=?').bind(sub).first()).toBeNull();}
+ finally {await db.prepare('DROP TRIGGER reject_user').run();}
+ await db.prepare("CREATE TRIGGER reject_session BEFORE INSERT ON auth_sessions BEGIN SELECT RAISE(ABORT,'fixture failure'); END").run();
+ let id: string;
+ try {expect(cookie(await call('auth/email/verify',{email:'failure@example.test',code:'123456'}))).toBe('');id=(await findOrCreateUserByVerifiedSubject(db,sub)).id;}
+ finally {await db.prepare('DROP TRIGGER reject_session').run();}
+ const retry=await call('auth/email/verify',{email:'failure@example.test',code:'123456'});
+ expect((await authenticate(db,new Request(origin,{headers:{Cookie:cookie(retry)}})))!.id).toBe(id!);
+ await db.prepare('UPDATE users SET supabase_sub=NULL WHERE supabase_sub=?').bind(sub).run();
  await db.prepare("UPDATE users SET supabase_sub=? WHERE username='existing-owner'").bind(sub).run();
 });
 it('uses generic OTP delivery responses and enforces resend/verify budgets',async()=>{
@@ -103,11 +135,16 @@ it('handles unavailable/invalid/expired provider verification without sessions o
  expect((await call('auth/email/start',{email:'down@example.test'})).status).toBe(200);
 });
 it('binds Google PKCE callback, issues same user session and rejects callback replay',async()=>{
- mockProvider();const r=await call('auth/google/start',{});expect(r.status).toBe(200);
+ mockProvider();await db.prepare('UPDATE users SET supabase_sub=NULL WHERE supabase_sub=?').bind(sub).run();const r=await call('auth/google/start',{});expect(r.status).toBe(200);
  const {url}=await r.json() as {url:string};const authorization=new URL(url);expect(authorization.searchParams.get('code_challenge')).toBeTruthy();
  const callback=new URL(authorization.searchParams.get('redirect_to')!);callback.searchParams.set('code','fixture-code');
  const cookies=[cookie(r,'fc_oauth_state'),cookie(r,'fc_oauth_verifier')].join('; ');
  const response=await handle(new Request(callback,{headers:{Cookie:cookies}}),db,'fixture',config);expect(response.status).toBe(303);expect(response.headers.get('Location')).toBe('/');expect(cookie(response)).toBeTruthy();
+ const googleUser=await authenticate(db,new Request(origin,{headers:{Cookie:cookie(response)}}));
+ const otp=await call('auth/email/verify',{email:'fixture@example.test',code:'123456'});
+ expect((await authenticate(db,new Request(origin,{headers:{Cookie:cookie(otp)}})))!.id).toBe(googleUser!.id);
+ const {poll,data}=await freshChallenge();await call('auth/device/approve',{},cookie(response)+'; '+await context(data.manualCode));
+ const tv=await call('auth/device/poll',{},poll);expect((await authenticate(db,new Request(origin,{headers:{Cookie:cookie(tv)}})))!.id).toBe(googleUser!.id);
  const replay=await handle(new Request(callback,{headers:{Cookie:cookies}}),db,'fixture',config);expect(replay.headers.get('Location')).toContain('auth_error');expect(cookie(replay)).toBe('');
  const unbound=await handle(new Request(callback),db,'fixture',config);expect(cookie(unbound)).toBe('');
 });
@@ -160,4 +197,18 @@ it('rolls back consumed state when session insertion fails',async()=>{
  await db.prepare("CREATE TRIGGER reject_auth_session BEFORE INSERT ON auth_sessions BEGIN SELECT RAISE(ABORT,'fixture failure'); END").run();
  try {await expect(redeemDevice(db,row!.id,hash)).rejects.toThrow();expect(await db.prepare('SELECT state FROM auth_device_requests WHERE id=?').bind(row!.id).first<string>('state')).toBe('approved');}
  finally {await db.prepare('DROP TRIGGER reject_auth_session').run();}
+});
+
+it('never provisions on invalid JWT, mismatched provider identity or disabled Google callback',async()=>{
+ const before=await db.prepare('SELECT count(*) n FROM users').first<number>('n');
+ const original=access;
+ try {
+  mockProvider();access='invalid';
+  expect(cookie(await call('auth/email/verify',{email:'invalid@example.test',code:'123456'}))).toBe('');
+  access=original;vi.restoreAllMocks();
+  vi.spyOn(globalThis,'fetch').mockImplementation(async(input)=>String(input).endsWith('/verify')?Response.json({access_token:access,refresh_token:'hidden',token_type:'bearer',expires_in:3600,user:{id:sub}}):Response.json({id:crypto.randomUUID(),is_anonymous:false}));
+  expect(cookie(await call('auth/email/verify',{email:'mismatch@example.test',code:'123456'}))).toBe('');
+  const disabled=await handle(new Request(origin+'/api/auth/callback?code=test'),db,'fixture',{});expect(cookie(disabled)).toBe('');
+  expect(await db.prepare('SELECT count(*) n FROM users').first<number>('n')).toBe(before);
+ } finally {access=original;}
 });

@@ -4,6 +4,29 @@ import { digest, issueSession } from './auth';
 import type { User } from './auth';
 import { budget, randomSecret, readCookie, temporaryCookie } from './auth-common';
 import { check, HttpError, json, string } from './http';
+import { questionKey } from '../lib/markdown';
+
+// Server-only: callers must first validate JWT claims AND provider getUser.
+export async function findOrCreateUserByVerifiedSubject(db: D1Database, sub: string): Promise<User> {
+  check(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(sub), 'Unable to sign in.', 401);
+  const lookup = () => db.prepare('SELECT id,username,settings FROM users WHERE supabase_sub = ?').bind(sub).first<User>();
+  const existing = await lookup();
+  if (existing) return existing;
+  // Profile attributes are deliberately unused, including for cosmetic names.
+  // Target only expected unique conflicts; other database failures propagate.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    const now = Date.now(), id = crypto.randomUUID();
+    const username = 'Learner-' + crypto.randomUUID();
+    const created = await db.prepare(`INSERT INTO users(id,username,username_key,created_at,last_login_at,supabase_sub)
+      VALUES (?,?,?,?,?,?) ON CONFLICT(supabase_sub) WHERE supabase_sub IS NOT NULL DO NOTHING
+      ON CONFLICT(username_key) DO NOTHING RETURNING id,username,settings`)
+      .bind(id, username, questionKey(username), now, now, sub).first<User>();
+    if (created) return created;
+    const winner = await lookup();
+    if (winner) return winner;
+  }
+  throw new HttpError(503, 'Unable to create account. Please try again.');
+}
 
 export interface AuthConfig {
   AUTH_GOOGLE_ENABLED?: string; AUTH_EMAIL_ENABLED?: string; AUTH_QR_ENABLED?: string;
@@ -50,8 +73,7 @@ async function complete(db: D1Database, request: Request, access: string, client
   const sub = await validateClaims(access, base);
   const { data, error } = await client.auth.getUser(access);
   check(!error && data.user?.id === sub && !data.user.is_anonymous, 'Unable to sign in.', 401);
-  const user = await db.prepare('SELECT id,username,settings FROM users WHERE supabase_sub = ?').bind(sub).first<User>();
-  check(user, 'Sign-in is not enabled for this account. Use existing login or contact the owner.', 403);
+  const user = await findOrCreateUserByVerifiedSubject(db, sub);
   return issueSession(db, request, user);
 }
 export async function googleStart(db: D1Database, config: AuthConfig, request: Request) {
