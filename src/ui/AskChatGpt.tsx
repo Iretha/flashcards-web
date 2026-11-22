@@ -1,9 +1,9 @@
 ﻿import type { Language } from '../lib/translations';
 import { buildChatGptPrompt, buildChatGptUrl } from '../lib/chatgpt';
 
-export default function AskChatGpt({ question, language }: { question: string; language: Language }) {
+export default function AskChatGpt({ question, language, instructions }: { question: string; language: Language; instructions?: string }) {
   const label = language === 'bg' ? 'Попитай ChatGPT за този въпрос' : 'Ask ChatGPT about this question';
-  return <a className="ask-chatgpt" href={buildChatGptUrl(buildChatGptPrompt(question, language))}
+  return <a className="ask-chatgpt" href={buildChatGptUrl(buildChatGptPrompt(question, language, instructions))}
     target="_blank" rel="noopener noreferrer" aria-label={label} title={label}
     onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>
     <svg aria-hidden="true" focusable="false" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5">

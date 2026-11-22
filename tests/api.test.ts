@@ -40,7 +40,7 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql']) {
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql']) {
     const sql = readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8');
     await db.batch(sql.split(';').filter(statement => statement.trim()).map(statement => db.prepare(statement)));
   }
@@ -538,4 +538,23 @@ it('applies changed answer defaults when resuming without a timer', async () => 
   expect(session.revealed).toBe(false);
   session = await browser.action(session, 'resume', { answersOpen: true });
   expect(session.revealed).toBe(true);
+});
+
+it('persists independent ChatGPT overrides and enforces ownership and validation', async () => {
+  const owner = new Browser(); await owner.login('Instructions owner');
+  const guest = new Browser(); await guest.login('Instructions guest');
+  const data = { title: 'Instructions', description: '', visibility: 'SHARED' };
+  const first = await owner.ok<{id: string}>('deck', data);
+  const second = await owner.ok<{id: string}>('deck', data);
+  await owner.ok('deck', { ...data, id: first.id, chatgpt_en: 'Explain with examples' });
+  await owner.ok('deck', { ...data, id: first.id, chatgpt_bg: 'Bulgarian instructions' });
+  const home = await owner.ok<Home>('home');
+  expect(home.decks.find(d => d.id === first.id)).toMatchObject({ chatgpt_default: 'universal', chatgpt_en: 'Explain with examples', chatgpt_bg: 'Bulgarian instructions' });
+  expect(home.decks.find(d => d.id === second.id)?.chatgpt_en).toBeNull();
+  expect((await guest.request('deck', { ...data, id: first.id, chatgpt_en: 'Forbidden' })).response.status).toBe(404);
+  for (const value of ['', 42, 'x'.repeat(10001)]) expect((await owner.request('deck', { ...data, id: first.id, chatgpt_en: value })).response.status).toBe(400);
+  await owner.ok('deck', { ...data, id: first.id, chatgpt_en: null });
+  const fresh = new Browser(); await fresh.login('Instructions owner');
+  expect((await fresh.ok<Home>('home')).decks.find(d => d.id === first.id)).toMatchObject({ chatgpt_en: null, chatgpt_bg: 'Bulgarian instructions' });
+  expect((await db.prepare("SELECT chatgpt_default FROM decks WHERE id = 'old-deck'").first<{chatgpt_default: string}>())?.chatgpt_default).toBe('legacy');
 });

@@ -1,3 +1,4 @@
+import { defaultInstructions, effectiveInstructions } from '../lib/chatgpt';
 import { useEffect, useState } from 'react';
 import CardSources from './CardSources';
 import MarkdownContent from './MarkdownContent';
@@ -13,7 +14,11 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
   const [title, setTitle] = useState(deck?.title ?? '');
   const [description, setDescription] = useState(deck?.description ?? '');
   const [visibility, setVisibility] = useState(deck?.visibility ?? 'PRIVATE');
-  return <form className="item stack" onSubmit={event => { event.preventDefault(); save({ id: deck?.id, title, description, visibility }); }}>
+  const [instructionLanguage, setInstructionLanguage] = useState<Language>('en');
+  const config = deck ?? { chatgpt_default: 'universal' };
+  const [instructions, setInstructions] = useState({ en: effectiveInstructions(config, 'en'), bg: effectiveInstructions(config, 'bg') });
+  const dirty = languages.some(lang => instructions[lang] !== effectiveInstructions(config, lang));
+  return <form className="item stack" onSubmit={event => { event.preventDefault(); save({ id: deck?.id, title, description, visibility, ...Object.fromEntries(languages.map(lang => [lang === 'en' ? 'chatgpt_en' : 'chatgpt_bg', instructions[lang] === defaultInstructions(config, lang) ? null : instructions[lang]])) }); }}>
     <h2>{deck ? 'Edit deck' : 'New deck'}</h2>
     <label>Title<input value={title} maxLength={160} required onChange={event => setTitle(event.target.value)} /></label>
     <label>Description<textarea value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} /></label>
@@ -21,7 +26,13 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
       <option value="PRIVATE">Private</option><option value="SHARED">Shared</option>
     </select></label>
     {deck && <p className="muted">Private decks are visible only to you. Switching a shared deck to Private removes access for other users and invalidates their active study sessions with this deck.</p>}
-    <div className="row"><button className="primary" disabled={busy}>Save deck</button><button type="button" onClick={close}>Cancel</button></div>
+    <fieldset disabled={busy}><legend>ChatGPT Instructions</legend>
+      <div className="row">{languages.map(lang => <button type="button" key={lang} aria-pressed={instructionLanguage === lang} onClick={() => setInstructionLanguage(lang)}>{lang.toUpperCase()}</button>)}</div>
+      <label>Instructions<textarea lang={instructionLanguage} rows={10} required maxLength={10000} value={instructions[instructionLanguage]} onChange={event => setInstructions({ ...instructions, [instructionLanguage]: event.target.value })} /></label>
+      <button type="button" onClick={() => setInstructions({ ...instructions, [instructionLanguage]: defaultInstructions(config, instructionLanguage) })}>Restore default</button>
+      {dirty && <p role="status">Unsaved changes</p>}
+    </fieldset>
+    <div className="row"><button className="primary" disabled={busy || languages.some(lang => !instructions[lang].trim())}>Save deck</button><button type="button" onClick={close}>Cancel</button></div>
   </form>;
 }
 

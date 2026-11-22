@@ -28,9 +28,9 @@ const read = (db: D1Database, user: string) =>
   db.prepare('SELECT * FROM study_sessions WHERE user_id = ?').bind(user).first<SessionRow>();
 
 async function studyCard(db: D1Database, user: string, id: string) {
-  const card = await db.prepare(`SELECT c.id, c.question, c.answer, c.translations, c.metadata, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
+  const card = await db.prepare(`SELECT c.deck_id, c.id, c.question, c.answer, c.translations, c.metadata, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
     WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED')`).bind(id, user)
-    .first<{ id: string; question: string; answer: string; title: string; metadata: string | null; translations: string }>();
+    .first<{ deck_id: string; id: string; question: string; answer: string; title: string; metadata: string | null; translations: string }>();
   return card && { ...card, metadata: card.metadata ? JSON.parse(card.metadata) as CardMetadata : null, translations: JSON.parse(card.translations) as Translations };
 }
 

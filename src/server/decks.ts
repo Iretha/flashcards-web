@@ -11,6 +11,7 @@ import { check, HttpError, object, string } from './http';
 
 export interface Deck {
   id: string; owner_id: string; source_key: string | null; title: string; description: string;
+  chatgpt_default: string; chatgpt_en: string | null; chatgpt_bg: string | null;
   visibility: 'PRIVATE' | 'SHARED'; revision: number;
 }
 export interface Card extends ImportCard, ImportTarget {
@@ -80,17 +81,23 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
   const title = string(input.title, 'title', 160);
   const description = string(input.description ?? '', 'description', 2000, true);
   const scope = visibility(input.visibility);
+  const overrides: (string | null)[] = [];
+  for (const key of ['chatgpt_en', 'chatgpt_bg']) {
+    const value = input[key];
+    check(value === undefined || value === null || (typeof value === 'string' && value.trim().length > 0 && value.length <= 10000), 'Invalid ChatGPT instructions (1?10000 characters).');
+    overrides.push(typeof value === 'string' ? value : null);
+  }
   const now = Date.now();
   if (input.id) {
     const id = string(input.id, 'deck ID', 80);
     const result = await db.prepare(`UPDATE decks SET title = ?, description = ?, visibility = ?, updated_at = ?,
-      revision = revision + 1 WHERE id = ? AND owner_id = ?`).bind(title, description, scope, now, id, user).run();
+      chatgpt_en = CASE WHEN ? THEN ? ELSE chatgpt_en END, chatgpt_bg = CASE WHEN ? THEN ? ELSE chatgpt_bg END, revision = revision + 1 WHERE id = ? AND owner_id = ?`).bind(title, description, scope, now, 'chatgpt_en' in input, overrides[0], 'chatgpt_bg' in input, overrides[1], id, user).run();
     check(result.meta.changes, 'Deck not available.', 404);
     return { id };
   }
   const id = crypto.randomUUID();
-  await db.prepare(`INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at)
-    VALUES (?, ?, ?, ?, ?, ?, ?)`).bind(id, user, title, description, scope, now, now).run();
+  await db.prepare(`INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at, chatgpt_en, chatgpt_bg)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(id, user, title, description, scope, now, now, ...overrides).run();
   return { id };
 }
 
