@@ -23,6 +23,7 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
   const [instructions, setInstructions] = useState({ en: effectiveInstructions(config, 'en'), bg: effectiveInstructions(config, 'bg') });
   const dirty = languages.some(lang => instructions[lang] !== effectiveInstructions(config, lang));
   return <form className="item stack" onSubmit={event => { event.preventDefault(); save({ id: deck?.id, title, description, visibility, primaryLanguage, supportedLanguages, confirmPrimaryLanguageChange, ...Object.fromEntries(languages.map(lang => [lang === 'en' ? 'chatgpt_en' : 'chatgpt_bg', instructions[lang] === defaultInstructions(config, lang) ? null : instructions[lang]])) }); }}>
+    {deck?.permissions.canManageCollaborators && <Collaborators deck={deck} />}
     <h2>{deck ? 'Edit deck' : 'New deck'}</h2>
     <label>Primary language<select required value={primaryLanguage} onChange={event => { setPrimaryLanguage(event.target.value); setSupportedLanguages(current => [...new Set([...current, event.target.value])]); }}><option value="" disabled>Choose the original language</option>{primaryLanguageFirst([...new Set([...languages, ...supportedLanguages])], primaryLanguage).map(code => <option key={code}>{code}</option>)}</select></label>
     <fieldset><legend>Supported languages</legend>{primaryLanguageFirst([...new Set([...languages, ...supportedLanguages])], primaryLanguage).map(code => <label key={code}><input type="checkbox" checked={supportedLanguages.includes(code)} disabled={code === primaryLanguage} onChange={event => setSupportedLanguages(current => event.target.checked ? [...current, code] : current.filter(item => item !== code))} />{code}</label>)}</fieldset>
@@ -31,10 +32,10 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
     <button type="button" onClick={() => { try { const code = Intl.getCanonicalLocales(newLanguage)[0]; if (code) { setSupportedLanguages(current => [...new Set([...current, code])]); setNewLanguage(''); } } catch { /* Keep invalid input for correction. */ } }}>Add language</button>
     <label>Title<input value={title} maxLength={160} required onChange={event => setTitle(event.target.value)} /></label>
     <label>Description<textarea value={description} maxLength={2000} onChange={event => setDescription(event.target.value)} /></label>
-    <label>Visibility<select value={visibility} onChange={event => setVisibility(event.target.value as Deck['visibility'])}>
+    <label>Visibility<select disabled={!!deck && !deck.permissions.canManageCollaborators} value={visibility} onChange={event => setVisibility(event.target.value as Deck['visibility'])}>
       <option value="PRIVATE">Private</option><option value="SHARED">Shared</option>
     </select></label>
-    {deck && <p className="muted">Private decks are visible only to you. Switching a shared deck to Private removes access for other users and invalidates their active study sessions with this deck.</p>}
+    {deck && <p className="muted">Private decks are accessible to the owner and collaborators. Switching a shared deck to Private removes access for other users and invalidates active study sessions for non-owners.</p>}
     <fieldset disabled={busy}><legend>ChatGPT Instructions</legend>
       <div className="row">{languages.map(lang => <button type="button" key={lang} aria-pressed={instructionLanguage === lang} onClick={() => setInstructionLanguage(lang)}>{lang.toUpperCase()}</button>)}</div>
       <label>Instructions<textarea lang={instructionLanguage} rows={10} required maxLength={10000} value={instructions[instructionLanguage]} onChange={event => setInstructions({ ...instructions, [instructionLanguage]: event.target.value })} /></label>
@@ -127,10 +128,10 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
     <p>{deck.total} cards</p>
     <p>{deck.presentations} presentations · {deck.failures} failed attempts</p>
     <div className="row">
-      {deck.owned === 1 && <>
+      {deck.permissions.canEdit && <>
         <button disabled={busy} onClick={() => setEditingDeck(true)}>Edit deck</button>
         <button disabled={busy} onClick={() => setEditor('new')}>Add card</button>
-        <button className="danger" disabled={busy} onClick={() => {
+        <button className="danger" hidden={!deck.permissions.canDelete} disabled={busy} onClick={() => {
           if (window.confirm('Delete this deck and its cards?')) mutate('deck/delete', {}, close);
         }}>Delete deck</button>
       </>}
@@ -183,7 +184,7 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
         </details>;
       })}
       <div className="row">
-        {deck.owned === 1 && <>
+        {deck.permissions.canEdit && <>
           <button disabled={busy} onClick={() => setEditor(card.id)}>Edit card</button>
           <button disabled={busy || cards?.[0]?.id === card.id} onClick={() => mutate('card', { id: card.id, method: 'up' })}>Move earlier</button>
           <button disabled={busy || (cards && cards[cards.length - 1]?.id === card.id) || false} onClick={() => mutate('card', { id: card.id, method: 'down' })}>Move later</button>
@@ -196,4 +197,25 @@ export function DeckDetail({ deck, busy, run, reload, close }: { deck: Deck; bus
       {editor === card.id && <CardEditor deck={deck} key={card.id} card={card} busy={busy} save={data => mutate('card', data, () => setEditor(null))} close={() => setEditor(null)} />}
     </article>)}
   </section>;
+}
+
+function Collaborators({ deck }: { deck: Deck }) {
+  const [users, setUsers] = useState<{ id: string; username: string }[]>([]);
+  const [username, setUsername] = useState('');
+  const [message, setMessage] = useState('');
+  const [pending, setPending] = useState(false);
+  useEffect(() => { api<typeof users>('collaborators?deck=' + encodeURIComponent(deck.id)).then(setUsers).catch(error => setMessage(error.message)); }, [deck.id]);
+  async function change(input: object) {
+    setPending(true);
+    try { setUsers(await api('collaborators', { deck: deck.id, ...input })); setUsername(''); setMessage('Collaborators updated.'); }
+    catch (error) { setMessage(error instanceof Error ? error.message : 'Request failed.'); }
+    finally { setPending(false); }
+  }
+  return <fieldset disabled={pending}><legend>Collaborators</legend>
+    <p>Owner: {deck.owner_username}</p>
+    {users.map(user => <div className="row" key={user.id}><span>{user.username}</span><button type="button" onClick={() => void change({ method: 'remove', userId: user.id })}>Remove</button></div>)}
+    <label>Username<input value={username} maxLength={64} onChange={event => setUsername(event.target.value)} /></label>
+    <button type="button" disabled={!username.trim()} onClick={() => void change({ method: 'add', username })}>Add collaborator</button>
+    {message && <p role="status">{message}</p>}
+  </fieldset>;
 }

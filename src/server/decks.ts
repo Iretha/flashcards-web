@@ -1,3 +1,4 @@
+import { canEditDeck, editAccess, permissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { validateMetadata } from '../lib/metadata';
 import { MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR } from '../lib/import-limits';
@@ -25,18 +26,20 @@ export interface Card extends ImportCard, ImportTarget {
 
 export async function getDeck(db: D1Database, user: string, id: string, write = false) {
   const deck = await db.prepare('SELECT * FROM decks WHERE id = ?').bind(id).first<Deck>();
-  check(deck && (deck.owner_id === user || (!write && deck.visibility === 'SHARED')), 'Deck not available.', 404);
+  check(deck && (await canEditDeck(db, user, deck) || (!write && deck.visibility === 'SHARED')), 'Deck not available.', 404);
   return decodeDeck(deck);
 }
 
 export async function listDecks(db: D1Database, user: string) {
-  return (await db.prepare(`SELECT d.*, d.owner_id = ? AS owned, count(c.id) AS total,
+  return (await db.prepare(`SELECT d.*, d.owner_id = ? AS owned,
+    (d.owner_id = ?1 OR EXISTS(SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?1)) AS editable,
+    (SELECT username FROM users WHERE id = d.owner_id) AS owner_username, count(c.id) AS total,
     sum(CASE WHEN p.status = 'LEARNED' THEN 1 ELSE 0 END) AS learned,
     coalesce(sum(p.times_shown), 0) AS presentations, coalesce(sum(p.times_failed), 0) AS failures
     FROM decks d LEFT JOIN cards c ON c.deck_id = d.id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
-    WHERE d.owner_id = ? OR d.visibility = 'SHARED' GROUP BY d.id ORDER BY d.title, d.id`)
-    .bind(user, user, user).all<Deck & { owned: number; total: number; learned: number; presentations: number; failures: number }>()).results.map(decodeDeck);
+    WHERE d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?3) GROUP BY d.id ORDER BY d.title, d.id`)
+    .bind(user, user, user).all<Deck & { owned: number; total: number; learned: number; presentations: number; failures: number; editable: number; owner_username: string }>()).results.map(deck => ({ ...decodeDeck(deck), permissions: permissions(Boolean(deck.owned), Boolean(deck.editable)) }));
 }
 
 export async function listCards(db: D1Database, user: string, deck: string) {
@@ -55,7 +58,7 @@ function decodeCard(card: CardRow): Card {
 
 export async function deckWithCards(db: D1Database, user: string, id: string, cardId?: string) {
   const [parent, cards] = await db.batch([
-    db.prepare("SELECT * FROM decks WHERE id = ? AND (owner_id = ? OR visibility = 'SHARED')").bind(id, user),
+    db.prepare("SELECT * FROM decks WHERE id = ? AND (owner_id = ? OR visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = decks.id AND dc.user_id = ?2))").bind(id, user),
     cardsForDeck(db, user, id, cardId),
   ]);
   const deck = parent.results[0] as unknown as Deck | undefined;
@@ -72,7 +75,7 @@ function cardsForDeck(db: D1Database, user: string, deck: string, cardId?: strin
     coalesce(p.details_opens, 0) AS details_opens
     FROM cards c JOIN decks d ON d.id = c.deck_id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
-    WHERE c.deck_id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED')
+    WHERE c.deck_id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?3))
       ${cardId ? 'AND c.id = ?' : ''} ORDER BY c.position, c.id`).bind(...args);
 }
 
@@ -113,6 +116,7 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
     overrides.push(typeof value === 'string' ? value : null);
   }
   const existingDeck = input.id ? await getDeck(db, user, String(input.id), true) : null;
+  if (existingDeck) check(existingDeck.owner_id === user || scope === existingDeck.visibility, 'Only the owner may change visibility.', 403);
   const config = deckLanguages(input, existingDeck);
   const { primaryLanguage, supportedLanguages } = config;
   const configCards = existingDeck ? await listCards(db, user, existingDeck.id) : [];
@@ -122,7 +126,7 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
   if (input.id) {
     const id = string(input.id, 'deck ID', 80);
     const header = db.prepare(`UPDATE decks SET primaryLanguage = ?, supportedLanguages = ?, title = ?, description = ?, visibility = ?, updated_at = ?,
-      chatgpt_en = CASE WHEN ? THEN ? ELSE chatgpt_en END, chatgpt_bg = CASE WHEN ? THEN ? ELSE chatgpt_bg END, revision = revision + 1, mutation = ? WHERE id = ? AND owner_id = ? AND revision = ?`).bind(primaryLanguage, JSON.stringify(supportedLanguages), title, description, scope, now, 'chatgpt_en' in input, overrides[0], 'chatgpt_bg' in input, overrides[1], mutation, id, user, existingDeck!.revision);
+      chatgpt_en = CASE WHEN ? THEN ? ELSE chatgpt_en END, chatgpt_bg = CASE WHEN ? THEN ? ELSE chatgpt_bg END, revision = revision + 1, mutation = ? WHERE id = ? AND ${editAccess(13)} AND revision = ?`).bind(primaryLanguage, JSON.stringify(supportedLanguages), title, description, scope, now, 'chatgpt_en' in input, overrides[0], 'chatgpt_bg' in input, overrides[1], mutation, id, user, existingDeck!.revision);
     const [result] = await db.batch([header, ...primaryLanguageStatements(db, id, mutation, primaryLanguage!, existingDeck!.primaryLanguage !== primaryLanguage, configCards)]);
     check(result.meta.changes, 'Deck changed. Reload and retry.', 409);
     return { id };
@@ -138,19 +142,14 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
   const now = Date.now();
   const id = input.id ? string(input.id, 'card ID', 80) : crypto.randomUUID();
   const method = input.method;
-  let statement: D1PreparedStatement;
-  if (method === 'delete') {
-    statement = db.prepare('DELETE FROM cards WHERE id = ? AND deck_id = ?').bind(id, deckId);
-  } else if (method === 'up' || method === 'down') {
+  if (method === 'delete') check((await listCards(db, user, deckId)).some(card => card.id === id), 'Card not available.', 404);
+  if (method === 'up' || method === 'down') {
     const cards = await listCards(db, user, deckId);
     const index = cards.findIndex(card => card.id === id);
     check(index >= 0, 'Card not available.', 404);
-    const current = cards[index];
-    const adjacent = cards[index + (method === 'up' ? -1 : 1)];
-    if (!adjacent) return {};
-    statement = db.prepare(`UPDATE cards SET position = CASE WHEN id = ? THEN ? ELSE ? END, updated_at = ?
-      WHERE deck_id = ? AND id IN (?, ?)`).bind(id, adjacent.position, current.position, now, deckId, id, adjacent.id);
-  } else {
+    if (!cards[index + (method === 'up' ? -1 : 1)]) return {};
+  }
+  if (method !== 'delete' && method !== 'up' && method !== 'down') {
     check(method === 'save', 'Invalid card operation.');
     const cards = await listCards(db, user, deckId);
     const current = cards.find(card => card.id === id);
@@ -181,12 +180,26 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
-      WHERE id = ? AND owner_id = ? AND revision = ?`).bind(mutation, now, deckId, user, deck.revision);
+      WHERE id = ? AND ${editAccess(4)} AND revision = ?`).bind(mutation, now, deckId, user, deck.revision);
     const [result] = await db.batch([header, writeCards(db, deckId, mutation, now, [next])]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
     return {};
   }
-  const [result] = await db.batch([statement, db.prepare('UPDATE decks SET revision = revision + 1, updated_at = ? WHERE id = ?').bind(now, deckId)]);
+  const mutation = crypto.randomUUID();
+  const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ? WHERE id = ?
+    AND ${editAccess(4)} AND revision = ?`).bind(mutation, now, deckId, user, deck.revision);
+  // Gate card deletion and reordering on the authorized revision update in this batch.
+  const guard = ' AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)';
+  let guarded: D1PreparedStatement;
+  if (method === 'delete') guarded = db.prepare('DELETE FROM cards WHERE id = ? AND deck_id = ?' + guard).bind(id, deckId, deckId, mutation);
+  else {
+    const cards = await listCards(db, user, deckId);
+    const index = cards.findIndex(card => card.id === id);
+    const adjacent = cards[index + (method === 'up' ? -1 : 1)];
+    guarded = db.prepare(`UPDATE cards SET position = CASE WHEN id = ? THEN ? ELSE ? END, updated_at = ? WHERE deck_id = ? AND id IN (?, ?)` + guard)
+      .bind(id, adjacent.position, cards[index].position, now, deckId, id, adjacent.id, deckId, mutation);
+  }
+  const [result] = await db.batch([header, guarded]);
   check(result.meta.changes, 'Card not available.', 404);
   return {};
 }
@@ -208,7 +221,7 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
   if (parsed.version === 3 && existing.some(card => !card.metadata) && input.replace !== true) check(false, 'Target contains legacy cards. Use a new deck or separately approved v3 replacement; legacy cards are not migrated.');
   const links = object(input.links ?? {});
   if (input.replace === true) {
-    check(deck, 'Replacement requires an existing owned target deck.');
+    check(deck && deck.owner_id === user, 'Only the owner may replace cards.', 403);
   }
   return { deck, key, metadata, existing, parsed, links };
 }
@@ -244,6 +257,7 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
   check(input.previewId === (deck?.id ?? null) && input.revision === (deck?.revision ?? null), 'Deck changed. Preview the import again.', 409);
   const updates = object(input.choices ?? {});
   const scope = visibility(input.visibility ?? metadata.visibility?.toUpperCase() ?? deck?.visibility ?? 'PRIVATE');
+  if (deck) check(deck.owner_id === user || scope === deck.visibility, 'Only the owner may change visibility.', 403);
   const title = string(input.title ?? deck?.title ?? (metadata.title || input.filename), 'title', 160);
   const description = string(input.description ?? deck?.description ?? metadata.description ?? '', 'description', 2000, true);
   if (input.replace === true) check(input.confirmReplacement === deck?.id, 'Confirm replacement with the exact target deck ID.');
@@ -271,7 +285,7 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
   const now = Date.now();
   const header = deck
     ? db.prepare(`UPDATE decks SET title = ?, description = ?, visibility = ?, revision = revision + 1, mutation = ?, updated_at = ?
-      WHERE id = ? AND owner_id = ? AND revision = ?`).bind(title, description, scope, mutation, now, id, user, deck.revision)
+      WHERE id = ? AND ${editAccess(7)} AND revision = ?`).bind(title, description, scope, mutation, now, id, user, deck.revision)
     : db.prepare(`INSERT INTO decks(primaryLanguage, supportedLanguages, id, owner_id, source_key, title, description, visibility, mutation, created_at, updated_at)
       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`).bind(languageConfig.primaryLanguage, JSON.stringify(languageConfig.supportedLanguages), id, user, key, title, description, scope, mutation, now, now);
   const batch = [header];

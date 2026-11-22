@@ -29,7 +29,7 @@ const read = (db: D1Database, user: string) =>
 
 async function studyCard(db: D1Database, user: string, id: string) {
   const card = await db.prepare(`SELECT c.deck_id, c.id, c.question, c.answer, c.translations, c.metadata, c.primary_language, d.primaryLanguage, d.supportedLanguages, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
-    WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED')`).bind(id, user)
+    WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?2))`).bind(id, user)
     .first<{ deck_id: string; id: string; question: string; answer: string; title: string; primary_language: string; primaryLanguage: string | null; supportedLanguages: string; metadata: string | null; translations: string }>();
   const decoded = card && { ...card, primaryLanguage: card.primaryLanguage ?? card.primary_language, supportedLanguages: JSON.parse(card.supportedLanguages) as string[], metadata: card.metadata ? JSON.parse(card.metadata) as CardMetadata : null, translations: JSON.parse(card.translations) as Translations };
   return decoded && completeTranslation(decoded.translations[decoded.primaryLanguage], decoded.metadata?.cardType) ? decoded : null;
@@ -70,7 +70,7 @@ export async function startSession(db: D1Database, user: User, input: Record<str
   const prior = await read(db, user.id);
   check((prior?.version ?? 0) === input.version, 'The session changed on another device.', 409);
   const serialized = JSON.stringify(deckIds);
-  const snapshot = await db.prepare(`SELECT id, revision, supportedLanguages FROM decks WHERE (owner_id = ? OR visibility = 'SHARED')
+  const snapshot = await db.prepare(`SELECT id, revision, supportedLanguages FROM decks WHERE (owner_id = ? OR visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = decks.id AND dc.user_id = ?1))
     AND id IN (SELECT value FROM json_each(?))`).bind(user.id, serialized).all<{ id: string; revision: number; supportedLanguages: string }>();
   check(snapshot.results.length === deckIds.length, 'One or more decks are unavailable.', 404);
   config.language = reconcileLanguage(config.language, languageUnion(snapshot.results.map(deck => ({ supportedLanguages: JSON.parse(deck.supportedLanguages) }))));
@@ -78,7 +78,7 @@ export async function startSession(db: D1Database, user: User, input: Record<str
     coalesce(p.times_failed, 0) AS times_failed FROM json_each(?) selection
     JOIN cards c ON c.deck_id = selection.value JOIN decks d ON d.id = c.deck_id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
-    WHERE (d.owner_id = ? OR d.visibility = 'SHARED')
+    WHERE (d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?3))
     ORDER BY selection.key, c.position, c.id LIMIT 5001`)
     .bind(serialized, user.id, user.id).all<{ id: string; status: string; times_failed: number }>()).results;
   const eligible = cards;
@@ -187,17 +187,17 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
 
 export async function reset(db: D1Database, user: string, deck: string, card: string | null) {
   const now = Date.now();
-  const accessible = `EXISTS(SELECT 1 FROM decks WHERE id = ? AND (owner_id = ? OR visibility = 'SHARED'))`;
+  const accessible = (userParameter: number) => `EXISTS(SELECT 1 FROM decks WHERE id = ? AND (owner_id = ? OR visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = decks.id AND dc.user_id = ?${userParameter})))`;
   const target = `card_id IN (SELECT id FROM cards WHERE deck_id = ? AND (? IS NULL OR id = ?))`;
   await db.batch([
     db.prepare(`INSERT INTO study_events SELECT lower(hex(randomblob(16))), user_id, NULL, card_id, ?, 'RESET', ?
-      FROM card_progress WHERE user_id = ? AND status = 'LEARNED' AND ${target} AND ${accessible}`)
+      FROM card_progress WHERE user_id = ? AND status = 'LEARNED' AND ${target} AND ${accessible(8)}`)
       .bind(deck, now, user, deck, card, card, deck, user),
-    db.prepare(`UPDATE card_progress SET status = 'UNLEARNED' WHERE user_id = ? AND ${target} AND ${accessible}`)
+    db.prepare(`UPDATE card_progress SET status = 'UNLEARNED' WHERE user_id = ? AND ${target} AND ${accessible(6)}`)
       .bind(user, deck, card, card, deck, user),
     db.prepare(`UPDATE study_sessions SET version = version + 1, mutation = NULL, updated_at = ?,
       status = CASE WHEN status = 'ACTIVE' AND ? IN (SELECT value FROM json_each(selected_deck_ids))
-        THEN 'INVALIDATED' ELSE status END WHERE user_id = ? AND ${accessible}`)
+        THEN 'INVALIDATED' ELSE status END WHERE user_id = ? AND ${accessible(5)}`)
       .bind(now, deck, user, deck, user),
   ]);
   return {};
@@ -205,6 +205,6 @@ export async function reset(db: D1Database, user: string, deck: string, card: st
 
 async function sessionLanguages(db: D1Database, user: string, ids: string[]) {
   const rows = await db.prepare(`SELECT supportedLanguages FROM decks WHERE id IN (SELECT value FROM json_each(?))
-    AND (owner_id = ? OR visibility = 'SHARED')`).bind(JSON.stringify(ids), user).all<{ supportedLanguages: string }>();
+    AND (owner_id = ? OR visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = decks.id AND dc.user_id = ?2))`).bind(JSON.stringify(ids), user).all<{ supportedLanguages: string }>();
   return languageUnion(rows.results.map(row => ({ supportedLanguages: JSON.parse(row.supportedLanguages) })));
 }

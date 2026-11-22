@@ -42,7 +42,7 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql']) {
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql']) {
     if (file === '0008_deck_languages.sql') {
       await db.batch([
         db.prepare("INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at) VALUES ('migration-mixed', 'migrated', 'Mixed originals', '', 'PRIVATE', 0, 0)"),
@@ -796,4 +796,52 @@ it('migrates mixed and Bulgarian originals without guessing English, deleting tr
   expect(cards.results).toHaveLength(2);
   for (const card of cards.results) expect(JSON.parse(card.translations)).toEqual({ [card.primary_language]: { question: card.primary_language, answer: 'Answer' }, de: { question: 'DE ' + card.primary_language, answer: 'Antwort' } });
   expect(await db.prepare("SELECT times_shown FROM card_progress WHERE card_id = 'migration-bg'").first()).toEqual({ times_shown: 9 });
+});
+
+
+it('enforces collaborator permissions through browser and scoped API tokens without resetting progress', async () => {
+  const owner = new Browser(), editor = new Browser(), outsider = new Browser();
+  await owner.login('collab-owner'); await editor.login('collab-editor'); await outsider.login('collab-other');
+  const { id } = await owner.import('## Collaborator question\n\nOriginal answer');
+  const deck = () => owner.home().then(home => home.decks.find(deck => deck.id === id)!);
+  const [card] = await owner.cards(id);
+  const ownerId = (await deck()).owner_id;
+  expect((await outsider.request('collaborators', { deck: id, method: 'add', username: 'collab-other' })).response.status).toBe(404);
+  expect((await owner.request('collaborators', { deck: id, method: 'add', username: 'missing-collaborator' })).response.status).toBe(404);
+  expect((await owner.request('collaborators', { deck: id, method: 'add', username: 'collab-owner' })).response.status).toBe(400);
+  const added = await owner.ok<{id: string; username: string}[]>('collaborators', { deck: id, method: 'add', username: 'COLLAB-EDITOR' });
+  const editorId = added[0].id;
+  expect((await owner.request('collaborators', { deck: id, method: 'add', username: 'collab-editor' })).response.status).toBe(409);
+  expect((await editor.home()).decks.find(deck => deck.id === id)?.permissions).toEqual({ canEdit: true, canManageCollaborators: false, canDelete: false });
+  for (const method of ['add', 'remove']) expect((await editor.request('collaborators', { deck: id, method, username: 'collab-other', userId: ownerId })).response.status).toBe(403);
+  expect((await editor.request('deck/delete', { deck: id })).response.status).toBe(404);
+  expect((await editor.request('deck', { ...await deck(), visibility: 'SHARED' })).response.status).toBe(403);
+  expect((await editor.request('import/preview', { source: '## Replacement\n\nAnswer', target: id, replace: true })).response.status).toBe(403);
+  await db.prepare('INSERT INTO card_progress(user_id, card_id, times_shown) VALUES (?, ?, 7)').bind(editorId, card.id).run();
+  await editor.ok('card', { deck: id, id: card.id, method: 'save', translations: { en: { question: card.question, answer: 'Edited answer', example: 'Example', details: 'Explanation' } } });
+  expect((await editor.cards(id))[0]).toMatchObject({ id: card.id, times_shown: 7, answer: 'Edited answer' });
+  await editor.import('## Added by import\n\nImported answer', id);
+  expect((await editor.cards(id)).find(item => item.id === card.id)?.times_shown).toBe(7);
+  expect((await editor.ok<{cards: Card[]}>('export')).cards.some(item => item.id === card.id)).toBe(true);
+  const token = await apiToken(editorId), readOnly = await apiToken(editorId, 0);
+  const route = 'decks/' + id;
+  expect((await apiRequest(readOnly, route, 'PATCH', { title: 'Denied' })).status).toBe(403);
+  const revision = (await deck()).revision;
+  expect((await apiRequest(token, route, 'PATCH', { visibility: 'SHARED' }, { 'If-Match': '"' + revision + '"' })).status).toBe(403);
+  expect((await apiRequest(token, route, 'PATCH', { title: 'Collaborative title' }, { 'If-Match': '"' + revision + '"' })).status).toBe(200);
+  expect((await apiRequest(token, route, 'PATCH', { title: 'Stale title' }, { 'If-Match': '"' + revision + '"' })).status).toBe(412);
+  const [foreign] = await outsider.import('## Foreign question\n\nForeign answer').then(async result => outsider.cards(result.id));
+  expect((await editor.request('card', { deck: id, id: foreign.id, method: 'save', question: 'Forged', answer: 'Forged' })).response.status).toBe(404);
+  const currentRevision = (await deck()).revision;
+  const patches = await Promise.all(['First', 'Second'].map(answer => apiRequest(token, route + '/cards/' + card.id, 'PATCH', { translations: { en: { answer, example: 'API example' } } }, { 'If-Match': '"' + currentRevision + '"' })));
+  expect(patches.map(response => response.status).sort()).toEqual([200, 412]);
+  await editor.ok('study/start', { decks: [id], version: 0, settings: { order: 'SEQUENTIAL', timer: false, seconds: 30, language: 'en' } });
+  expect((await editor.study()).status).toBe('ACTIVE');
+  await owner.ok('collaborators', { deck: id, method: 'remove', userId: editorId });
+  expect((await editor.request('card', { deck: id, id: card.id, method: 'delete' })).response.status).toBe(404);
+  expect((await apiRequest(token, route)).status).toBe(404);
+  expect((await owner.cards(id)).some(item => item.id === card.id)).toBe(true);
+  expect(await db.prepare('SELECT times_shown FROM card_progress WHERE user_id = ? AND card_id = ?').bind(editorId, card.id).first('times_shown')).toBe(8);
+  expect((await deck()).owner_id).toBe(ownerId);
+  await owner.ok('deck/delete', { deck: id });
 });

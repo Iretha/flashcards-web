@@ -1,3 +1,4 @@
+import { collaborators } from './collaborators';
 import { authenticate, hasSessionCookie, login, logout } from './auth';
 import type { SessionDiagnostics } from './auth';
 import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, replacementImpact, saveDeck } from './decks';
@@ -41,6 +42,7 @@ async function dispatch(
         username: user.username, settings: { ...defaults, ...JSON.parse(user.settings) },
         decks: await listDecks(db, user.id), session: await studyView(db, user.id),
       });
+      if (route === 'collaborators') return json(await collaborators(db, user.id, string(url.searchParams.get('deck'), 'deck ID', 80)));
       if (route === 'cards') {
         const id = string(url.searchParams.get('deck'), 'deck ID', 80);
         await getDeck(db, user.id, id);
@@ -56,7 +58,7 @@ async function dispatch(
       if (route === 'export') {
         const decks = await listDecks(db, user.id);
         const [cards, progress, history] = await db.batch<Record<string, unknown>>([
-          db.prepare(`SELECT c.* FROM cards c JOIN decks d ON d.id = c.deck_id WHERE d.owner_id = ? OR d.visibility = 'SHARED'`).bind(user.id),
+          db.prepare(`SELECT c.* FROM cards c JOIN decks d ON d.id = c.deck_id WHERE d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?1)`).bind(user.id),
           db.prepare('SELECT * FROM card_progress WHERE user_id = ?').bind(user.id),
           db.prepare('SELECT * FROM study_events WHERE user_id = ? ORDER BY created_at, rowid').bind(user.id),
         ]);
@@ -80,6 +82,7 @@ async function dispatch(
     const user = await authenticate(db, request, diagnostics);
     check(user, 'Sign in to continue.', 401);
     if (route === 'logout') return await logout(db, request);
+    if (route === 'collaborators') return json(await collaborators(db, user.id, string(input.deck, 'deck ID', 80), input));
     if (route === 'deck') return json(await saveDeck(db, user.id, input));
     if (route === 'import/preview') return json(await inspectImport(db, user.id, input));
     if (route === 'import/apply') return json(await applyImport(db, user.id, input));

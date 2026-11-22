@@ -372,11 +372,11 @@ export default function App() {
               }} /> <strong>{item.title}</strong></label>
               <div className="row">
                 <button onClick={() => { setDetail(item.id); setScreen('detail'); }}>View deck</button>
-                {item.owned === 1 && <button disabled={busy} onClick={() => setEditingDeck(item.id)}>Edit deck</button>}
+                {item.permissions.canEdit && <button disabled={busy} onClick={() => setEditingDeck(item.id)}>Edit deck</button>}
               </div>
             </div>
             {item.description && <p>{item.description}</p>}
-            {editingDeck === item.id && item.owned === 1 && <DeckEditor deck={item} busy={busy} save={data => void run(async () => {
+            {editingDeck === item.id && item.permissions.canEdit && <DeckEditor deck={item} busy={busy} save={data => void run(async () => {
               await api('deck', data);
               await reload();
               setEditingDeck(null);

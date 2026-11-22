@@ -110,3 +110,19 @@ Other error codes are `unauthorized` (401), `forbidden` (403), `not_found` (404)
 ## Future MCP adapter
 
 Expose list, get, create and patch operations as tools with equivalent input schemas. Use OAuth authorization code with PKCE for interactive MCP clients, publish protected resource metadata and verify token issuer, audience, expiry and scopes. Resolve the verified OAuth identity to a Flashcards user and obtain that user's scoped Flashcards credential from a server-side secret store. Send that credential to this API. Keep MCP access tokens scoped to the MCP resource. Preserve idempotency keys across retries and surface revision conflicts for reconciliation. [MCP TypeScript SDK authorization guide](https://ts.sdk.modelcontextprotocol.io/v2/serving/authorization)
+
+
+## Deck collaborators
+
+Bearer tokens retain their existing user scope, expiry, write flag and operator-managed provisioning. Read operations include private decks where that user is a collaborator. Writes require both `can_write` and current owner/collaborator membership; public visibility grants no write permission. Collaborators may update deck content and metadata but cannot change visibility. Existing supported methods, If-Match revision checks, idempotency keys and error envelopes remain unchanged. The Management API does not add deletion or collaborator administration methods.
+
+Browser collaborator administration uses the existing session cookie and same-origin JSON POST rules:
+
+- `GET /api/collaborators?deck={id}` returns an array of `{id, username}` for the owner only.
+- `POST /api/collaborators` with `{deck, method: "add", username}` adds an existing normalized username immediately.
+- `POST /api/collaborators` with `{deck, method: "remove", userId}` removes membership; repeated removal succeeds.
+- Both POST operations return the updated collaborator array. Unknown usernames or inaccessible decks return 404, visible decks requested by non-owners return 403, owner self-addition returns 400, duplicate addition returns 409, missing authentication returns 401.
+
+Collaborator removal preserves cards and progress. Subsequent mutations recheck membership in SQL, including requests made with existing bearer tokens. A write already committed before removal is retained. Non-destructive browser imports require an explicit target for collaborator decks; automatic source-key matching remains scoped to owned decks. Replacement imports and whole-deck deletion remain owner-only. Visibility cannot be changed through collaborator imports.
+
+Migration `0009_deck_collaborators.sql` is additive and retains existing `owner_id` values, card IDs and study progress. Apply it through the normal migration workflow before serving the updated application. No ownership backfill is needed because the original schema already requires a user foreign key.

@@ -1,3 +1,4 @@
+import { canEditDeck, editAccess } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { authenticateClient, digest } from './auth';
 import { deckWithCards, getDeck, listCards, listDecks, writeCards, primaryLanguageStatements, decodeDeck } from './decks';
@@ -179,7 +180,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
     }
 
     const deck = deckId ? await getDeck(db, user, deckId) : undefined;
-    if (deck) check(deck.owner_id === user, 'Only the owner may edit this deck.', 403);
+    if (deck) check(await canEditDeck(db, user, deck), 'Only editors may edit this deck.', 403);
 
     if (method === 'PATCH') {
       const revision = request.headers.get('If-Match');
@@ -203,7 +204,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
       const replayHeaders = { Location: location(receipt.resource_id), 'Idempotency-Replayed': 'true' };
       if (!cardsRoute) return respond(deckData(await getDeck(db, user, receipt.resource_id, true), user), 200, replayHeaders);
       const { deck: currentDeck, cards: [card] } = await deckWithCards(db, user, deck!.id, receipt.resource_id);
-      check(currentDeck.owner_id === user, 'Deck not available.', 404);
+      await getDeck(db, user, currentDeck.id, true);
       check(card, 'Card not available.', 404);
       return respond(cardData(card, currentDeck.revision), 200, replayHeaders);
     };
@@ -215,13 +216,14 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
     let batch: D1PreparedStatement[];
     if (!cardsRoute) {
       const values = deckValues(value, deck);
+      if (deck) check(deck.owner_id === user || values[2] === deck.visibility, 'Only the owner may change visibility.', 403);
       const config = deckLanguages(value as Record<string, unknown>, deck);
       const { primaryLanguage: primary, supportedLanguages: supported } = config;
       const configCards = deck ? await listCards(db, user, deck.id) : [];
       if (deck) validateLanguageChange(value as Record<string, unknown>, deck, config, configCards);
       batch = [deck
         ? db.prepare(`UPDATE decks SET title = ?, description = ?, visibility = ?, source_key = ?, chatgpt_default = ?, chatgpt_en = ?, chatgpt_bg = ?, primaryLanguage = ?, supportedLanguages = ?,
-            revision = revision + 1, updated_at = ?, mutation = ? WHERE id = ? AND owner_id = ? AND revision = ?`)
+            revision = revision + 1, updated_at = ?, mutation = ? WHERE id = ? AND ${editAccess(13)} AND revision = ?`)
           .bind(...values, primary, JSON.stringify(supported), now, mutation, id, user, deck.revision)
         : db.prepare(`INSERT INTO decks(title, description, visibility, source_key, chatgpt_default, chatgpt_en, chatgpt_bg,
             primaryLanguage, supportedLanguages, created_at, updated_at, mutation, id, owner_id) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`)
@@ -244,7 +246,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
         throw new HttpError(409, 'A matching question already exists in this deck.');
       }
       batch = [
-        db.prepare('UPDATE decks SET revision = revision + 1, updated_at = ?, mutation = ? WHERE id = ? AND owner_id = ? AND revision = ?')
+        db.prepare(`UPDATE decks SET revision = revision + 1, updated_at = ?, mutation = ? WHERE id = ? AND ${editAccess(4)} AND revision = ?`)
           .bind(now, mutation, deck.id, user, deck.revision),
         writeCards(db, deck.id, mutation, now, [next], !cardId),
       ];
