@@ -387,17 +387,29 @@ export default function App() {
               <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{label}</span>
             </button>)}
           </div>
+              <span className="toolbar-dot" aria-hidden="true">·</span>
               <div className="row language-controls" role="group" aria-label="Study language">
                 {languages.map(language => <button key={language} aria-disabled={busy} aria-pressed={session.language === language}
-                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}</button>)}
+                  onClick={() => studyAction('language', { language })}>{language.toUpperCase()}<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{language === 'bg' ? 'Български' : 'English'}</span></button>)}
               </div>
+              <span className="toolbar-dot" aria-hidden="true">·</span>
+              <button type="button" aria-label="Refresh for latest version" onClick={() => void run(async () => {
+                if (session?.status === 'ACTIVE') await send('pause', session);
+                const url = new URL(window.location.href);
+                url.searchParams.set('_reload', String(Date.now()));
+                window.location.replace(url.toString());
+              })} disabled={busy}>
+                <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M20 7v5h-5M4 17v-5h5M6 7a7 7 0 0 1 12-1l2 3M4 15l2 3a7 7 0 0 0 12-1" /></svg>
+                <span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Refresh for latest version</span>
+              </button>
+              <span className="toolbar-dot" aria-hidden="true">·</span>
               {deadline !== null && deadline !== undefined && <span className="timer" aria-label="Seconds remaining">{Math.max(0, Math.ceil((deadline - now) / 1000))}s</span>}
-              {session.paused && <button disabled={busy} onClick={() => studyAction('resume')}>Resume timer</button>}
-              {document.fullscreenEnabled && <button onClick={() => void run(async () => {
+              {session.paused && <button disabled={busy} onClick={() => studyAction('resume')}>Resume timer<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Resume timer</span></button>}
+              {document.fullscreenEnabled && <button aria-label="Toggle fullscreen" onClick={() => void run(async () => {
                 if (document.fullscreenElement) await document.exitFullscreen();
                 else await stage.current?.requestFullscreen();
-              })}>Fullscreen</button>}
-              <button disabled={busy} onClick={exitStudy}>Pause / Exit</button>
+              })}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 3H3v5m13-5h5v5M3 16v5h5m13-5v5h-5" /></svg><span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Toggle fullscreen</span></button>}
+              <button disabled={busy} aria-label="Pause / Exit" onClick={exitStudy}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg><span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Pause / Exit</span></button>
             </div>
           </div>
           {error && <button disabled={busy} onClick={() => void run(async () => {

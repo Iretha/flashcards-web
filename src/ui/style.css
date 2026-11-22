@@ -201,7 +201,11 @@ progress { display: block; width: 100%; accent-color: #bceba8; }
   border-radius: .75rem;
   background: var(--surface);
 }
-.study-toolbar button { min-height: 2.75rem; min-width: 2.75rem; padding: .55rem .8rem; font-size: .95rem; }
+.study-toolbar button { position: relative; display: inline-flex; align-items: center; justify-content: center; min-height: 2.75rem; min-width: 2.75rem; padding: .55rem .8rem; font-size: .95rem; }
+.toolbar-dot { color: var(--muted); font-size: 1.5rem; padding: 0 .15rem; }
+.study-toolbar .study-sidebar-tooltip { top: calc(100% + 10px); left: 50%; right: auto; transform: translateX(-50%); z-index: 20; }
+.study-toolbar button:hover > .study-sidebar-tooltip,
+.study-toolbar button:focus-visible > .study-sidebar-tooltip { visibility: visible; }
 .study-toolbar .language-controls { gap: .5rem; }
 .study-toolbar .language-controls > * { margin: 0; }
 .answer-size-sidebar button {
