@@ -2,6 +2,9 @@
 export function editAccess(parameter: number, alias = 'decks') {
   return `(${alias}.owner_id = ?${parameter} OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = ${alias}.id AND dc.user_id = ?${parameter}))`;
 }
+export function managementPermissions(owner: boolean, editor: boolean) {
+  return { can_read: true, can_edit: owner || editor, can_manage: owner };
+}
 export function permissions(owner: boolean, editor: boolean) {
   return { canEdit: editor, canManageCollaborators: owner, canDelete: owner };
 }

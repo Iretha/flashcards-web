@@ -4,7 +4,7 @@ The API works with the same decks and cards as the browser and Markdown importer
 
 ## Access and token provisioning
 
-A token belongs to one existing `users.id`. Read scope allows access to the user's decks and shared decks. Write scope includes read and permits creating decks and editing the user's own decks and cards. Private decks belonging to others return 404. Attempts to modify a visible shared deck owned by another user return 403.
+A token belongs to one existing `users.id`. Read scope allows access to the user's decks and shared decks. Write scope includes read and permits creating decks and editing owned decks or decks with active collaborator membership. Private decks belonging to others return 404. Attempts to modify a visible shared deck without edit access return 403.
 
 An operator with D1 access issues a separate token per client. Generate 32 cryptographically random bytes and encode them as lowercase hexadecimal with the `fc_` prefix. Hash the **full token including the prefix** with SHA-256 and store the lowercase hexadecimal digest. For example, run this in a private local terminal and transfer the token to the client's secret store.
 
@@ -49,19 +49,20 @@ IDs in paths are the server-generated resource IDs. The list of cards uses deck 
 | `chatgpt_default` | `universal` or `legacy`, defaults to `universal` |
 | `chatgpt_en`, `chatgpt_bg` | Optional nonempty strings up to 10,000 characters, or null to clear |
 | `id`, `owned`, `revision` | Read-only string, boolean and integer |
+| `permissions` | Read-only calculated `can_read`, `can_edit`, `can_manage` booleans |
 
 ### Card fields
 
 | Field | Type and rules |
 | --- | --- |
-| `translations` | Object keyed by `bg` or `en`. One or both languages may be present. |
-| `primary_language` | `bg` or `en`. Must have a translation. On create, defaults to BG when supplied and EN otherwise. |
+| `translations` | Object keyed by canonical BCP 47 codes configured in the deck supported languages. The deck primary language must be present. |
+| `primary_language` | Canonical BCP 47 code with a translation. Uses the configured deck primary language when available. |
 | `import_key` | Optional identifier matching `[A-Za-z0-9][A-Za-z0-9_-]{0,99}`, unique within the deck, or null |
 | `difficulty`, `interview_priority` | Optional integers from 1 to 5 or null |
 | `metadata` | Optional v3 metadata object or null |
 | `id`, `deck_id`, `position`, `revision` | Read-only resource IDs, order and deck revision |
 
-Each new translation requires nonempty Markdown `question` (up to 2,000 characters) and `answer` (up to 20,000). Optional Markdown `questionDetails`, `simple`, `example` and `details` each allow up to 20,000 characters. PATCH merges fields within each supplied language. An empty string clears an optional section. Questions follow the importer's normalized uniqueness checks, with the D1 primary-question constraint also enforced.
+Each new translation requires nonempty Markdown `question` (up to 2,000 characters). `answer` is a string of up to 20,000 characters; on creation it may be omitted and defaults to `""`. Empty or whitespace-only supplied answers normalize to `""`. During PATCH, omitting `answer` preserves the existing answer; supplying `answer: ""` clears it. Optional Markdown `questionDetails`, `simple`, `example` and `details` each allow up to 20,000 characters. PATCH merges fields within each supplied language. An empty string clears an optional section. Questions follow the importer's normalized uniqueness checks, with the D1 primary-question constraint also enforced.
 
 A supplied metadata object uses the [existing v3 contract](FLASHCARDS-IMPORT-TEMPLATE.md). It contains `cardType` (`question` or `coding_task`), nonempty `topic`, nonnegative integer `occurrenceCount`, `provenance` and optional `answerReferences`. Provenance has `type` (`sourced`, `mixed` or `generated`) and `sources`; sourced and mixed cards require at least one source. Each source has `sourceName` and `sourceUrl` and may include `company`, `location`, `interviewLocation`, `publishedAt` (YYYY-MM-DD) or `occurrenceId`. The count equals the number of distinct documented occurrence IDs. References each contain `title` and `url`. URLs use HTTP(S) without credentials. Each language of a coding task requires `questionDetails`.
 
@@ -146,3 +147,14 @@ Future MCP integration may require OAuth depending on client requirements. No MC
 Token descriptions are optional text of up to 500 characters, accepted as `description` at creation and returned in listings. Update your own token using POST /api/tokens with `{action: "describe", id, description}`. The same session, CSRF and rate limits apply. Migration 0011 adds a nullable description column without changing credentials. Legacy tokens without descriptions display "Used for curl requests and other testing purposes."; this label is editable and is not usage telemetry.
 
 Only deck owners can change `chatgpt_default`, `chatgpt_en` or `chatgpt_bg`. Browser saves and Management API patches from collaborators containing these fields return 403. Collaborators may read instructions and edit other permitted deck content.
+
+
+## Access filters and calculated permissions
+
+`GET /api/decks` accepts optional `access`: `all` (default) returns all accessible decks; `owned` returns owned decks; `editable` returns owned and active collaborator decks; `shared` returns accessible decks owned by others, including private collaborator decks. Invalid values return the existing 400 validation error. Ordering remains title, then ID.
+
+Every Management API deck response includes server-calculated `permissions: {can_read, can_edit, can_manage}`. Read is true for accessible decks, edit is true for owners or active collaborators, and manage is true only for owners. These describe deck membership, independently of token scope: a read-only token may receive `can_edit: true` but cannot write. Clients cannot supply permissions. Visibility and AI instructions remain owner-only.
+
+Answerless cards retain their IDs and study progress when updated. The study answer panel displays a visual em dash and existing external AI links still use the question. No generated answer is saved automatically.
+
+A future MCP adapter must call the existing individual card POST endpoint for each extracted card, using a distinct idempotency key per creation and retrying identical request bytes. Multiple calls have partial-success semantics: a failed call does not roll back earlier successful cards. Record each result and retry only as appropriate; normalized duplicate questions return 409. There is no batch transaction, upload endpoint, OAuth flow or MCP server. Adapter authentication, tool definitions, extraction and retry orchestration remain future work.

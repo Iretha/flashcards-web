@@ -15,6 +15,7 @@ export interface Deck {
   primaryLanguage: string | null; supportedLanguages: string[];
   id: string; owner_id: string; source_key: string | null; title: string; description: string;
   chatgpt_default: string; chatgpt_en: string | null; chatgpt_bg: string | null;
+  editable?: number;
   visibility: 'PRIVATE' | 'SHARED'; revision: number;
 }
 export interface Card extends ImportCard, ImportTarget {
@@ -25,21 +26,21 @@ export interface Card extends ImportCard, ImportTarget {
 }
 
 export async function getDeck(db: D1Database, user: string, id: string, write = false) {
-  const deck = await db.prepare('SELECT * FROM decks WHERE id = ?').bind(id).first<Deck>();
+  const deck = await db.prepare(`SELECT decks.*, ${editAccess(2)} AS editable FROM decks WHERE id = ?1`).bind(id, user).first<Deck>();
   check(deck && (await canEditDeck(db, user, deck) || (!write && deck.visibility === 'SHARED')), 'Deck not available.', 404);
   return decodeDeck(deck);
 }
 
-export async function listDecks(db: D1Database, user: string) {
+export async function listDecks(db: D1Database, user: string, access = 'all') {
   return (await db.prepare(`SELECT d.*, d.owner_id = ? AS owned,
-    (d.owner_id = ?1 OR EXISTS(SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?1)) AS editable,
+    ${editAccess(1, 'd')} AS editable,
     (SELECT username FROM users WHERE id = d.owner_id) AS owner_username, count(c.id) AS total,
     sum(CASE WHEN p.status = 'LEARNED' THEN 1 ELSE 0 END) AS learned,
     coalesce(sum(p.times_shown), 0) AS presentations, coalesce(sum(p.times_failed), 0) AS failures
     FROM decks d LEFT JOIN cards c ON c.deck_id = d.id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
-    WHERE d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?3) GROUP BY d.id ORDER BY d.title, d.id`)
-    .bind(user, user, user).all<Deck & { owned: number; total: number; learned: number; presentations: number; failures: number; editable: number; owner_username: string }>()).results.map(deck => ({ ...decodeDeck(deck), permissions: permissions(Boolean(deck.owned), Boolean(deck.editable)) }));
+    WHERE (?4 = 'all' OR (?4 = 'owned' AND d.owner_id = ?1) OR (?4 = 'shared' AND d.owner_id != ?1) OR (?4 = 'editable' AND ${editAccess(1, 'd')})) AND (d.owner_id = ?3 OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?3)) GROUP BY d.id ORDER BY d.title, d.id`)
+    .bind(user, user, user, access).all<Deck & { owned: number; total: number; learned: number; presentations: number; failures: number; editable: number; owner_username: string }>()).results.map(deck => ({ ...decodeDeck(deck), permissions: permissions(Boolean(deck.owned), Boolean(deck.editable)) }));
 }
 
 export async function listCards(db: D1Database, user: string, deck: string) {
@@ -90,7 +91,7 @@ function readTranslations(input: unknown): Translations {
       check(typeof value === 'string', 'Invalid ' + field + '.');
       return string(value, field, max, optional) ? value : '';
     }
-    const translation = { question: markdown('question', 2000), answer: markdown('answer', 20000) };
+    const translation = { question: markdown('question', 2000), answer: markdown('answer', 20000, true) };
     const extras = Object.fromEntries((['questionDetails', ...sections] as const).flatMap(section => {
       const value = markdown(section, 20000, true);
       return value ? [[section, value]] : [];
@@ -160,7 +161,7 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       translations = { ...current?.translations, ...readTranslations(input.translations) };
     } else {
       const question = string(input.question, 'question', 2000);
-      const answer = string(input.answer, 'answer', 20000);
+      const answer = string(input.answer ?? '', 'answer', 20000, true);
       const language = deck.primaryLanguage ?? current?.primary_language;
       check(language, 'Resolve the deck primary language before adding cards.');
       translations = { ...current?.translations, [language]: { ...current?.translations[language], question, answer } };

@@ -91,3 +91,32 @@ test('imports v3 in the browser and studies with keyboard, history, repeats and 
   await page.getByRole('combobox', { name: 'Provenance', exact: true }).selectOption('generated');
   await expect(page.locator('article.item')).toHaveCount(1);
 });
+
+
+test('studies an answerless imported card with a visual placeholder and AI links', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('Answerless-' + Date.now());
+  await page.getByLabel('Access code').fill('v3-e2e');
+  await page.getByRole('button', {name:'Sign in', exact:true}).click();
+  await page.getByRole('button', {name:'Import Markdown', exact:true}).click();
+  const source = '---\nformatVersion: 2\ntitle: Answerless study\nprimaryLanguage: en\n---\n## card: empty\n### en\n#### question\nWhat is happens-before?';
+  await page.getByLabel('Markdown files').setInputFiles({name:'empty.md',mimeType:'text/markdown',buffer:Buffer.from(source)});
+  await page.getByRole('button', {name:'Preview import',exact:true}).click();
+  await expect(page.getByText('0 invalid',{exact:false})).toBeVisible();
+  await page.getByRole('button', {name:'Apply import',exact:true}).click();
+  await expect(page.getByText('Imported successfully.')).toBeVisible();
+  await page.getByRole('button', {name:'Back to library',exact:true}).click();
+  await page.getByRole('checkbox',{name:/Answerless study/}).check();
+  await page.getByRole('checkbox',{name:'Enable timer'}).uncheck();
+  await page.getByRole('button',{name:'Start studying',exact:true}).click();
+  const panel = page.locator('.answer-panel');
+  await expect(panel).toHaveJSProperty('open',false);
+  await panel.locator('summary').click();
+  await expect(panel).toHaveJSProperty('open',true);
+  await expect(page.locator('#study-answer')).toHaveText('\u2014');
+  const link = panel.getByRole('link',{name:'Ask ChatGPT about this question'});
+  await expect(link).toBeVisible();
+  expect(decodeURIComponent((await link.getAttribute('href'))!)).toContain('What is happens-before?');
+  await panel.locator('summary').click();
+  await expect(panel).toHaveJSProperty('open',false);
+});

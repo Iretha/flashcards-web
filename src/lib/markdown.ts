@@ -69,7 +69,7 @@ export function compareImport(drafts: Draft[], existing: ImportCard[]) {
     const current = known.get(key);
     const pair = JSON.stringify([key, draft.answer]);
     let kind: 'invalid' | 'duplicate' | 'conflict' | 'new';
-    if (!key || !draft.answer || draft.question.length > 2000 || draft.answer.length > 20000) kind = 'invalid';
+    if (!key || draft.question.length > 2000 || draft.answer.length > 20000) kind = 'invalid';
     else if (seen.has(pair) || current?.answer === draft.answer) kind = 'duplicate';
     else if (current) kind = 'conflict';
     else kind = 'new';

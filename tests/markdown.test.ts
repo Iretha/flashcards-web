@@ -45,7 +45,8 @@ it('parses two v2 languages as one card and preserves reserved headings inside f
       en: { question: 'Question?', answer: 'Answer.' },
     },
   });
-  expect(parsed.cards[1]).toHaveProperty('error');
+  expect(parsed.cards[1]).not.toHaveProperty('error');
+  expect(parsed.cards[1]).toMatchObject({ translations: { en: { answer: '' } } });
 });
 
 it('keeps the documented v1 and v3 examples importable', () => {
@@ -74,5 +75,18 @@ it('rejects invalid and repeated ratings', () => {
   for (const metadata of ['### difficulty: 0', '### interviewPriority: 1.5', '### difficulty: 2\n### difficulty: 3']) {
     const parsed = parseMarkdown('---\nformatVersion: 2\n---\n## card: test\n' + metadata + language);
     expect(parsed.cards[0]).toHaveProperty('error');
+  }
+});
+
+
+it('accepts omitted and empty answers in v2 and v3 while retaining question validation', () => {
+  for (const version of [2,3]) {
+    const metadata = version === 3 ? '\n### cardType: question\n### topic: Java\n### occurrenceCount: 0\n### provenance\ntype: generated\nsources: []' : '';
+    for (const answer of ['', '\n#### answer\n   ']) {
+      const source = '---\nformatVersion: '+version+'\n---\n## card: empty'+metadata+'\n### en\n#### question\nQuestion?'+answer;
+      const parsed = parseMarkdown(source);
+      expect(parsed.cards[0]).not.toHaveProperty('error');
+      expect(parsed.cards[0]).toMatchObject({translations:{en:{question:'Question?',answer:''}}});
+    }
   }
 });

@@ -44,7 +44,7 @@ export function parseBilingual(lines: string[]): BilingualDraft[] {
     if (card) {
       if (!Object.keys(card.translations).length ||
         Object.values(card.translations).some(value => !validTranslation(value))) {
-        card.error ??= 'Each language needs a question and answer within the field limits.';
+        card.error ??= 'Each language needs a question and fields within the field limits.';
       }
       cards.push(card);
     }
