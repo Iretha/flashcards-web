@@ -211,6 +211,12 @@ export default function App() {
       if (screen === 'study' && session?.status === 'ACTIVE') {
         let action: StudyAction | undefined;
         const interactive = element?.closest('button, input, a, summary, pre.code-block');
+        if (!interactive && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+          event.preventDefault();
+          const shouldReveal = event.key === 'ArrowDown';
+          if (!event.repeat && !busy && Boolean(session.revealed) !== shouldReveal) toggleStudyAnswer();
+          return;
+        }
         if ((event.key === ' ' || event.key === 'Enter') && !interactive) action = 'show';
         if (event.key === 'ArrowRight' && !interactive) action = 'next';
         if (event.key === 'ArrowLeft' && !interactive) action = 'previous';
