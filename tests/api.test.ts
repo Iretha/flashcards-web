@@ -1,3 +1,6 @@
+import { mcp } from '../src/server/mcp';
+import { tokens } from '../src/server/tokens';
+import { authenticateClient } from '../src/server/auth';
 import { v3Fixture } from './fixtures/v3';
 import { readFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
@@ -42,7 +45,7 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql', '0011_api_token_description.sql', '0012_parallel_auth.sql']) {
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql', '0011_api_token_description.sql', '0012_parallel_auth.sql', '0013_mcp_token_purpose.sql']) {
     if (file === '0008_deck_languages.sql') {
       await db.batch([
         db.prepare("INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at) VALUES ('migration-mixed', 'migrated', 'Mixed originals', '', 'PRIVATE', 0, 0)"),
@@ -1045,4 +1048,19 @@ it('retrieves individual deck permissions with current membership, token scopes 
       expect((await apiRequest(editor,route,'PATCH',{title:'Denied'},{'If-Match':etag})).status).toBe(404);
     }
   }
+});
+
+it('enforces real D1 MCP credential lifecycle and audience isolation', async () => {
+ const created = await tokens(db, 'migrated', { name: 'Synthetic MCP', days: 30 }, 'mcp');
+ const { token, id } = await created.json() as { token: string; id: string };
+ const config = { APP_ENV: 'development', PERSONAL_MCP_URLS_ENABLED: 'true' };
+ const call = () => mcp(new Request('https://cards.example/mcp/' + token, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) }), db, config);
+ expect((await call()).status).toBe(200);
+ expect(await authenticateClient(db, new Request(origin, { headers: { Authorization: 'Bearer ' + token } }))).toBeNull();
+ await db.prepare('UPDATE api_tokens SET expires_at = 0 WHERE id = ?').bind(id).run();
+ expect((await call()).status).toBe(401);
+ await db.prepare('UPDATE api_tokens SET expires_at = ? WHERE id = ?').bind(Date.now() + 60000, id).run();
+ await tokens(db, 'migrated', { action: 'revoke', id }, 'mcp');
+ expect((await call()).status).toBe(401);
+ expect(JSON.stringify(await (await tokens(db, 'migrated', undefined, 'mcp')).json())).not.toContain(token);
 });

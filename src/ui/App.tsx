@@ -347,7 +347,7 @@ export default function App() {
     </header>
     <main aria-busy={busy}>
       {home && <AuthMethods signedIn={true} onLogin={reload} />}
-      {home && screen === 'tokens' && <div className="stack"><div><button onClick={() => setScreen('library')}>Back to library</button></div><ApiTokens key={home.username} /></div>}
+      {home && screen === 'tokens' && <div className="stack"><div><button onClick={() => setScreen('library')}>Back to library</button></div><ApiTokens key={home.username} /><ApiTokens key={home.username + 'mcp'} personalMcp /></div>}
       {error && <p className="error" role="alert">{error}</p>}
       {!loaded && <p role="status">Loading Flashcards…</p>}
       {loaded && !home && <section className="panel login stack">

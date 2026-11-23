@@ -25,7 +25,7 @@ export async function digest(value: string) {
 export async function authenticateClient(db: D1Database, request: Request) {
   const match = /^Bearer (fc_[a-f0-9]{64})$/i.exec(request.headers.get('Authorization') ?? '');
   if (!match) return null;
-  return db.prepare('SELECT user_id, can_write FROM api_tokens WHERE token_hash = ? AND revoked_at IS NULL AND expires_at > ?')
+  return db.prepare("SELECT user_id, can_write FROM api_tokens WHERE purpose = 'management' AND token_hash = ? AND revoked_at IS NULL AND expires_at > ?")
     .bind(await digest(match[1]), Date.now()).first<{ user_id: string; can_write: number }>();
 }
 
