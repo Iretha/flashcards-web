@@ -68,3 +68,25 @@ Only after the above gate, implement and test the local transport/verifier/conse
 Separate final review of this documentation-only change found no new executable authentication surface, no D1 access path and no weaker verifier. No independent external auditor or second agent review was performed. Key unresolved risks remain generic-audience replay, silent resource ignoring, missing D1 grants and confusing D1 app sessions with Supabase consent sessions. This report does not claim these risks are mitigated by unimplemented code.
 
 No production deployment, remote migration, real-data modification, paid service, commit or push was performed. Approval of this report does not itself establish the missing security evidence.
+# Personal MCP URL PoC update — 2026-11-23
+
+This update supersedes historical implementation claims below for the personal URL PoC.
+
+`/mcp/<secret>` uses the official SDK Web Standard Streamable HTTP transport with stateless JSON responses. Only `ping` exists. Primary D1 reads resolve the existing user on every request. No deck operations are authorized. Future tools must enforce owner/collaborator membership AND per-deck NONE/READ/READ_WRITE (default NONE); SHARED alone never grants access. These settings are deferred until deck tools exist. Supabase OAuth will replace credential verification, preserving separate authorization.
+
+Migration 0013 adds a purpose to existing api_tokens; old credentials default to management. Generation, SHA-256 storage, expiry, metadata, independent revocation and limits reuse the existing subsystem. MCP credentials have a separate prefix and purpose. Management and MCP reject each other's credentials. Full URLs appear once, with metadata only afterward. Both purposes share the ten-active-token limit.
+
+Both the endpoint and cookie-authenticated `/api/mcp-urls` require APP_ENV=development and PERSONAL_MCP_URLS_ENABLED=true. Missing flags and production deny access. Never label a production Worker as development. No production migrations or deployments were executed; local secret configuration was not printed or changed.
+
+Local setup: run `npm run db:migrate:local` with disposable users and local D1; configure the flags above locally. Use an HTTPS listener or isolated development HTTPS host: the default HTTP development command alone cannot satisfy the MCP HTTPS check. In API Tokens settings, generate a named Personal MCP URL and copy it once. Never paste it into chat or shell commands. Revoke after testing.
+
+Verification: run `npm test`, `npm run typecheck`, and `npm run build`. MCP tests cover initialization, discovery, ping and an official SDK client using an in-process fetch adapter. API tests add ephemeral real-D1 lifecycle coverage. This is not deployed network or real ChatGPT evidence. Initial SQL quoting and test typing errors were corrected during validation; final execution results are reported separately.
+
+For real ChatGPT testing, provision an isolated development HTTPS host with disposable D1 data and URL path logging disabled. In ChatGPT custom MCP server setup, paste the URL directly into the URL field, select No authentication and connect. Discover tools and invoke ping; expect Planerox MCP connected. Revoke and retry with a fresh connection: it must fail. Report only the result and sanitized diagnostics, never the URL. No public HTTPS environment or real ChatGPT connection was provisioned in this change.
+
+The [official custom MCP guide](https://developers.openai.com/api/docs/guides/custom-mcp-server) lists No authentication as an option. This does not prove acceptance or preservation of secret paths. API-key header restrictions alone do not establish a secret-path blocker.
+
+Residual risks: URLs can persist in ChatGPT configuration, clipboard, browser history, proxy/platform request logs and traces. Application code never logs or redirects credentials and sets no-store/no-referrer, but cannot control intermediary telemetry. Disable path telemetry before public testing. Revocation affects subsequent requests, not requests already authorized. Input is capped at 16 KiB, authenticated requests at 120 per user per minute. Invalid guessing relies on 256-bit entropy; public tests still need edge abuse controls. Stream reads have no application deadline. This temporary mechanism is not equivalent to OAuth.
+
+Status: PARTIAL — MCP verified, ChatGPT unverified, pending final validation results. Real client verification needs an isolated HTTPS host and owner participation. No commit was made.
+
