@@ -1,3 +1,4 @@
+import { normalizeSearch } from '../src/lib/search';
 import { setThirdPartyAccess, resolveThirdPartyPermissions } from '../src/server/third-party-access';
 import { mcp } from '../src/server/mcp';
 import { tokens } from '../src/server/tokens';
@@ -46,7 +47,7 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql', '0011_api_token_description.sql', '0012_parallel_auth.sql', '0013_mcp_token_purpose.sql', '0014_deck_third_party_access.sql']) {
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql', '0011_api_token_description.sql', '0012_parallel_auth.sql', '0013_mcp_token_purpose.sql', '0014_deck_third_party_access.sql', '0015_card_search_fts.sql', '0016_fts_consistency_recovery.sql']) {
     if (file === '0008_deck_languages.sql') {
       await db.batch([
         db.prepare("INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at) VALUES ('migration-mixed', 'migrated', 'Mixed originals', '', 'PRIVATE', 0, 0)"),
@@ -62,7 +63,7 @@ beforeAll(async () => {
         .bind(createHash('sha256').update('fc_' + 'a'.repeat(64)).digest('hex'), 'migrated', 1, 4102444800000).run();
     }
     const sql = readFileSync(new URL('../migrations/' + file, import.meta.url), 'utf8');
-    await db.batch(sql.split(';').filter(statement => statement.trim()).map(statement => db.prepare(statement)));
+    await db.batch(((file==='0015_card_search_fts.sql'||file==='0016_fts_consistency_recovery.sql') ? sql.trim().split(/;\s*(?=CREATE)/) : sql.split(';').filter(statement => statement.trim())).map(statement => db.prepare(statement)));
   }
 });
 afterAll(async () => { await runtime?.dispose(); });
@@ -1127,3 +1128,14 @@ it('manages third-party access through owner sessions and rejects cross-origin c
  expect((await request(other.cookie, { action: 'describe', id, description: 'Denied' })).status).toBe(404);
  expect((await request(owner.cookie, { action: 'revoke', id })).status).toBe(200);
  });
+
+it('keeps FTS synchronized after browser, management, translation and import writes',async()=>{
+ const cards=(await db.prepare("SELECT c.id,c.translations FROM cards c JOIN decks d ON d.id=c.deck_id WHERE d.owner_id<>'migrated'").all<{id:string;translations:string}>()).results;
+ expect(cards.length).toBeGreaterThan(0);
+ for(const card of cards){
+  expect(await db.prepare('SELECT 1 FROM card_search_ready WHERE card_id=?').bind(card.id).first()).not.toBeNull();
+  const rows=(await db.prepare('SELECT language,question,answer FROM card_search WHERE card_id=? ORDER BY language').bind(card.id).all()).results;
+  const expected=Object.entries(JSON.parse(card.translations) as Record<string,{question:string;answer:string}>).map(([language,t])=>({language,question:normalizeSearch(t.question),answer:normalizeSearch(t.answer)})).sort((a,b)=>a.language<b.language?-1:a.language>b.language?1:0);
+  expect(rows).toEqual(expected);
+ }
+},30000);

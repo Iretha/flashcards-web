@@ -1,3 +1,5 @@
+import { registerMcpWrites } from './mcp-writes';
+import { registerMcpReads, cursorKey } from './mcp-reads';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { WebStandardStreamableHTTPServerTransport } from '@modelcontextprotocol/sdk/server/webStandardStreamableHttp.js';
 import { digest } from './auth';
@@ -37,7 +39,8 @@ export async function mcp(request: Request, database: D1Database, config: McpCon
     for (const chunk of chunks) { body.set(chunk, offset); offset += chunk.length; }
     const transport = new WebStandardStreamableHTTPServerTransport({ sessionIdGenerator: undefined, enableJsonResponse: true });
     const server = new McpServer({ name: 'planerox-poc', version: '0.1.0' });
-    // Identity is established above. No deck operations are authorized by this PoC.
+    registerMcpReads(server, db, identity.user_id, await cursorKey(secret));
+    registerMcpWrites(server, db, identity.user_id);
     server.registerTool('ping', { description: 'Check Planerox MCP connectivity', inputSchema: {}, annotations: { readOnlyHint: true } }, async () => ({ content: [{ type: 'text', text: 'Planerox MCP connected' }] }));
     await server.connect(transport);
     try {

@@ -255,7 +255,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
       batch = [
         db.prepare(`UPDATE decks SET revision = revision + 1, updated_at = ?, mutation = ? WHERE id = ? AND ${editAccess(4)} AND revision = ?`)
           .bind(now, mutation, deck.id, user, deck.revision),
-        writeCards(db, deck.id, mutation, now, [next], !cardId),
+        ...writeCards(db, deck.id, mutation, now, [next], !cardId),
       ];
     }
     const parentId = deck?.id ?? id;

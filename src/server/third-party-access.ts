@@ -3,7 +3,7 @@ import { editAccess } from './permissions';
 
 export type ThirdPartyAccess = 'NONE' | 'READ' | 'READ_WRITE';
 export function thirdPartyPermissions(membership: 'owner' | 'collaborator' | null, access: ThirdPartyAccess, credential: { read: boolean; write: boolean }) {
-  const read = membership !== null && credential.read && (access === 'READ' || access === 'READ_WRITE');
+  const read = (membership === 'owner' || membership === 'collaborator') && credential.read && (access === 'READ' || access === 'READ_WRITE');
   return { membership, read, write: read && credential.write && access === 'READ_WRITE' };
 }
 

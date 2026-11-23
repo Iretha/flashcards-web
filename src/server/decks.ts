@@ -1,3 +1,4 @@
+import { indexCards } from '../lib/search';
 import { editAccess, permissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { validateMetadata } from '../lib/metadata';
@@ -140,8 +141,9 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
   return { id };
 }
 
-export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>) {
+export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>, thirdParty = false, idempotency?: { key: string; payload: string }) {
   const deck = await getDeck(db, user, deckId, true);
+  if (thirdParty) check(deck.third_party_access === 'READ_WRITE', 'Card not available.', 404);
   const now = Date.now();
   const id = input.id ? string(input.id, 'card ID', 80) : crypto.randomUUID();
   const method = input.method;
@@ -153,12 +155,18 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     if (!cards[index + (method === 'up' ? -1 : 1)]) return {};
   }
   if (method !== 'delete' && method !== 'up' && method !== 'down') {
-    check(method === 'save', 'Invalid card operation.');
+    check(method === 'save' || method === 'answer', 'Invalid card operation.');
     const cards = await listCards(db, user, deckId);
     const current = cards.find(card => card.id === id);
     check(!input.id || current, 'Card not available.', 404);
     let translations: Translations;
-    if (input.translations !== undefined) {
+    if (method === 'answer') {
+      check(current, 'Card not available.', 404);
+      const language = input.language === undefined ? current.primary_language : string(input.language, 'language', 64);
+      check(Object.hasOwn(current.translations, language), 'Translation does not exist.');
+      const answer = string(input.answer, 'answer', 20000);
+      translations = { ...current.translations, [language]: { ...current.translations[language], answer } };
+    } else if (input.translations !== undefined) {
       translations = { ...current?.translations, ...readTranslations(input.translations) };
     } else {
       const question = string(input.question, 'question', 2000);
@@ -183,14 +191,17 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
-      WHERE id = ? AND ${editAccess(4)} AND revision = ?`).bind(mutation, now, deckId, user, deck.revision);
-    const [result] = await db.batch([header, writeCards(db, deckId, mutation, now, [next])]);
+      WHERE id = ? AND ${editAccess(4)} AND revision = ? ${thirdParty ? "AND third_party_access = 'READ_WRITE'" : ""}`).bind(mutation, now, deckId, user, deck.revision);
+    const receipt = idempotency ? [db.prepare(`INSERT INTO mcp_card_idempotency(principal, operation, key, payload, card_id, created_at)
+      SELECT ?, 'create_card', ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
+      .bind(user, idempotency.key, idempotency.payload, id, now, deckId, mutation)] : [];
+    const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next]), ...receipt]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
-    return {};
+    return { id };
   }
   const mutation = crypto.randomUUID();
   const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ? WHERE id = ?
-    AND ${editAccess(4)} AND revision = ?`).bind(mutation, now, deckId, user, deck.revision);
+    AND ${editAccess(4)} AND revision = ? ${thirdParty ? "AND third_party_access = 'READ_WRITE'" : ""}`).bind(mutation, now, deckId, user, deck.revision);
   // Gate card deletion and reordering on the authorized revision update in this batch.
   const guard = ' AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)';
   let guarded: D1PreparedStatement;
@@ -241,7 +252,7 @@ export function writeCards(db: D1Database, deck: string, mutation: string, now: 
     const content = card.translations[card.primary_language]!;
     return { ...card, ...content, position, questionKey: questionKey(content.question) };
   });
-  return db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, question, answer, position,
+  const write = db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, question, answer, position,
     created_at, updated_at, import_key, primary_language, translations, interview_priority, difficulty, metadata)
     SELECT value ->> 'id', ?, value ->> 'id', value ->> 'questionKey', value ->> 'question', value ->> 'answer',
       (SELECT coalesce(max(position), -1) + 1 FROM cards WHERE deck_id = ?) + (value ->> 'position'),
@@ -253,6 +264,7 @@ export function writeCards(db: D1Database, deck: string, mutation: string, now: 
       primary_language = excluded.primary_language, translations = excluded.translations,
       interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata`}`)
     .bind(deck, deck, now, now, JSON.stringify(values), deck, mutation);
+  return [write,...indexCards(db,cards, 'EXISTS(SELECT 1 FROM decks WHERE id=?2 AND mutation=?3 AND c.deck_id=id)',[deck,mutation])];
 }
 
 export async function applyImport(db: D1Database, user: string, input: Record<string, unknown>) {
@@ -297,7 +309,7 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
     // card_deleted invalidates sessions; progress cascades, historical events remain.
     batch.push(db.prepare('DELETE FROM cards WHERE deck_id = ? AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)').bind(id, id, mutation));
   }
-  batch.push(writeCards(db, id, mutation, now, changed));
+  batch.push(...writeCards(db, id, mutation, now, changed));
   const [result] = await db.batch(batch);
   check(result.meta.changes, 'Deck changed. Preview the import again.', 409);
   return { id, imported: changed.length, updatedTranslations: rows.filter(row => row.kind === 'conflict' && updates[row.index] === 'update').length };
