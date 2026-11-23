@@ -1,6 +1,8 @@
+import { setThirdPartyAccess } from './third-party-access';
 import { deviceAuth } from './device-auth';
 import { emailAuth, googleCallback, googleStart, methods } from './supabase-auth';
 import type { AuthConfig } from './supabase-auth';
+import { personalMcpEnabled } from './mcp';
 import { tokens } from './tokens';
 import { collaborators } from './collaborators';
 import { authenticate, hasSessionCookie, login, logout, logoutAll } from './auth';
@@ -46,6 +48,7 @@ async function dispatch(
       if (route === 'auth/methods') return json(methods(config));
       const user = await authenticate(db, request, diagnostics);
       check(user, 'Sign in to continue.', 401);
+      if (route === 'mcp-urls') { check(personalMcpEnabled(config), 'Unavailable.', 404); return await tokens(db, user.id, undefined, 'mcp'); }
       if (route === 'tokens') return await tokens(db, user.id);
       if (route === 'home') return json({
         username: user.username, settings: { ...defaults, ...JSON.parse(user.settings) },
@@ -93,12 +96,14 @@ async function dispatch(
     if (route === 'login') return await login(db, secret, request, input);
     const user = await authenticate(db, request, diagnostics);
     check(user, 'Sign in to continue.', 401);
+    if (route === 'mcp-urls') { check(personalMcpEnabled(config), 'Unavailable.', 404); return await tokens(db, user.id, { ...input, ...(input.action ? {} : { can_write: false }) }, 'mcp'); }
     if (route === 'tokens') return await tokens(db, user.id, input);
     if (route === 'logout') {
       check(input.scope === undefined || input.scope === 'current' || input.scope === 'all', 'Invalid logout scope.');
       return input.scope === 'all' ? await logoutAll(db, user) : await logout(db, request);
     }
     if (route === 'collaborators') return json(await collaborators(db, user.id, string(input.deck, 'deck ID', 80), input));
+    if (route === 'deck/third-party-access') return json(await setThirdPartyAccess(db, user.id, input));
     if (route === 'deck') return json(await saveDeck(db, user.id, input));
     if (route === 'import/preview') return json(await inspectImport(db, user.id, input));
     if (route === 'import/apply') return json(await applyImport(db, user.id, input));

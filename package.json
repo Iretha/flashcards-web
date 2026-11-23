@@ -12,7 +12,7 @@
     "typecheck": "astro check",
     "test": "vitest run",
     "db:local": "npm run db:migrate:local",
-    "deploy": "astro build && npm run db:migrate:remote && wrangler deploy",
+    "deploy": "astro build && npm run db:migrate:remote && wrangler deploy --keep-vars",
     "db:migrate:remote": "wrangler d1 migrations apply DB --remote --config wrangler.jsonc",
     "test:e2e": "playwright test",
     "db:e2e": "wrangler d1 migrations apply DB --local --persist-to .wrangler/v3-e2e",
@@ -23,6 +23,7 @@
   "dependencies": {
     "@astrojs/cloudflare": "14.4.9",
     "@astrojs/react": "7.1.9",
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@supabase/supabase-js": "^2.119.2",
     "@tailwindcss/vite": "^4.0.0",
     "astro": "7.4.13",

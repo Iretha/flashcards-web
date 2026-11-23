@@ -17,6 +17,7 @@ export interface Deck {
   chatgpt_default: string; chatgpt_en: string | null; chatgpt_bg: string | null;
   editable?: number;
   visibility: 'PRIVATE' | 'SHARED'; revision: number;
+  third_party_access?: import('./third-party-access').ThirdPartyAccess;
 }
 export interface Card extends ImportCard, ImportTarget {
   deck_id: string; position: number; status: 'LEARNED' | 'UNLEARNED';
@@ -40,7 +41,7 @@ export async function listDecks(db: D1Database, user: string, access = 'all') {
     FROM decks d LEFT JOIN cards c ON c.deck_id = d.id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
     WHERE (?4 = 'all' OR (?4 = 'owned' AND d.owner_id = ?1) OR (?4 = 'shared' AND d.owner_id != ?1) OR (?4 = 'editable' AND ${editAccess(1, 'd')})) AND (d.owner_id = ?3 OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?3)) GROUP BY d.id ORDER BY d.title, d.id`)
-    .bind(user, user, user, access).all<Deck & { owned: number; total: number; learned: number; presentations: number; failures: number; editable: number; owner_username: string }>()).results.map(deck => ({ ...decodeDeck(deck), permissions: permissions(Boolean(deck.owned), Boolean(deck.editable)) }));
+    .bind(user, user, user, access).all<Deck & { owned: number; total: number; learned: number; presentations: number; failures: number; editable: number; owner_username: string }>()).results.map(deck => ({ ...decodeDeck(deck), third_party_access: deck.owned ? deck.third_party_access : undefined, permissions: permissions(Boolean(deck.owned), Boolean(deck.editable)) }));
 }
 
 export async function listCards(db: D1Database, user: string, deck: string) {

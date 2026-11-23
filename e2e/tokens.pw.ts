@@ -9,7 +9,7 @@ for (const colorScheme of ['light', 'dark'] as const) test(`personal token lifec
   await page.getByRole('button', {name:'Sign in',exact:true}).click();
   await page.getByLabel('Settings', {exact:true}).click();
   await page.getByRole('button', {name:'API Tokens',exact:true}).click();
-  await page.getByLabel('Token name').fill('Integration');
+  await page.locator('section').filter({ has: page.getByRole('heading', { name: 'API Tokens', exact: true }) }).getByLabel('Token name').fill('Integration');
   await page.getByRole('button', {name:'Generate token',exact:true}).click();
   const code = page.locator('code').filter({hasText:/^fc_/});
   await expect(code).toHaveText(/^fc_[a-f0-9]{64}$/);

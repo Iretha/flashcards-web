@@ -8,3 +8,7 @@ AUTH_QR_ENABLED=false
 # SUPABASE_PUBLISHABLE_KEY=
 # AUTH_SITE_ORIGIN=
 # AUTH_RATE_LIMIT_SECRET=
+
+# Only exact true enables access; missing or invalid values disable it.
+# Personal MCP URLs: explicit opt-in in any environment, including production.
+PERSONAL_MCP_URLS_ENABLED=false
