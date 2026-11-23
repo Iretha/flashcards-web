@@ -7,7 +7,7 @@ import { HttpError } from './http';
 import { mcpEnvironmentAllowed } from './mcp-environment';
 import type { McpConfig } from './mcp-environment';
 export type { McpConfig } from './mcp-environment';
-// Runtime flags cannot unlock a production build.
+// Explicit opt-in applies equally to production and development.
 export const personalMcpEnabled = (c: McpConfig) => mcpEnvironmentAllowed(import.meta.env.MCP_BUILD_CLASSIFICATION, c);
 export async function mcp(request: Request, database: D1Database, config: McpConfig) {
   const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' };

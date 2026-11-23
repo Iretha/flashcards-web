@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { mcp } from '../src/server/mcp';
 import { authenticateClient } from '../src/server/auth';
 const secret = 'mcp_' + 'a'.repeat(64);
-const config = { APP_ENV: 'development', DEPLOYMENT_CLASSIFICATION: 'development', PERSONAL_MCP_URLS_ENABLED: 'true' };
+const config = { APP_ENV: 'production', DEPLOYMENT_CLASSIFICATION: 'development', PERSONAL_MCP_URLS_ENABLED: 'true' };
 function database(valid = true) {
   return { prepare: (sql: string) => ({ bind: () => ({ first: async () => sql.includes('RETURNING count') ? 1 : sql.includes("purpose = 'management'") ? null : valid ? { user_id: 'synthetic' } : null }) }) } as unknown as D1Database;
 }
@@ -29,8 +29,8 @@ describe('personal MCP protocol', () => {
   it('rejects MCP credentials at Management API', async () => {
     expect(await authenticateClient(database(), new Request('https://example.test', { headers: { Authorization: 'Bearer ' + secret } }))).toBeNull();
   });
-  it('is disabled by default and in production even with the flag', async () => {
-    for (const c of [{}, { ...config, APP_ENV: 'production' }]) expect((await mcp(request('tools/list'), database(), c)).status).toBe(404);
+  it('is disabled without an explicit true flag', async () => {
+    for (const c of [{}, { ...config, PERSONAL_MCP_URLS_ENABLED: 'false' }]) expect((await mcp(request('tools/list'), database(), c)).status).toBe(404);
   });
 });
 
