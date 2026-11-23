@@ -3,6 +3,11 @@ import cloudflare from '@astrojs/cloudflare';
 import react from '@astrojs/react';
 import tailwind from '@tailwindcss/vite';
 
+const classification = process.env.MCP_BUILD_CLASSIFICATION ?? 'production';
+if (!['production', 'preprod', 'development'].includes(classification)) {
+  throw new Error('Invalid MCP build classification');
+}
+
 export default defineConfig({
   output: 'server',
   session: false,
@@ -10,6 +15,7 @@ export default defineConfig({
   integrations: [react()],
   vite: {
     define: {
+      'import.meta.env.MCP_BUILD_CLASSIFICATION': JSON.stringify(classification),
       'import.meta.env.PUBLIC_BUILD_TIMESTAMP': JSON.stringify(new Date().toISOString()),
     },
     plugins: [tailwind()],

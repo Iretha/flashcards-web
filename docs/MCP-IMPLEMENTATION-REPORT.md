@@ -90,3 +90,61 @@ Residual risks: URLs can persist in ChatGPT configuration, clipboard, browser hi
 
 Status: PARTIAL â€” MCP verified, ChatGPT unverified, pending final validation results. Real client verification needs an isolated HTTPS host and owner participation. No commit was made.
 
+
+## Preprod readiness audit — 2026-11-23: BLOCKED
+
+This section supersedes earlier deployment readiness claims. Execution stopped at the target isolation gate; this is not a completed preprod acceptance run.
+
+- Branch: `feature/auth`; audited HEAD and local `origin/feature/auth` reference: `e1e76add924a5eece122bf13ea2da34a6664519e`. Remote reference was not refreshed. The exact Allow Third-Party Access commit is present. Working tree was initially clean; this report is the only audit edit.
+- Migration `0013_mcp_token_purpose.sql` adds a checked purpose with management default, preserving existing token rows. `0014_deck_third_party_access.sql` adds a checked NONE/READ/READ_WRITE field with NONE default, preserving deck/card rows. Remote migration history and applied status were not queried.
+- BLOCKER: the only tracked Wrangler configuration has no explicit preprod environment. Default service is `flashcards-api`, binding `DB`, database `flashcards-db`, ID `5c34da3b-c2af-4f58-96ae-b3e34e46f075`. `docs/FLASHCARDS-V3-IMPACT.md` explicitly describes the configured database as production. No distinct preprod Worker, database ID, domain, or rollback version has been established. Names alone are not isolation evidence.
+- `npm run deploy` includes a default remote migration followed by a default deployment; it must not be used for this task. No remote operation, migration, deployment, infrastructure change, secret change, reset, commit, or push was performed.
+- Additional security blocker: `src/server/mcp.ts` enables personal URLs using only APP_ENV=development and PERSONAL_MCP_URLS_ENABLED=true. This does not establish the required protection against production being accidentally configured with both values. An independently enforced deployment/environment boundary remains necessary.
+- Automated validation in this audit: not run, because the prerequisite isolation gate failed. Passed/failed/skipped counts: not measured; no runner results generated. Earlier counts in this document are historical evidence only. Typecheck, build, migration execution, MCP protocol, authorization policy and browser regression checks were not rerun.
+- Public initialize, tools/list, ping, invalid/expired credentials, cross-purpose rejection, and revocation: NOT RUN. No public endpoint or synthetic account was established. No deck/card MCP tools were added.
+- Logging exposure: configured observability enables logs at full sampling and disables invocation logs. Cloudflare account logging, traces and external proxies were not inspected; URL bearer secrets may remain exposed to infrastructure or client URL logging. Full logging safety and credential separation have not been certified by this stopped audit.
+- Deployment environment, public base URL, deployment version, applied migrations and rollback reference: UNVERIFIED. Production was untouched.
+- ChatGPT compatibility: **UNVERIFIED**. Neither a public MCP protocol test nor a real ChatGPT connection was performed.
+
+Minimum next step: supply authoritative existing preprod Worker/environment, D1 binding and ID, HTTPS domain and production comparison evidence. Establish the independent production exclusion before resuming deployment gates. Do not create infrastructure or change secrets without additional approval.
+
+After the gated deployment and protocol lifecycle tests pass, connect from ChatGPT's connector management interface: create a custom MCP connection, select No authentication if offered, and privately paste a freshly generated dedicated preprod personal MCP URL. Confirm discovery of ping and ask ChatGPT to execute it. Record the redacted result or error, timestamp, HTTP status and request ID; never record the secret URL. Revoke the credential after testing. SDK success alone does not verify ChatGPT compatibility.
+
+## Resumed infrastructure audit — 2026-11-23
+
+Owner decision: the historically named production target is logically **preprod/test**, not the final production application. This supersedes the earlier interpretation of the historical label. Physical resources must retain their names.
+
+Read-only Cloudflare API verification established:
+- Account: `034dd26900a0d3924b33a8e24289bc8e`.
+- Existing Worker: `flashcards-api`; its live `DB` binding matches database ID `5c34da3b-c2af-4f58-96ae-b3e34e46f075`.
+- workers.dev enabled; account subdomain `milena-bd-034`; resulting Worker address: `https://flashcards-api.milena-bd-034.workers.dev` (HTTPS response not smoke-tested).
+- Current deployment: `bd61aecc-8856-4959-9014-8f24bdf383c9`; active version / rollback reference: `d9bede13-6e88-4ba7-b72d-15dfbf4b317c`, 100 percent, deployed 2026-11-22.
+- Other listed Worker `planerox-waitlist` has a different D1 ID. Listed Pages projects `cognitio-prima` and `planerox` have no D1 bindings in their returned deployment configurations. No account Worker custom domains were returned.
+
+Phase A remains incomplete: zone routes, service/proxy consumers and the relationship of the Pages applications to this Worker have not been established. Direct database binding separation alone does not certify that another application does not use the Worker endpoint. No claim of technical isolation is made. Minimum evidence required to continue: establish the route/proxy topology and confirm whether the Pages applications or any independently operated application depend on this Worker. This is narrower than the earlier missing-target blocker: the exact account, Worker, database and current version are now known.
+
+Live logging differs from checked-in configuration: persisted invocation logging is enabled at full sampling; traces and logpush are disabled. Bearer URL testing must wait until logging exposure is resolved and verified against the deployed settings.
+
+Stopped before Phase C implementation and deployment, as required by the Phase A isolation gate. No runtime flags, secrets, resources, migrations or deployed code were changed. No tests or public credential lifecycle checks were run; counts remain unmeasured. Existing report edits were preserved. ChatGPT status: **UNVERIFIED**. Earlier manual connection instructions remain conditional on completing the deployment and security gates.
+
+
+## Local preflight completion ? 2026-11-23
+
+This section supersedes the earlier infrastructure blockers for the corrected local-only scope. The owner identifies flashcards-api / historical Cloudflare production as logical preprod. Unrelated account resources are outside scope. All earlier audit history is retained.
+
+Branch: feature/auth, implementation baseline e1e76add924a5eece122bf13ea2da34a6664519e, including the exact Allow Third-Party Access commit. The prior report edit was present on entry and preserved. Preflight code, tests and documentation are committed together; use git log to identify the resulting commit. No branch, merge, push or remote operation was performed during this local preflight.
+
+Readiness: PASS for local code preflight; owner deployment and public acceptance remain outstanding. New server policy requires matching build classification, DEPLOYMENT_CLASSIFICATION and APP_ENV (preprod or development), plus explicit feature flag. Missing, unknown, contradictory and production classifications deny personal URLs. Default production builds remain disabled regardless of runtime flags. Historical Cloudflare naming does not participate in this policy. Deployment artifact classification is an operational trust boundary: a deliberate preprod rebuild is possible and must not be used for a future true production release.
+
+Validation:
+- npm test: final 16 files, 398 passed, 0 failed, 0 skipped. Includes 216 classification combinations plus four disabled-flag cases, official SDK initialize/list/ping, real local D1 expiry/revocation, cross-purpose rejection, owner/collaborator policy, CSRF, SHARED denial and credential permission bounds. These do not test future deck/card MCP writes; only ping exists.
+- npm run typecheck: 63 files, zero errors/warnings/hints.
+- npm run build: PASS for default production classification and explicit preprod classification. A first monitor invocation for the preprod build failed to launch because it used PowerShell syntax in the monitor's command shell; the corrected command passed.
+- npm run test:e2e: final 8 passed, 0 failed, 0 skipped in Edge. Initial run had 6 passed / 2 failed due to Token name matching both panels; selector scoped to API Tokens and full suite rerun successfully. Browser coverage includes login/QR, study/import, sharing collaborators and management credential lifecycle. Public HTTPS personal URL UI acceptance remains manual.
+- Local migration validation: existing integration setup executes migrations 0001 through 0014 against synthetic D1. 0013_mcp_token_purpose.sql is additive with management default; 0014_deck_third_party_access.sql is additive with checked NONE/READ/READ_WRITE and NONE default. Tests verify existing/new decks, retained cards/progress, owner-only updates and revisions. No new or duplicate migrations were added. Remote pending/applied migration history is deliberately not queried.
+
+Security review: tokens use 32 cryptographically random bytes (256 bits), SHA-256 storage, purpose filtering, primary reads and expiry/revocation checks. Existing management tokens retain purpose=management. Browser mutations retain session/origin/JSON checks. MCP rejects HTTP, foreign Origin, query parameters and malformed paths; missing Origin is permitted for MCP clients. Handler errors are generic with no-store/no-referrer headers. Added tests verify errors do not echo bearer secrets or log caught database exceptions. Application diagnostics log only fixed login/home paths; MCP handling contains no intentional request URL logging. UI exposes newly generated URLs as text held in component state for deliberate copying; no browser storage or link navigation is used. Infrastructure/client logging and clipboard capture remain residual risks.
+
+See [manual deployment runbook](MCP-PREPROD-DEPLOYMENT.md) for exact account/Worker/database targets, explicit default Wrangler environment commands, pending migration inspection, preprod build/deploy flags, rollback, and dashboard logging checks. No deployment version was produced and no remote migration was applied. Previously observed rollback reference remains historical, not refreshed. The owner must verify invocation_logs=false after deployment before generating secrets; earlier live state had invocation logging enabled.
+
+ChatGPT compatibility: **UNVERIFIED**. No public SDK or real ChatGPT test was performed during local preflight. Minimum next step: owner follows the runbook, verifies public initialize/tools/list/ping and revocation, then privately connects ChatGPT with No authentication and a dedicated temporary personal URL, invokes ping and revokes it. Never publish the URL.

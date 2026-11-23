@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { mcp } from '../src/server/mcp';
 import { authenticateClient } from '../src/server/auth';
 const secret = 'mcp_' + 'a'.repeat(64);
-const config = { APP_ENV: 'development', PERSONAL_MCP_URLS_ENABLED: 'true' };
+const config = { APP_ENV: 'development', DEPLOYMENT_CLASSIFICATION: 'development', PERSONAL_MCP_URLS_ENABLED: 'true' };
 function database(valid = true) {
   return { prepare: (sql: string) => ({ bind: () => ({ first: async () => sql.includes('RETURNING count') ? 1 : sql.includes("purpose = 'management'") ? null : valid ? { user_id: 'synthetic' } : null }) }) } as unknown as D1Database;
 }
@@ -44,4 +44,26 @@ it('connects using the official SDK client', async () => {
  const result = await client.callTool({ name: 'ping', arguments: {} });
  expect(result.content).toEqual([{ type: 'text', text: 'Planerox MCP connected' }]);
  await client.close();
+});
+
+it('keeps bearer paths out of failures and disables caching/referrers', async () => {
+  const broken = { prepare: () => { throw new Error('database failure containing ' + secret); } } as unknown as D1Database;
+  const log = vi.spyOn(console, 'error');
+  try {
+    for (const db of [database(false), broken]) {
+      const response = await mcp(request('tools/list'), db, config);
+      expect([400, 401]).toContain(response.status);
+      expect(await response.text()).toBe('MCP request rejected.');
+      expect(response.headers.get('Cache-Control')).toBe('no-store');
+      expect(response.headers.get('Referrer-Policy')).toBe('no-referrer');
+    }
+    expect(log).not.toHaveBeenCalled();
+  } finally { log.mockRestore(); }
+});
+it('rejects insecure transport, foreign origins and query credentials', async () => {
+  const original = request('tools/list');
+  expect((await mcp(new Request(original.url.replace('https:', 'http:'), original), database(), config)).status).toBe(400);
+  const foreign = request('tools/list'); foreign.headers.set('Origin', 'https://foreign.test');
+  expect((await mcp(foreign, database(), config)).status).toBe(403);
+  expect((await mcp(new Request(original.url + '?secret=ignored', request('tools/list')), database(), config)).status).toBe(401);
 });
