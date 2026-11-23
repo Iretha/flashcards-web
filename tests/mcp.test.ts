@@ -14,7 +14,7 @@ describe('personal MCP protocol', () => {
     const init = await mcp(request('initialize', { protocolVersion: '2025-11-25', capabilities: {}, clientInfo: { name: 'test', version: '1' } }), database(), config);
     expect(init.status).toBe(200); expect((await init.json() as { result: { serverInfo: { name: string } } }).result.serverInfo.name).toBe('planerox-poc');
     const list = await mcp(request('tools/list'), database(), config);
-    expect((await list.json() as { result: { tools: { name: string }[] } }).result.tools.map((t: { name: string }) => t.name)).toEqual(['ping']);
+    expect((await list.json() as { result: { tools: { name: string }[] } }).result.tools.map((t: { name: string }) => t.name)).toEqual(['list_decks', 'get_deck', 'search_cards', 'get_card', 'ping']);
     const ping = await mcp(request('tools/call', { name: 'ping', arguments: {} }), database(), config);
     expect((await ping.json() as { result: { content: { text: string }[] } }).result.content[0].text).toBe('Planerox MCP connected');
   });
@@ -40,7 +40,7 @@ it('connects using the official SDK client', async () => {
  fetch: async (input, init) => mcp(new Request(input, init), database(), config)
  });
  await client.connect(transport);
- expect((await client.listTools()).tools.map(t => t.name)).toEqual(['ping']);
+ expect((await client.listTools()).tools.map(t => t.name)).toEqual(['list_decks', 'get_deck', 'search_cards', 'get_card', 'ping']);
  const result = await client.callTool({ name: 'ping', arguments: {} });
  expect(result.content).toEqual([{ type: 'text', text: 'Planerox MCP connected' }]);
  await client.close();

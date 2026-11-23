@@ -91,3 +91,8 @@ it('respects a declared original language in legacy Markdown instead of guessing
   const plan = planImport(parsed, [], {}, {});
   expect(plan.changed[0]).toMatchObject({ primary_language: 'de', translations: { de: { question: 'Frage?', answer: 'Antwort.' } } });
 });
+
+it('rejects newly written null deck primary languages', () => {
+ expect(() => deckLanguages({primaryLanguage:null})).toThrow();
+ expect(() => deckLanguages({}, {primaryLanguage:null,supportedLanguages:['bg']})).toThrow();
+});

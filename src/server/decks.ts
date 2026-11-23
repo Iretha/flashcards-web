@@ -1,3 +1,4 @@
+import { indexCards } from '../lib/search';
 import { editAccess, permissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { validateMetadata } from '../lib/metadata';
@@ -184,7 +185,7 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
       WHERE id = ? AND ${editAccess(4)} AND revision = ?`).bind(mutation, now, deckId, user, deck.revision);
-    const [result] = await db.batch([header, writeCards(db, deckId, mutation, now, [next])]);
+    const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next])]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
     return {};
   }
@@ -241,7 +242,7 @@ export function writeCards(db: D1Database, deck: string, mutation: string, now: 
     const content = card.translations[card.primary_language]!;
     return { ...card, ...content, position, questionKey: questionKey(content.question) };
   });
-  return db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, question, answer, position,
+  const write = db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, question, answer, position,
     created_at, updated_at, import_key, primary_language, translations, interview_priority, difficulty, metadata)
     SELECT value ->> 'id', ?, value ->> 'id', value ->> 'questionKey', value ->> 'question', value ->> 'answer',
       (SELECT coalesce(max(position), -1) + 1 FROM cards WHERE deck_id = ?) + (value ->> 'position'),
@@ -253,6 +254,7 @@ export function writeCards(db: D1Database, deck: string, mutation: string, now: 
       primary_language = excluded.primary_language, translations = excluded.translations,
       interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata`}`)
     .bind(deck, deck, now, now, JSON.stringify(values), deck, mutation);
+  return [write,...indexCards(db,cards, 'EXISTS(SELECT 1 FROM decks WHERE id=?2 AND mutation=?3 AND c.deck_id=id)',[deck,mutation])];
 }
 
 export async function applyImport(db: D1Database, user: string, input: Record<string, unknown>) {
@@ -297,7 +299,7 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
     // card_deleted invalidates sessions; progress cascades, historical events remain.
     batch.push(db.prepare('DELETE FROM cards WHERE deck_id = ? AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)').bind(id, id, mutation));
   }
-  batch.push(writeCards(db, id, mutation, now, changed));
+  batch.push(...writeCards(db, id, mutation, now, changed));
   const [result] = await db.batch(batch);
   check(result.meta.changes, 'Deck changed. Preview the import again.', 409);
   return { id, imported: changed.length, updatedTranslations: rows.filter(row => row.kind === 'conflict' && updates[row.index] === 'update').length };

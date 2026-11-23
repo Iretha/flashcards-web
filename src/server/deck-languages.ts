@@ -8,9 +8,8 @@ type Content = { primary_language: string; translations: Translations; metadata?
 export function deckLanguages(input: Record<string, unknown>, current?: Config | null): Config {
   const primary = input.primaryLanguage === undefined ? (current ? current.primaryLanguage : 'en') : input.primaryLanguage;
   const supported = input.supportedLanguages ?? current?.supportedLanguages ?? [primary];
-  const unresolvedLegacy = current?.primaryLanguage === null && input.primaryLanguage === undefined;
-  check(unresolvedLegacy || isLanguage(primary), 'primaryLanguage must be a canonical BCP 47 code.');
-  check(Array.isArray(supported) && supported.length > 0 && supported.every(isLanguage) && new Set(supported).size === supported.length && (unresolvedLegacy || (typeof primary === 'string' && supported.includes(primary))), 'supportedLanguages must contain unique BCP 47 codes including primaryLanguage.');
+  check(isLanguage(primary), 'primaryLanguage must be a canonical BCP 47 code.');
+  check(Array.isArray(supported) && supported.length > 0 && supported.every(isLanguage) && new Set(supported).size === supported.length && (typeof primary === 'string' && supported.includes(primary)), 'supportedLanguages must contain unique BCP 47 codes including primaryLanguage.');
   return { primaryLanguage: primary as string | null, supportedLanguages: supported };
 }
 
