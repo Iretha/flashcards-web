@@ -132,3 +132,38 @@ it('covers pagination boundaries, all card content and explicit oversized errors
  await db.prepare("UPDATE decks SET description=? WHERE id='boundary1'").bind('x'.repeat(600000)).run();
  await expect(read('owner','get_deck',{deck_id:'boundary1'})).rejects.toThrow('RESULT_TOO_LARGE');
 },30000);
+import { createMcpCard } from '../src/server/mcp-writes';
+it('creates through the shared service and synchronizes search', async () => {
+ await db.prepare("UPDATE decks SET primaryLanguage='en', supportedLanguages='[\"en\"]' WHERE id='READ_WRITE'").run();
+ await db.prepare("INSERT INTO decks(id,owner_id,title,description,visibility,created_at,updated_at,third_party_access,primaryLanguage,supportedLanguages) VALUES ('write-test','owner','test','','PRIVATE',0,0,'READ_WRITE','en','[\"en\"]')").run();
+ const { card_id, status } = await createMcpCard(db, 'owner', { deck_id: 'write-test', question: 'unique created needle', answer: 'answer' });
+ expect(status).toBe('created');
+ expect(card_id).toMatch(/^[a-f0-9-]{36}$/);
+ expect(await db.prepare('SELECT card_id FROM card_search WHERE card_id=?').bind(card_id).first()).toBeTruthy();
+});
+it('rejects invalid inputs and inaccessible writes', async () => {
+ for (const args of [{}, {deck_id:'READ_WRITE',question:'',answer:'a'}, {deck_id:'READ_WRITE',question:'q',answer:'a',card_id:'chosen'}, {deck_id:'READ_WRITE',question:'q',answer:'a',language:'xx'}])
+  await expect(createMcpCard(db,'owner',args)).rejects.toThrow('INVALID_ARGUMENTS');
+ for (const [user, deck_id] of [['stranger','READ_WRITE'],['owner','READ'],['owner','NONE']])
+  await expect(createMcpCard(db,user,{deck_id,question:'q',answer:'a'})).rejects.toThrow('UNAVAILABLE');
+});
+it('atomically replays concurrent creates, rejects conflicts and rechecks access', async () => {
+ const args = {deck_id:'write-test',question:'idempotent question',answer:'answer',idempotency_key:'retry-key'};
+ const results = await Promise.all(Array.from({length:4},()=>createMcpCard(db,'owner',args)));
+ expect(new Set(results.map(r=>r.card_id)).size).toBe(1);
+ expect(await createMcpCard(db,'owner',args)).toEqual(results[0]);
+ await expect(createMcpCard(db,'owner',{...args,answer:'different'})).rejects.toThrow('CONFLICT');
+ expect((await db.prepare('SELECT count(*) AS n FROM cards WHERE id=?').bind(results[0].card_id).first<{n:number}>())?.n).toBe(1);
+ await db.prepare("UPDATE decks SET third_party_access='READ' WHERE id='write-test'").run();
+ await expect(createMcpCard(db,'owner',args)).rejects.toThrow('UNAVAILABLE');
+ await db.prepare("UPDATE decks SET third_party_access='READ_WRITE' WHERE id='write-test'").run();
+});
+it('rolls back receipts and cards on persistence failure and permits retry', async () => {
+ const args={deck_id:'write-test',question:'failure retry question',answer:'answer',idempotency_key:'failure-key'};
+ await db.prepare("CREATE TRIGGER fail_receipt BEFORE INSERT ON mcp_card_idempotency BEGIN SELECT RAISE(ABORT, 'injected failure'); END").run();
+ await expect(createMcpCard(db,'owner',args)).rejects.toThrow('UNAVAILABLE');
+ expect(await db.prepare("SELECT id FROM cards WHERE question='failure retry question'").first()).toBeNull();
+ await db.prepare('DROP TRIGGER fail_receipt').run();
+ const result=await createMcpCard(db,'owner',args);
+ expect(await createMcpCard(db,'owner',args)).toEqual(result);
+});

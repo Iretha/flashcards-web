@@ -141,8 +141,9 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
   return { id };
 }
 
-export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>) {
+export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>, thirdParty = false, idempotency?: { key: string; payload: string }) {
   const deck = await getDeck(db, user, deckId, true);
+  if (thirdParty) check(deck.third_party_access === 'READ_WRITE', 'Card not available.', 404);
   const now = Date.now();
   const id = input.id ? string(input.id, 'card ID', 80) : crypto.randomUUID();
   const method = input.method;
@@ -184,14 +185,17 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
-      WHERE id = ? AND ${editAccess(4)} AND revision = ?`).bind(mutation, now, deckId, user, deck.revision);
-    const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next])]);
+      WHERE id = ? AND ${editAccess(4)} AND revision = ? ${thirdParty ? "AND third_party_access = 'READ_WRITE'" : ""}`).bind(mutation, now, deckId, user, deck.revision);
+    const receipt = idempotency ? [db.prepare(`INSERT INTO mcp_card_idempotency(principal, operation, key, payload, card_id, created_at)
+      SELECT ?, 'create_card', ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
+      .bind(user, idempotency.key, idempotency.payload, id, now, deckId, mutation)] : [];
+    const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next]), ...receipt]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
-    return {};
+    return { id };
   }
   const mutation = crypto.randomUUID();
   const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ? WHERE id = ?
-    AND ${editAccess(4)} AND revision = ?`).bind(mutation, now, deckId, user, deck.revision);
+    AND ${editAccess(4)} AND revision = ? ${thirdParty ? "AND third_party_access = 'READ_WRITE'" : ""}`).bind(mutation, now, deckId, user, deck.revision);
   // Gate card deletion and reordering on the authorized revision update in this batch.
   const guard = ' AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)';
   let guarded: D1PreparedStatement;
