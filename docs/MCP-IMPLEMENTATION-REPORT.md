@@ -1,5 +1,17 @@
 # MCP implementation gate report
 
+## Follow-up source verification — 2026-11-23
+
+Follow-up validation completed: `npm test` passed all 127 tests in 13 files; `npm run typecheck` passed with zero diagnostics in 56 files; `npm run build` completed successfully. These are existing local regression checks, not real MCP OAuth tests. Browser E2E and external OAuth tests were not run. Build loaded local variables without printing their values. No deployment command was run.
+
+The working tree was clean on `feature/auth` at the start of this follow-up. Existing report content is preserved below. No secrets were read from `.dev.vars`.
+
+New upstream evidence: [Supabase Auth issue #2610](https://github.com/supabase/auth/issues/2610), still open when checked, reports that authorization and token endpoints accept but ignore `resource`, issuing `aud=authenticated`. This is an upstream issue report, not a reproduced test of this project's deployed Auth version. [Supabase token security documentation](https://supabase.com/docs/guides/auth/oauth-server/token-security) describes audience customization; that alone does not prove resource validation across authorization, exchange and refresh. The release decision remains **NO-GO pending project-specific evidence**.
+
+[Current OpenAI authentication guidance](https://developers.openai.com/plugins/build/auth) supports predefined clients as well as CIMD and DCR. DCR is therefore not required for this proposed integration and remains disabled. Obtain the exact redirect URI from the connection management page: callback mode determines the URI; do not assume either a stable callback or a callback-ID-specific URL.
+
+Owner action needed: provide access to an isolated Supabase test project's OAuth Server configuration and the exact callback URI displayed by ChatGPT. Keep DCR disabled. Confirm the deployed Auth version's RFC 8707 support with Supabase before proceeding with resource-bound authorization, exchange and refresh probes. Do not configure a consent URL pointing to an unimplemented route. No Dashboard setting, client registration, consent implementation, MCP transport or D1 data access was added in this follow-up. The requested implementation and real ChatGPT test remain incomplete; this update must not be interpreted as successful delivery.
+
 Date: 2026-11-23. Repository: Iretha/flashcards-web. Branch: feature/auth.
 
 ## Decision: NO-GO
