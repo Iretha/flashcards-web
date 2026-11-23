@@ -6,9 +6,7 @@ Dashboard target: https://dash.cloudflare.com/034dd26900a0d3924b33a8e24289bc8e/w
 
 ## Safeguard
 
-Build with MCP_BUILD_CLASSIFICATION=preprod, and set runtime DEPLOYMENT_CLASSIFICATION=preprod, APP_ENV=preprod, PERSONAL_MCP_URLS_ENABLED=true. All must agree. Missing/unknown/contradictory values disable both URL authentication and URL management. Default builds compile production classification and cannot be unlocked with runtime flags. A true production release must use the default production build (or explicit production classification); never reuse the preprod artifact. Deliberately rebuilding with preprod classification can bypass this operational boundary; runtime flags alone cannot. Historical Cloudflare service naming is independent of application classification.
-
-Local development needs a development-classified build and matching runtime values. Do not put secrets in build classification values. Unknown build classifications cause build failure.
+Set runtime `PERSONAL_MCP_URLS_ENABLED=true` in production or development. False, missing or invalid values disable access. No environment classification is required. Use the standard production build.
 
 ## Owner commands (PowerShell, repository root)
 
@@ -26,15 +24,14 @@ Stop if account, binding/ID, Worker, or pending migration list differ from this 
 
 ```powershell
 npx wrangler d1 migrations apply DB --remote --config wrangler.jsonc --env=
-$env:MCP_BUILD_CLASSIFICATION = 'preprod'
-try { npm run build; if ($LASTEXITCODE -ne 0) { throw 'Build failed' } }
-finally { Remove-Item Env:MCP_BUILD_CLASSIFICATION -ErrorAction SilentlyContinue }
+npm run build
+if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
 ```
 
 Inspect `dist/server/wrangler.json` before deploying: name flashcards-api, expected D1 ID, unchanged assets and auth bindings, invocation_logs=false. Do not publish .dev.vars. Keep existing authentication secrets and settings. Only then:
 
 ```powershell
-npx wrangler deploy --config dist/server/wrangler.json --env= --name flashcards-api --keep-vars --var DEPLOYMENT_CLASSIFICATION:preprod --var APP_ENV:preprod --var PERSONAL_MCP_URLS_ENABLED:true
+npx wrangler deploy --config dist/server/wrangler.json --env= --name flashcards-api --keep-vars --var PERSONAL_MCP_URLS_ENABLED:true
 ```
 
 `--keep-vars` preserves existing dashboard variables; secret bindings must remain untouched. Capture the new deployment version and verify actual deployed variables and binding. Rollback code with the freshly recorded previous version (replace placeholder), retaining the additive schema and all data:
@@ -53,5 +50,5 @@ Use a dedicated synthetic account. Verify sign-in, deck listing/editing, sharing
 
 ChatGPT status is **UNVERIFIED**. After protocol acceptance, open ChatGPT custom connector management, create a connection, select No authentication if offered and privately paste the dedicated personal URL. Ask ChatGPT to discover and execute ping; expected tool response: Planerox MCP connected. If unavailable or failing, record timestamp, redacted error and request ID, never the URL. Revoke afterward. SDK tests are not a real ChatGPT test.
 
-## Policy update
-The classification agreement described above is historical and no longer required. Production may use the default build with APP_ENV=production and PERSONAL_MCP_URLS_ENABLED=true. Missing/false flags disable both MCP URL management and authentication. Keep invocation_logs=false and exclude credential-bearing paths from external telemetry.
+## Current policy
+Only `PERSONAL_MCP_URLS_ENABLED=true` enables MCP. Keep invocation_logs=false and exclude credential-bearing paths from external telemetry.

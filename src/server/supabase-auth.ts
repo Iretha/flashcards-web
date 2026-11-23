@@ -29,7 +29,7 @@ export async function findOrCreateUserByVerifiedSubject(db: D1Database, sub: str
 }
 
 export interface AuthConfig {
-  APP_ENV?: string; DEPLOYMENT_CLASSIFICATION?: string; PERSONAL_MCP_URLS_ENABLED?: string;
+  PERSONAL_MCP_URLS_ENABLED?: string;
   AUTH_GOOGLE_ENABLED?: string; AUTH_EMAIL_ENABLED?: string; AUTH_QR_ENABLED?: string;
   SUPABASE_URL?: string; SUPABASE_PUBLISHABLE_KEY?: string; AUTH_SITE_ORIGIN?: string; AUTH_RATE_LIMIT_SECRET?: string;
 }

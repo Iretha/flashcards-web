@@ -4,11 +4,9 @@ import { digest } from './auth';
 import { budget } from './auth-common';
 import { HttpError } from './http';
 
-import { mcpEnvironmentAllowed } from './mcp-environment';
-import type { McpConfig } from './mcp-environment';
-export type { McpConfig } from './mcp-environment';
+export interface McpConfig { PERSONAL_MCP_URLS_ENABLED?: string }
 // Explicit opt-in applies equally to production and development.
-export const personalMcpEnabled = (c: McpConfig) => mcpEnvironmentAllowed(import.meta.env.MCP_BUILD_CLASSIFICATION, c);
+export const personalMcpEnabled = (c: McpConfig) => c.PERSONAL_MCP_URLS_ENABLED === 'true';
 export async function mcp(request: Request, database: D1Database, config: McpConfig) {
   const headers = { 'Cache-Control': 'no-store', 'Referrer-Policy': 'no-referrer', 'X-Content-Type-Options': 'nosniff' };
   const fail = (status: number) => new Response('MCP request rejected.', { status, headers });

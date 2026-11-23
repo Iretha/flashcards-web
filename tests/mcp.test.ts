@@ -4,7 +4,7 @@ import { describe, it, expect, vi } from 'vitest';
 import { mcp } from '../src/server/mcp';
 import { authenticateClient } from '../src/server/auth';
 const secret = 'mcp_' + 'a'.repeat(64);
-const config = { APP_ENV: 'production', DEPLOYMENT_CLASSIFICATION: 'development', PERSONAL_MCP_URLS_ENABLED: 'true' };
+const config = { PERSONAL_MCP_URLS_ENABLED: 'true' };
 function database(valid = true) {
   return { prepare: (sql: string) => ({ bind: () => ({ first: async () => sql.includes('RETURNING count') ? 1 : sql.includes("purpose = 'management'") ? null : valid ? { user_id: 'synthetic' } : null }) }) } as unknown as D1Database;
 }

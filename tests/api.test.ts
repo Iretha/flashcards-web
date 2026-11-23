@@ -1054,7 +1054,7 @@ it('retrieves individual deck permissions with current membership, token scopes 
 it('enforces real D1 MCP credential lifecycle and audience isolation', async () => {
  const created = await tokens(db, 'migrated', { name: 'Synthetic MCP', days: 30 }, 'mcp');
  const { token, id } = await created.json() as { token: string; id: string };
- const config = { APP_ENV: 'production', DEPLOYMENT_CLASSIFICATION: 'production', PERSONAL_MCP_URLS_ENABLED: 'true' };
+ const config = { PERSONAL_MCP_URLS_ENABLED: 'true' };
  const call = () => mcp(new Request('https://cards.example/mcp/' + token, { method: 'POST', headers: { 'Content-Type': 'application/json', Accept: 'application/json, text/event-stream' }, body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'tools/list' }) }), db, config);
  expect((await call()).status).toBe(200);
  expect(await authenticateClient(db, new Request(origin, { headers: { Authorization: 'Bearer ' + token } }))).toBeNull();
@@ -1109,7 +1109,7 @@ it('manages third-party access through owner sessions and rejects cross-origin c
 });
 
  it('protects production personal MCP management and defaults to read-only', async () => {
- const config = { APP_ENV: 'production', PERSONAL_MCP_URLS_ENABLED: 'true' };
+ const config = { PERSONAL_MCP_URLS_ENABLED: 'true' };
  const owner = new Browser(); await owner.login('MCP production owner');
  const other = new Browser(); await other.login('MCP production other');
  const request = (cookie: string, body?: object) => handle(new Request(origin + '/api/mcp-urls', {
