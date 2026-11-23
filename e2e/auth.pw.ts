@@ -1,0 +1,25 @@
+import { test, expect } from '@playwright/test';
+for (const theme of ['light','dark']) test(`QR manual activation, independent cookies and logout-all in ${theme}`, async ({browser}) => {
+ const tv=await browser.newContext({viewport:{width:1280,height:720}}), phone=await browser.newContext({viewport:{width:390,height:844}});
+ const screen=await tv.newPage(), approval=await phone.newPage();
+ await screen.goto('/');await screen.evaluate(t=>{localStorage.setItem('flashcards-web:theme',t);document.documentElement.dataset.theme=t;},theme);
+ await screen.getByRole('button',{name:'Sign in using QR code',exact:true}).click();
+ const activation=screen.getByLabel('QR sign-in');const code=(await activation.locator('strong.activation-code').textContent())!;
+ const phrase=(await activation.getByText(/Match this confirmation/).textContent())!;
+ await expect(activation.locator('img')).toBeVisible();
+ await approval.goto('/activate');await approval.getByLabel('Activation code',{exact:true}).fill(code);
+ await approval.getByRole('button',{name:'Use activation code',exact:true}).click();
+ await expect(approval.getByText(/Activation request saved/)).toBeVisible();
+ await approval.getByLabel('Username',{exact:true}).fill('QR-'+theme+'-'+Date.now());await approval.getByLabel('Access code',{exact:true}).fill('v3-e2e');
+ await approval.getByRole('button',{name:'Sign in',exact:true}).click();await approval.getByRole('button',{name:'Review device request',exact:true}).click();
+ const approvalPhrase=(await approval.locator('p.activation-code').textContent())!;expect(phrase).toContain(approvalPhrase);
+ await expect(screen.getByRole('heading',{name:'Deck library',exact:true})).toHaveCount(0);
+ await approval.getByRole('button',{name:'Approve device',exact:true}).click();
+ await expect(screen.getByRole('heading',{name:'Deck library',exact:true})).toBeVisible({timeout:15000});
+ const tvCookie=(await tv.cookies()).find(c=>c.name==='flashcards_session')!, phoneCookie=(await phone.cookies()).find(c=>c.name==='flashcards_session')!;
+ expect(tvCookie.value).not.toBe(phoneCookie.value);expect(tvCookie.httpOnly).toBe(true);expect(tvCookie.expires-Date.now()/1000).toBeGreaterThan(29*86400);
+ await approval.getByRole('button',{name:/Sign out QR-/}).click();await screen.reload();await expect(screen.getByRole('heading',{name:'Deck library',exact:true})).toBeVisible();
+ await screen.getByLabel('Settings',{exact:true}).click();await screen.getByRole('button',{name:'Sign out all devices',exact:true}).click();
+ await expect(screen.getByRole('heading',{name:'Sign in',exact:true})).toBeVisible();
+ await tv.close();await phone.close();
+});

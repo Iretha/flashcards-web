@@ -1,1 +1,10 @@
 ACCESS_CODE=replace-with-a-local-code
+
+# New methods default off. Supply actual owner configuration before enabling.
+AUTH_GOOGLE_ENABLED=false
+AUTH_EMAIL_ENABLED=false
+AUTH_QR_ENABLED=false
+# SUPABASE_URL=
+# SUPABASE_PUBLISHABLE_KEY=
+# AUTH_SITE_ORIGIN=
+# AUTH_RATE_LIMIT_SECRET=

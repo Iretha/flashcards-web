@@ -1,6 +1,9 @@
+import { deviceAuth } from './device-auth';
+import { emailAuth, googleCallback, googleStart, methods } from './supabase-auth';
+import type { AuthConfig } from './supabase-auth';
 import { tokens } from './tokens';
 import { collaborators } from './collaborators';
-import { authenticate, hasSessionCookie, login, logout } from './auth';
+import { authenticate, hasSessionCookie, login, logout, logoutAll } from './auth';
 import type { SessionDiagnostics } from './auth';
 import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, replacementImpact, saveDeck } from './decks';
 import { check, HttpError, json, object, string } from './http';
@@ -9,16 +12,19 @@ import { defaults } from '../lib/study';
 import type { Translations } from '../lib/translations';
 import { manage } from './management';
 
-export async function handle(request: Request, db: D1Database, secret?: string) {
+export async function handle(request: Request, db: D1Database, secret?: string, config: AuthConfig = {}) {
   const url = new URL(request.url);
   const route = url.pathname.replace(/^\/api\//, '');
+  // Authoritative primary reads: revoked cookies must not be served from a replica.
+  db = (db.withSession ? db.withSession('first-primary') : db) as D1Database;
+  if (route === 'auth/callback') return googleCallback(db, config, request);
   if (route === 'decks' || route.startsWith('decks/')) return manage(request, db, url, route);
   const endpoint = url.pathname;
-  if (endpoint !== '/api/login' && endpoint !== '/api/home') return dispatch(request, db, secret, url, route);
+  if (endpoint !== '/api/login' && endpoint !== '/api/home') return dispatch(request, db, secret, url, route, undefined, config);
 
   // Temporary diagnostics for the LG webOS session issue.
   const diagnostics: SessionDiagnostics = { sessionFound: null, sessionExpired: null };
-  const response = await dispatch(request, db, secret, url, route, diagnostics);
+  const response = await dispatch(request, db, secret, url, route, diagnostics, config);
   console.info({
     event: 'flashcards.auth',
     method: request.method,
@@ -33,10 +39,11 @@ export async function handle(request: Request, db: D1Database, secret?: string) 
 
 async function dispatch(
   request: Request, db: D1Database, secret: string | undefined, url: URL, route: string,
-  diagnostics?: SessionDiagnostics,
+  diagnostics?: SessionDiagnostics, config: AuthConfig = {},
 ) {
   try {
     if (request.method === 'GET') {
+      if (route === 'auth/methods') return json(methods(config));
       const user = await authenticate(db, request, diagnostics);
       check(user, 'Sign in to continue.', 401);
       if (route === 'tokens') return await tokens(db, user.id);
@@ -80,11 +87,17 @@ async function dispatch(
     let decoded: unknown;
     try { decoded = JSON.parse(raw); } catch { throw new HttpError(400, 'Invalid JSON.'); }
     const input = object(decoded);
+    if (route === 'auth/google/start') return await googleStart(db, config, request);
+    if (route === 'auth/email/start' || route === 'auth/email/verify') return await emailAuth(db, config, request, input, route.endsWith('/verify'));
+    if (route.startsWith('auth/device/')) return await deviceAuth(db, config, request, input, route.slice('auth/device/'.length));
     if (route === 'login') return await login(db, secret, request, input);
     const user = await authenticate(db, request, diagnostics);
     check(user, 'Sign in to continue.', 401);
     if (route === 'tokens') return await tokens(db, user.id, input);
-    if (route === 'logout') return await logout(db, request);
+    if (route === 'logout') {
+      check(input.scope === undefined || input.scope === 'current' || input.scope === 'all', 'Invalid logout scope.');
+      return input.scope === 'all' ? await logoutAll(db, user) : await logout(db, request);
+    }
     if (route === 'collaborators') return json(await collaborators(db, user.id, string(input.deck, 'deck ID', 80), input));
     if (route === 'deck') return json(await saveDeck(db, user.id, input));
     if (route === 'import/preview') return json(await inspectImport(db, user.id, input));
@@ -113,6 +126,6 @@ function errorResponse(error: unknown, authDiagnostic: boolean) {
   if (error instanceof Error && error.message.includes('UNIQUE constraint failed')) {
     return json({ error: 'A matching deck or question already exists. Refresh and try again.' }, 409);
   }
-  if (!authDiagnostic) console.error('Flashcards API error', error);
+  if (!authDiagnostic) console.error('Flashcards API error');
   return json({ error: 'Something went wrong. Try again.' }, 500);
 }

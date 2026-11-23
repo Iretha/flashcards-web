@@ -3,9 +3,9 @@ import { questionKey } from '../lib/markdown';
 
 export interface User { id: string; username: string; settings: string }
 const cookie = 'flashcards_session';
-const lifetime = 30 * 24 * 60 * 60;
-const token = (request: Request) => request.headers.get('Cookie')?.match(/(?:^|;\s*)flashcards_session=([0-9a-f-]{72})(?:;|$)/)?.[1];
-const cookieHeader = (value: string, age: number) =>
+export const lifetime = 30 * 24 * 60 * 60;
+export const token = (request: Request) => request.headers.get('Cookie')?.match(/(?:^|;\s*)flashcards_session=([0-9a-f-]{72})(?:;|$)/)?.[1];
+export const cookieHeader = (value: string, age: number) =>
   cookie + '=' + value + '; Path=/; Max-Age=' + age + '; HttpOnly; Secure; SameSite=Lax';
 
 export interface SessionDiagnostics {
@@ -88,7 +88,7 @@ export async function login(db: D1Database, secret: string | undefined, request:
   await db.batch([
     db.prepare('DELETE FROM login_limits WHERE key = ? OR expires_at <= ?').bind(client, now),
     db.prepare('DELETE FROM auth_sessions WHERE token_hash = ? OR expires_at <= ?').bind(old ? await digest(old) : '', now),
-    db.prepare('INSERT INTO auth_sessions VALUES (?, ?, ?)').bind(await digest(session), user.id, now + lifetime * 1000),
+    db.prepare('INSERT INTO auth_sessions(token_hash, user_id, expires_at) VALUES (?, ?, ?)').bind(await digest(session), user.id, now + lifetime * 1000),
   ]);
   return json({ username: user.username }, 200, { 'Set-Cookie': cookieHeader(session, lifetime) });
 }
@@ -96,5 +96,25 @@ export async function login(db: D1Database, secret: string | undefined, request:
 export async function logout(db: D1Database, request: Request) {
   const value = token(request);
   if (value) await db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').bind(await digest(value)).run();
+  return json({}, 200, { 'Set-Cookie': cookieHeader('', 0) });
+}
+
+// Every credential method issues the same opaque application session.
+export async function issueSession(db: D1Database, request: Request, user: User) {
+  const value = crypto.randomUUID() + crypto.randomUUID();
+  const old = token(request);
+  await db.batch([
+    db.prepare('DELETE FROM auth_sessions WHERE token_hash = ?').bind(old ? await digest(old) : ''),
+    db.prepare('INSERT INTO auth_sessions(token_hash,user_id,expires_at) VALUES (?,?,?)')
+      .bind(await digest(value), user.id, Date.now() + lifetime * 1000),
+  ]);
+  return json({ username: user.username }, 200, { 'Set-Cookie': cookieHeader(value, lifetime) });
+}
+
+export async function logoutAll(db: D1Database, user: User) {
+  await db.batch([
+    db.prepare("UPDATE auth_device_requests SET state = 'denied' WHERE user_id = ? AND state IN ('pending','approved')").bind(user.id),
+    db.prepare('DELETE FROM auth_sessions WHERE user_id = ?').bind(user.id),
+  ]);
   return json({}, 200, { 'Set-Cookie': cookieHeader('', 0) });
 }

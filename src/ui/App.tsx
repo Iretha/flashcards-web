@@ -1,3 +1,4 @@
+import AuthMethods from './AuthMethods';
 import { ApiTokens } from './ApiTokens';
 import { effectiveInstructions } from '../lib/chatgpt';
 import AskChatGpt from './AskChatGpt';
@@ -325,7 +326,7 @@ export default function App() {
         </summary>
         <div className="settings-dropdown"><button type="button" onClick={event => {
           event.currentTarget.closest('details')?.removeAttribute('open'); setScreen('tokens');
-        }}>API Tokens</button><a className="button" href="/api/export">Export backup</a></div>
+        }}>API Tokens</button><button onClick={() => void run(async () => { await api('logout', { scope: 'all' }); window.location.reload(); })}>Sign out all devices</button><a className="button" href="/api/export">Export backup</a></div>
       </details>
         <button type="button" disabled={busy} aria-label="Reload" title="Reload decks, cards and the interface" onClick={() => {
           const url = new URL(window.location.href);
@@ -345,11 +346,14 @@ export default function App() {
         })}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M9 4H4v16h5M10 12h11m-4-4 4 4-4 4"/></svg><span>{home.username}</span></button></div>}
     </header>
     <main aria-busy={busy}>
+      {home && <AuthMethods signedIn={true} onLogin={reload} />}
       {home && screen === 'tokens' && <div className="stack"><div><button onClick={() => setScreen('library')}>Back to library</button></div><ApiTokens key={home.username} /></div>}
       {error && <p className="error" role="alert">{error}</p>}
       {!loaded && <p role="status">Loading Flashcards…</p>}
       {loaded && !home && <section className="panel login stack">
         <h1>Sign in</h1>
+        <AuthMethods signedIn={false} onLogin={reload} />
+        <h2>Existing login</h2>
         <form className="stack" method="post" onSubmit={submitSignIn}>
           <label>Username<input name="username" autoComplete="username" required maxLength={64} /></label>
           <label>Access code<input name="code" type="password" autoComplete="current-password" required maxLength={256} /></label>
