@@ -126,3 +126,41 @@ Existing test evidence: `tests/api.test.ts:67` exercises scoped management clien
 **Direct ChatGPT with existing API keys: NO-GO** under verified current client constraints. **OAuth-based ChatGPT alternative: CONDITIONAL GO for further investigation only**, pending Supabase resource-binding evidence and implementation. Neither prior documentation nor this review establishes a working connection.
 
 Only this report is authorized to change. Implementation requires explicit owner approval of the assessment and proposed changes.
+
+
+## I. Owner Decision — Temporary Personal MCP URL for Development/Testing (2026-11-23)
+
+**Status: APPROVED AS A DEVELOPMENT/TESTING STRATEGY; CHATGPT COMPATIBILITY NOT YET VERIFIED.** This section records a subsequent owner decision. It supersedes the *proposed next-step/client-selection recommendation* in sections A, E, G and H, but does **not** retroactively change the current-state findings, source inspection, or evidence reported above. In particular, the earlier NO-GO applies to **passing a customer API key through ChatGPT's API-key authentication option**; the newly proposed capability-URL approach is a distinct, unverified experiment.
+
+### I.1 Objective and lifecycle
+
+Proceed with MCP development and end-to-end client testing without paying for or integrating a second OAuth provider. For **development/testing only**, use a personal MCP endpoint whose high-entropy URL path segment is a bearer secret. Plan to replace this mechanism with **Supabase OAuth before enabling production MCP**. The production transition is conditional on verifying Supabase's MCP OAuth resource binding (including RFC 8707) and passing real integration/security tests; its delivery date is not guaranteed. Track the existing Supabase issue separately.
+
+### I.2 Approved credential and UI design
+
+- User-facing feature: **Personal MCP URLs** with **Generate Personal MCP URL**, **Copy URL**, and **Revoke**. Each generated URL has a user-supplied descriptive label (e.g. ChatGPT) and independently revocable credential; list metadata/status but display the full secret only once, at creation.
+- Reuse the **existing API token generation, hash storage, expiry, revocation and user identity resolution infrastructure** rather than adding an independent token subsystem. Introduce an **MCP-only purpose/scope** and enforce separation at *both* MCP and Management API authentication boundaries. An MCP credential must never authorize Management API requests, and an ordinary Management API token must not authorize MCP.
+- Illustrative endpoint: `https://<development-host>/mcp/<high-entropy-secret>`. This is **capability-URL/bearer-secret authentication**, not truly anonymous access, despite being presented to the client as a URL requiring no separate OAuth flow. The Worker resolves the user from the validated credential, never from a caller-supplied user ID.
+- Each URL can be revoked independently; validity must be checked for every request. Avoid caching credential authorization across MCP sessions. Expiration and active-token limits should follow existing conventions unless the PoC demonstrates a reason to change them.
+- The server must **enforce** development/test-only availability; hiding the UI is insufficient. Production MCP must reject URL-secret authentication. Use an isolated HTTPS test deployment and disposable credentials/synthetic data if a public endpoint is necessary.
+
+### I.3 Authorization remains independent of authentication
+
+The eventual MCP tool layer must use the existing Owner/Collaborator identity and permissions intersected with a per-deck owner-controlled **Allow Third-Party Access** setting: `NONE` (default), `READ`, `READ_WRITE`. `SHARED` visibility alone grants no MCP access. Read operations require membership plus READ or READ_WRITE; writes additionally require current edit permission and READ_WRITE. Do not expose deck deletion, collaborator management, token management, or modification of Third-Party Access through MCP. Preserve atomic permission checks for mutations and avoid exposing deck data during the initial compatibility PoC.
+
+Keep a clear boundary: **credential → authenticated user → authorization policy → MCP tools**. The OAuth migration must replace the credential adapter, not the authorization policy or tool logic.
+
+### I.4 Security constraints and known trade-off
+
+The URL path segment is a secret even if ChatGPT treats it as an ordinary endpoint URL. Anyone who obtains it may exercise its permitted access. URL secrets may leak through application/proxy logs, diagnostics, browser history, configuration storage, telemetry or third-party handling. Use cryptographically strong randomness, hashed-at-rest storage, HTTPS, short/revocable test credentials, redacted logs/errors, no secret-bearing redirects, appropriate cache/referrer controls and bounded/rate-limited requests. Do not claim that these measures guarantee the URL remains confidential. No production user data or real credentials should be used for the compatibility experiment. The existing legacy shared-code identity issuance risk noted in section D remains relevant and is not resolved by this decision.
+
+### I.5 Ordered PoC and acceptance gate
+
+1. Inspect the current branch and implementation; preserve unrelated work. Build the **smallest** standards-compliant HTTPS Streamable HTTP MCP endpoint with `initialize`, `tools/list` and one fixed-response `ping` tool. Do not implement full deck/card tools or broad migrations first.
+2. Add minimal scoped credential creation/validation/revocation and, only as needed after protocol viability, minimal Personal MCP URL UI. Test invalid, expired and revoked credentials, scope separation, production blocking and secret-free diagnostics.
+3. Verify protocol behavior using MCP Inspector or another independent MCP client. **This is not proof of ChatGPT support.**
+4. Check current official ChatGPT custom-MCP connector requirements and attempt a **real ChatGPT connection** to the no-OAuth URL when user access and test environment permit. Do not paste a live URL secret into chat or claim compatibility without this test.
+5. Report one of: **PASS** (real ChatGPT successfully invokes `ping`), **PARTIAL** (MCP works but ChatGPT unverified), **FAIL** (demonstrated client incompatibility), or **BLOCKED** (environment/access unavailable). If FAIL, stop and reassess rather than expanding the implementation.
+6. Only after PASS and separate approval proceed to full per-deck authorization and MCP tool implementation. Before production, replace temporary URL-secret authentication with verified Supabase OAuth and perform end-to-end acceptance.
+
+**Execution boundary:** This decision approves the architectural direction and preparation of a PoC task. It does **not** authorize production deployment, production migrations, production data access, or declaring compatibility in advance. This document records a decision, not an implemented feature or completed test.
