@@ -167,3 +167,76 @@ it('rolls back receipts and cards on persistence failure and permits retry', asy
  const result=await createMcpCard(db,'owner',args);
  expect(await createMcpCard(db,'owner',args)).toEqual(result);
 });
+import { updateMcpCard } from '../src/server/mcp-writes';
+import { changeCard } from '../src/server/decks';
+
+async function answerFixture() {
+ const deck = 'answer-' + crypto.randomUUID();
+ await db.prepare(`INSERT INTO decks(id,owner_id,title,description,visibility,created_at,updated_at,third_party_access,primaryLanguage,supportedLanguages)
+ VALUES (?,'owner','answers','','PRIVATE',0,0,'READ_WRITE','en','["en","bg"]')`).bind(deck).run();
+ await db.prepare("INSERT INTO deck_collaborators VALUES (?,'collaborator',0,'owner')").bind(deck).run();
+ const { card_id } = await createMcpCard(db,'owner',{deck_id:deck,question:'Known question',answer:'obsoleteuniqueterm'});
+ await changeCard(db,'owner',deck,{method:'save',id:card_id,translations:{
+  en:{question:'Known question',answer:'obsoleteuniqueterm',example:'English example',details:'English explanation',simple:'English simple',questionDetails:'English statement'},
+  bg:{question:'Secondary question',answer:'Secondary answer',example:'Secondary example',details:'Secondary explanation',simple:'Secondary simple',questionDetails:'Secondary statement'}
+ },metadata:{cardType:'question',topic:'Testing',occurrenceCount:0,provenance:{type:'generated',sources:[]}}});
+ await db.prepare('UPDATE cards SET position=17 WHERE id=?').bind(card_id).run();
+ return {deck,card_id};
+}
+const storedCard = (id:string) => db.prepare('SELECT * FROM cards WHERE id=?').bind(id).first<Record<string,unknown>>();
+const matches = async (id:string,term:string) => (await db.prepare('SELECT card_id FROM card_search WHERE card_search MATCH ? AND card_id=?').bind(term,id).all()).results;
+
+it.each([undefined,'en','bg'])('updates only the selected answer (%s), retaining identity and all other content',async language=>{
+ const {card_id} = await answerFixture();
+ const before = (await storedCard(card_id))!;
+ expect(await updateMcpCard(db,'owner',{card_id,answer:'replacementuniqueterm',...(language ? {language}: {})}))
+  .toEqual({card_id,language:language??'en',answer:'replacementuniqueterm',status:'updated'});
+ const after = (await storedCard(card_id))!;
+ const translations = JSON.parse(before.translations as string);
+ translations[language??'en'].answer='replacementuniqueterm';
+ expect(JSON.parse(after.translations as string)).toEqual(translations);
+ // Compare every persisted field, allowing only answer content and write timestamp.
+ expect({...after,translations:before.translations,answer:before.answer,updated_at:before.updated_at}).toEqual(before);
+ expect(after.answer).toBe(language==='bg' ? before.answer : 'replacementuniqueterm');
+});
+
+it('replaces ready FTS content immediately without a backfill',async()=>{
+ const {card_id}=await answerFixture();
+ expect(await db.prepare('SELECT version FROM card_search_ready WHERE card_id=?').bind(card_id).first()).toEqual({version:1});
+ expect(await matches(card_id,'obsoleteuniqueterm')).toHaveLength(1);
+ const state=await db.prepare('SELECT epoch FROM card_search_state WHERE id=1').first<{epoch:number}>();
+ await updateMcpCard(db,'owner',{card_id,answer:'replacementuniqueterm'});
+ expect(await matches(card_id,'replacementuniqueterm')).toHaveLength(1);
+ expect(await matches(card_id,'obsoleteuniqueterm')).toHaveLength(0);
+ expect(await db.prepare('SELECT version FROM card_search_ready WHERE card_id=?').bind(card_id).first()).toEqual({version:1});
+ expect((await db.prepare('SELECT epoch FROM card_search_state WHERE id=1').first<{epoch:number}>())!.epoch).toBeGreaterThan(state!.epoch);
+});
+
+it.each(['membership','third-party'] as const)('rejects concurrent %s revocation inside the real write batch',async kind=>{
+ const {deck,card_id}=await answerFixture();
+ const before=await storedCard(card_id);
+ const indexed=await db.prepare('SELECT * FROM card_search WHERE card_id=? ORDER BY language').bind(card_id).all();
+ const ready=await db.prepare('SELECT * FROM card_search_ready WHERE card_id=?').bind(card_id).all();
+ let reachedWrite=false;
+ let stateAfterRevocation:unknown;
+ // Delegate all SQL to real D1; inject revocation only after reads and before its atomic batch.
+ const racingDb = {
+  prepare: db.prepare.bind(db),
+  batch: async (statements:D1PreparedStatement[]) => {
+   expect(reachedWrite).toBe(false);
+   reachedWrite=true;
+   if(kind==='membership') await db.prepare('DELETE FROM deck_collaborators WHERE deck_id=? AND user_id=?').bind(deck,'collaborator').run();
+   else await db.prepare("UPDATE decks SET third_party_access='READ' WHERE id=?").bind(deck).run();
+   stateAfterRevocation=await db.prepare('SELECT * FROM card_search_state').all();
+   return db.batch(statements);
+  }
+ } as D1Database;
+ await expect(updateMcpCard(racingDb,'collaborator',{card_id,answer:'forbiddenuniqueterm'})).rejects.toThrow('CONFLICT');
+ expect(reachedWrite).toBe(true);
+ expect(await storedCard(card_id)).toEqual(before);
+ expect(await db.prepare('SELECT * FROM card_search WHERE card_id=? ORDER BY language').bind(card_id).all()).toMatchObject({results:indexed.results});
+ expect(await db.prepare('SELECT * FROM card_search_ready WHERE card_id=?').bind(card_id).all()).toMatchObject({results:ready.results});
+ expect((await db.prepare('SELECT * FROM card_search_state').all()).results).toEqual((stateAfterRevocation as D1Result).results);
+ expect(await matches(card_id,'forbiddenuniqueterm')).toHaveLength(0);
+ expect(await matches(card_id,'obsoleteuniqueterm')).toHaveLength(1);
+});

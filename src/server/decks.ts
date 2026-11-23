@@ -155,12 +155,18 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     if (!cards[index + (method === 'up' ? -1 : 1)]) return {};
   }
   if (method !== 'delete' && method !== 'up' && method !== 'down') {
-    check(method === 'save', 'Invalid card operation.');
+    check(method === 'save' || method === 'answer', 'Invalid card operation.');
     const cards = await listCards(db, user, deckId);
     const current = cards.find(card => card.id === id);
     check(!input.id || current, 'Card not available.', 404);
     let translations: Translations;
-    if (input.translations !== undefined) {
+    if (method === 'answer') {
+      check(current, 'Card not available.', 404);
+      const language = input.language === undefined ? current.primary_language : string(input.language, 'language', 64);
+      check(Object.hasOwn(current.translations, language), 'Translation does not exist.');
+      const answer = string(input.answer, 'answer', 20000);
+      translations = { ...current.translations, [language]: { ...current.translations[language], answer } };
+    } else if (input.translations !== undefined) {
       translations = { ...current?.translations, ...readTranslations(input.translations) };
     } else {
       const question = string(input.question, 'question', 2000);
