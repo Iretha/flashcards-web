@@ -1,3 +1,4 @@
+import { setThirdPartyAccess } from './third-party-access';
 import { deviceAuth } from './device-auth';
 import { emailAuth, googleCallback, googleStart, methods } from './supabase-auth';
 import type { AuthConfig } from './supabase-auth';
@@ -102,6 +103,7 @@ async function dispatch(
       return input.scope === 'all' ? await logoutAll(db, user) : await logout(db, request);
     }
     if (route === 'collaborators') return json(await collaborators(db, user.id, string(input.deck, 'deck ID', 80), input));
+    if (route === 'deck/third-party-access') return json(await setThirdPartyAccess(db, user.id, input));
     if (route === 'deck') return json(await saveDeck(db, user.id, input));
     if (route === 'import/preview') return json(await inspectImport(db, user.id, input));
     if (route === 'import/apply') return json(await applyImport(db, user.id, input));

@@ -25,6 +25,7 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
   const dirty = languages.some(lang => instructions[lang] !== effectiveInstructions(config, lang));
   return <form className="item stack" onSubmit={event => { event.preventDefault(); save({ id: deck?.id, title, description, visibility, primaryLanguage, supportedLanguages, confirmPrimaryLanguageChange, ...(canEditInstructions ? Object.fromEntries(languages.map(lang => [lang === 'en' ? 'chatgpt_en' : 'chatgpt_bg', instructions[lang] === defaultInstructions(config, lang) ? null : instructions[lang]])) : {}) }); }}>
     {deck?.permissions.canManageCollaborators && <Collaborators deck={deck} />}
+    {deck?.owned && <ThirdPartyAccessControl deck={deck} />}
     <h2>{deck ? 'Edit deck' : 'New deck'}</h2>
     <label>Primary language<select required value={primaryLanguage} onChange={event => { setPrimaryLanguage(event.target.value); setSupportedLanguages(current => [...new Set([...current, event.target.value])]); }}><option value="" disabled>Choose the original language</option>{primaryLanguageFirst([...new Set([...languages, ...supportedLanguages])], primaryLanguage).map(code => <option key={code}>{code}</option>)}</select></label>
     <fieldset><legend>Supported languages</legend>{primaryLanguageFirst([...new Set([...languages, ...supportedLanguages])], primaryLanguage).map(code => <label key={code}><input type="checkbox" checked={supportedLanguages.includes(code)} disabled={code === primaryLanguage} onChange={event => setSupportedLanguages(current => event.target.checked ? [...current, code] : current.filter(item => item !== code))} />{code}</label>)}</fieldset>
@@ -46,6 +47,31 @@ export function DeckEditor({ deck, busy, save, close }: { deck?: Deck; busy: boo
     </fieldset>
     <div className="row"><button className="primary" disabled={busy || languages.some(lang => !instructions[lang].trim())}>Save deck</button><button type="button" onClick={close}>Cancel</button></div>
   </form>;
+}
+
+function ThirdPartyAccessControl({ deck }: { deck: Deck }) {
+  const [value, setValue] = useState(deck.third_party_access ?? 'NONE');
+  const [revision, setRevision] = useState(deck.revision);
+  const [busy, setBusy] = useState(false);
+  const [message, setMessage] = useState('');
+  const [error, setError] = useState('');
+  return <fieldset disabled={busy}><legend>Allow Third-Party Access</legend>
+    <label>Access<select value={value} onChange={event => { setValue(event.target.value as typeof value); setMessage(''); }}>
+      <option value="NONE">None — Third-party applications cannot access this deck.</option>
+      <option value="READ">Read only — Authorized third-party applications can read the deck and its cards.</option>
+      <option value="READ_WRITE">Read and write — Authorized third-party applications can read and modify permitted deck/card content.</option>
+    </select></label>
+    <p className="muted">Enabling this setting does not make the deck publicly accessible. Existing owner and collaborator permissions still apply.</p>
+    <button type="button" onClick={async () => {
+      setBusy(true); setError(''); setMessage('');
+      try {
+        const result = await api<{ revision: number }>('deck/third-party-access', { id: deck.id, revision, third_party_access: value });
+        setRevision(result.revision); setMessage('Third-party access saved.');
+      } catch (e) { setError(e instanceof Error ? e.message : 'Unable to save.'); }
+      finally { setBusy(false); }
+    }}>Save third-party access</button>
+    {message && <p role="status">{message}</p>}{error && <p role="alert">{error}</p>}
+  </fieldset>;
 }
 
 function CardEditor({ deck, card, busy, save, close }: { deck: Deck; card?: Card; busy: boolean; save: (input: object) => void; close: () => void }) {

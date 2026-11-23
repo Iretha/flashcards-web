@@ -1,3 +1,4 @@
+import { setThirdPartyAccess, resolveThirdPartyPermissions } from '../src/server/third-party-access';
 import { mcp } from '../src/server/mcp';
 import { tokens } from '../src/server/tokens';
 import { authenticateClient } from '../src/server/auth';
@@ -45,7 +46,7 @@ beforeAll(async () => {
     db.prepare("INSERT INTO study_sessions VALUES ('old-session', 'migrated', '[\"old-deck\"]', 'SEQUENTIAL', 0, 30, 'old-card', ?, 'ACTIVE', 7, NULL, 0, 0)")
       .bind(JSON.stringify({ queue: [{ id: 'old-card', failed: 0, visits: 1 }], history: ['old-card'], cursor: 0, current: 'old-card', revealed: true, deadline: null, remainingMs: null })),
   ]);
-  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql', '0011_api_token_description.sql', '0012_parallel_auth.sql', '0013_mcp_token_purpose.sql']) {
+  for (const file of ['0003_bilingual.sql', '0004_card_metadata.sql', '0005_v3.sql', '0006_chatgpt.sql', '0007_management_api.sql', '0008_deck_languages.sql', '0009_deck_collaborators.sql', '0010_personal_api_tokens.sql', '0011_api_token_description.sql', '0012_parallel_auth.sql', '0013_mcp_token_purpose.sql', '0014_deck_third_party_access.sql']) {
     if (file === '0008_deck_languages.sql') {
       await db.batch([
         db.prepare("INSERT INTO decks(id, owner_id, title, description, visibility, created_at, updated_at) VALUES ('migration-mixed', 'migrated', 'Mixed originals', '', 'PRIVATE', 0, 0)"),
@@ -1063,4 +1064,46 @@ it('enforces real D1 MCP credential lifecycle and audience isolation', async () 
  await tokens(db, 'migrated', { action: 'revoke', id }, 'mcp');
  expect((await call()).status).toBe(401);
  expect(JSON.stringify(await (await tokens(db, 'migrated', undefined, 'mcp')).json())).not.toContain(token);
+});
+
+it('persists owner-only third-party access with revisions and unchanged browser data', async () => {
+ const before = await db.prepare("SELECT third_party_access FROM decks WHERE id = 'old-deck'").first();
+ expect(before).toEqual({ third_party_access: 'NONE' });
+ await db.prepare("INSERT INTO decks(id,owner_id,title,description,visibility,created_at,updated_at) VALUES ('third-party-test','migrated','Test','','SHARED',0,0)").run();
+ const get = () => db.prepare("SELECT * FROM decks WHERE id = 'third-party-test'").first<{ revision: number; third_party_access: string }>();
+ expect((await get())?.third_party_access).toBe('NONE');
+ const progress = JSON.stringify((await db.prepare('SELECT * FROM card_progress').all()).results);
+ const cards = JSON.stringify((await db.prepare('SELECT * FROM cards').all()).results);
+ const update = (user: string, value: string, revision: number) => setThirdPartyAccess(db,user,{ id: 'third-party-test', third_party_access: value, revision });
+ const revision = (await get())!.revision;
+ await expect(update('outsider','READ',revision)).rejects.toMatchObject({ status: 403 });
+ await db.prepare("INSERT INTO users(id,username,username_key,created_at,last_login_at) VALUES ('tp-editor','TP editor','tp editor',0,0)").run();
+ await db.prepare("INSERT INTO deck_collaborators(deck_id,user_id,added_at,added_by) VALUES ('third-party-test','tp-editor',0,'migrated')").run();
+ await expect(update('tp-editor','READ',revision)).rejects.toMatchObject({ status: 403 });
+ await expect(update('migrated','INVALID',revision)).rejects.toMatchObject({ status: 400 });
+ await update('migrated','READ_WRITE',revision);
+ await expect(update('migrated','NONE',revision)).rejects.toMatchObject({ status: 409 });
+ expect(await resolveThirdPartyPermissions(db,'outsider','third-party-test',{read:true,write:true})).toMatchObject({ read:false,write:false });
+ expect(await resolveThirdPartyPermissions(db,'tp-editor','third-party-test',{read:true,write:true})).toMatchObject({ read:true,write:true });
+ for (const prefix of ['fc_', 'mcp_']) {
+  const response = await handle(new Request(origin + '/api/deck/third-party-access', { method:'POST',headers:{Origin:origin,'Content-Type':'application/json',Authorization:'Bearer '+prefix+'a'.repeat(64)},body:JSON.stringify({id:'third-party-test',revision:revision+1,third_party_access:'NONE'}) }),db,accessCode);
+  expect(response.status).toBe(401);
+ }
+ expect(JSON.stringify((await db.prepare('SELECT * FROM card_progress').all()).results)).toBe(progress);
+ expect(JSON.stringify((await db.prepare('SELECT * FROM cards').all()).results)).toBe(cards);
+});
+
+it('manages third-party access through owner sessions and rejects cross-origin changes', async () => {
+ const owner = new Browser(); await owner.login('Third party owner');
+ const { id } = await owner.ok<{id:string}>('deck',{title:'Policy deck',description:'',visibility:'SHARED',primaryLanguage:'en',supportedLanguages:['en']});
+ const home = await owner.ok<Home>('home'); const deck = home.decks.find(d => d.id === id)!;
+ expect(deck.third_party_access).toBe('NONE');
+ const payload = {id, revision:deck.revision,third_party_access:'READ'};
+ expect((await owner.request('deck/third-party-access',payload,'https://foreign.test')).response.status).toBe(403);
+ expect((await owner.request('deck/third-party-access',payload)).response.status).toBe(200);
+ expect((await owner.request('deck/third-party-access',payload)).response.status).toBe(409);
+ const outsider = new Browser(); await outsider.login('Third party outsider');
+ const visible = (await outsider.ok<Home>('home')).decks.find(d => d.id === id)!;
+ expect(visible).toBeDefined(); expect(visible.third_party_access).toBeUndefined();
+ expect((await outsider.request('deck/third-party-access',{...payload,revision:deck.revision+1})).response.status).toBe(403);
 });
