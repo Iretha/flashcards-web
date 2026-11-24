@@ -6,6 +6,16 @@
 - Ordinary implementation decisions within approved architecture need no separate approval. Prefer simple, maintainable solutions using existing infrastructure and native platform capabilities. Do not add speculative functionality.
 - Do not preserve unnecessary implementations merely because they exist. When replacing an implementation, remove superseded code, scripts, configuration, dependencies, tests and documentation. Multiple mechanisms for one responsibility require demonstrated need and owner approval.
 
+## Native-first, evidence-based custom solutions
+- Native-first does not mean native-only. Default to officially supported capabilities of the existing database, language, framework, runtime, libraries and platform.
+- Before designing a custom solution, identify actual approved requirements, investigate native capabilities and configuration for the versions in use, and evaluate them using official documentation. Where necessary, validate suitability with focused tests, experiments or benchmarks.
+- Use the native solution when it satisfies the approved requirements. Propose custom solutions only after demonstrating that native functionality is insufficient or materially unsuitable, for example due to functional, performance, security, reliability, consistency, resource, architectural or operational limitations.
+- Before implementing an exception, present the requirement, evaluated native options, specific demonstrated limitations and supporting evidence, alternatives, comparative benefits, complexity, costs and maintenance implications. Obtain explicit owner approval before implementation.
+- Do not justify custom solutions with assumptions, implementation preferences or hypothetical future requirements. Avoid unnecessary data duplication, derived columns or tables, custom normalization, synchronization, wrappers, adapters, abstractions, dependencies, maintenance scripts, background processes and infrastructure.
+- For example, evaluate native case-insensitive search before storing normalized text copies or introducing custom indexing and synchronization. Introduce such mechanisms only when their necessity is demonstrated and approved.
+- If a suitable native capability supersedes an existing custom solution, evaluate removal of the obsolete implementation and associated artifacts under the existing architecture and cleanup rules.
+- Choose the simplest solution that demonstrably satisfies the approved requirements. The burden of proof lies with the proposal to introduce additional complexity.
+
 ## Search index architecture
 - Canonical card content is the single source of truth. Use native SQLite FTS5 case-insensitive trigram tokenization and accept standard FTS5 Unicode behavior.
 - Free-text search requires at least three Unicode code points; exact identifier and import-key lookup remain independent of this minimum.
