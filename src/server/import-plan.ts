@@ -1,7 +1,8 @@
+import { metadataForStorage } from '../lib/metadata';
 import type { CardMetadata } from '../lib/metadata';
 import { questionKey } from '../lib/markdown';
 import type { parseMarkdown } from '../lib/markdown';
-import { legacyLanguage, sections, validTranslation } from '../lib/translations';
+import { validTranslation } from '../lib/translations';
 import type { Language, Translation, Translations } from '../lib/translations';
 
 export interface ImportTarget {
@@ -18,6 +19,7 @@ interface PreviewRow {
   kind: 'new' | 'translation' | 'duplicate' | 'conflict' | 'invalid' | 'link' | 'metadata';
   question: string;
   answer?: string;
+  answerOperation?: 'create' | 'preserve' | 'clear' | 'replace';
   language?: Language;
   existingAnswer?: string;
   incoming?: Translation;
@@ -30,7 +32,7 @@ interface PreviewRow {
 }
 
 const comparable = (value: Translation) => JSON.stringify([
-  questionKey(value.question), value.answer, value.questionDetails ?? '', ...sections.map(section => value[section] ?? ''),
+  questionKey(value.question), value.answer ?? '', value.questionDetails ?? '',
 ]);
 
 export function planImport(
@@ -41,25 +43,22 @@ export function planImport(
   const changed = new Map<string, ImportTarget>();
   const cards = new Map(existing.map(card => [card.id, card]));
   const claimed = new Set<string>();
-  const seenLegacy = new Set<string>();
-  const legacyBaselines = new Map<string, Translations>();
 
   for (const [index, draft] of parsed.cards.entries()) {
-    const bilingual = 'translations' in draft;
-    const incoming: Translations = bilingual ? draft.translations : { [parsed.metadata.primaryLanguage ?? legacyLanguage(draft.question)]: draft };
+    const incoming = draft.translations;
     const primary = (parsed.metadata.primaryLanguage && incoming[parsed.metadata.primaryLanguage] ? parsed.metadata.primaryLanguage : Object.keys(incoming)[0]);
     const question = (primary && incoming[primary]?.question) || '';
-    const key = bilingual ? draft.key : null;
+    const key = draft.key;
     const prefix = String(index);
     const candidates = [...cards.values()].filter(card => Object.values(card.translations).some(translation =>
       Object.values(incoming).some(value => questionKey(value.question) === questionKey(translation.question))));
     let target = key ? [...cards.values()].find(card => card.import_key === key) : candidates[0];
-    if (!primary || (bilingual && draft.error) || Object.values(incoming).some(value => !validTranslation(value))) {
-      rows.push({ index: prefix, question, key: key ?? undefined, kind: 'invalid', message: bilingual ? draft.error : undefined });
+    if (!primary || draft.error || Object.values(incoming).some(value => !validTranslation({ ...value, answer: value.answer ?? '' }))) {
+      rows.push({ index: prefix, question, key: key ?? undefined, kind: 'invalid', message: draft.error });
       continue;
     }
 
-    if (bilingual && !target) {
+    if (!target) {
       const unkeyed = candidates.filter(card => !card.import_key);
       const available = existing.filter(card => !card.import_key && !claimed.has(card.id));
       const matching = unkeyed.filter(card => !claimed.has(card.id));
@@ -78,11 +77,8 @@ export function planImport(
           continue;
         }
       }
-    } else if (!bilingual && candidates.length > 1) {
-      rows.push({ index: prefix, question, kind: 'invalid', message: 'The legacy question matches multiple cards. Use Markdown v2 with a card key.' });
-      continue;
     }
-    if (bilingual && target && claimed.has(target.id)) {
+    if (target && claimed.has(target.id)) {
       rows.push({ index: prefix, question, kind: 'invalid', message: 'Two entries target the same card.' });
       continue;
     }
@@ -90,15 +86,15 @@ export function planImport(
     const isNew = !target;
     const id = target?.id ?? crypto.randomUUID();
     const next: ImportTarget = {
-      metadata: bilingual ? draft.metadata ?? target?.metadata ?? null : target?.metadata ?? null,
+      metadata: draft.metadata ?? target?.metadata ?? null,
       id, import_key: key ?? target?.import_key ?? null,
       primary_language: target?.primary_language ?? primary, translations: { ...target?.translations },
-      interview_priority: (bilingual ? draft.interviewPriority : undefined) ?? target?.interview_priority ?? null,
-      difficulty: (bilingual ? draft.difficulty : undefined) ?? target?.difficulty ?? null,
+      interview_priority: draft.interviewPriority ?? target?.interview_priority ?? null,
+      difficulty: draft.difficulty ?? target?.difficulty ?? null,
     };
-    if (bilingual) claimed.add(id);
+    claimed.add(id);
     let dirty = isNew || next.import_key !== target?.import_key;
-    if (target && (next.interview_priority !== target.interview_priority || next.difficulty !== target.difficulty || JSON.stringify(next.metadata ?? null) !== JSON.stringify(target.metadata ?? null))) {
+    if (target && (next.interview_priority !== target.interview_priority || next.difficulty !== target.difficulty || stableMetadata(next.metadata) !== stableMetadata(target.metadata))) {
       rows.push({ index: prefix + ':metadata', kind: 'metadata', question, key: key ?? undefined, metadata: next.metadata });
       dirty = true;
     }
@@ -106,21 +102,17 @@ export function planImport(
     for (const language of Object.keys(incoming)) {
       const value = incoming[language];
       if (!value) continue;
-      const actual = !bilingual && target
-        ? Object.keys(target.translations).find(lang => questionKey(target.translations[lang]?.question ?? '') === questionKey(value.question)) ?? language
-        : language;
-      const previous = bilingual ? next.translations[actual]
-        : (legacyBaselines.get(id) ?? target?.translations)?.[actual];
-      const proposed = { ...previous, ...value, question: !bilingual && previous ? previous.question : value.question };
-      const rowIndex = bilingual ? prefix + ':' + actual : prefix;
-      const signature = JSON.stringify([questionKey(value.question), value.answer]);
-      const duplicate = (!bilingual && seenLegacy.has(signature)) || (previous && comparable(previous) === comparable(proposed));
+      const actual = language;
+      const previous = next.translations[actual];
+      const proposed: Translation = { ...previous, ...value, answer: value.answer ?? previous?.answer ?? '' };
+      const rowIndex = prefix + ':' + actual;
+      const duplicate = previous && comparable(previous) === comparable(proposed);
       const kind = duplicate ? 'duplicate' : previous ? 'conflict' : isNew && first ? 'new' : 'translation';
       rows.push({
-        index: rowIndex, kind, question: value.question, answer: value.answer, language: actual,
-        metadata: next.metadata, existingAnswer: previous?.answer, incoming: value, existingTranslation: previous, key: key ?? undefined,
+        index: rowIndex, kind, question: value.question, answer: proposed.answer, language: actual,
+        answerOperation: !previous ? 'create' : value.answer === undefined ? 'preserve' : value.answer === '' ? 'clear' : 'replace',
+        metadata: next.metadata, existingAnswer: previous?.answer, incoming: proposed, existingTranslation: previous, key: key ?? undefined,
       });
-      if (!bilingual) seenLegacy.add(signature);
       first = false;
       if (kind === 'duplicate' || (kind === 'conflict' && choices[rowIndex] !== 'update')) continue;
       next.translations[actual] = proposed;
@@ -130,7 +122,6 @@ export function planImport(
       cards.set(id, next);
       changed.set(id, next);
     }
-    if (!bilingual && !legacyBaselines.has(id)) legacyBaselines.set(id, target?.translations ?? next.translations);
   }
 
   return { rows, changed: [...changed.values()], cards: [...cards.values()] };
@@ -148,4 +139,9 @@ export function uniqueQuestions(cards: ImportTarget[]) {
     }
   }
   return true;
+}
+
+function stableMetadata(value: CardMetadata | null | undefined): string {
+ const sort = (v: unknown): unknown => Array.isArray(v) ? v.map(sort) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,item])=>[k,sort(item)])) : v;
+ return JSON.stringify(sort(metadataForStorage(value)));
 }

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { advance, defaults, startStudy } from '../src/lib/study';
 
-const queue = ['a', 'b', 'c'].map(id => ({ id, failed: 0, visits: 0 }));
+const queue = ['a', 'b', 'c'].map(id => ({ id }));
 
 describe('study transitions', () => {
   it('keeps navigation independent of repeat membership', () => {

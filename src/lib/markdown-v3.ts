@@ -1,9 +1,10 @@
 import { parse } from 'yaml';
-import { parseBilingual } from './markdown-v2';
-import type { BilingualDraft } from './markdown-v2';
+import { parseLanguages } from './markdown-languages';
+import type { ImportDraft } from './markdown-languages';
+import { isLanguage } from './translations';
 import { validateMetadata } from './metadata';
 
-export function parseV3(lines: string[]): BilingualDraft[] {
+export function parseStructured(lines: string[], version: 3 | 4): ImportDraft[] {
   const chunks: string[][] = [];
   let fence = '';
   for (const line of lines) {
@@ -24,11 +25,12 @@ export function parseV3(lines: string[]): BilingualDraft[] {
     try {
       for (; index < chunk.length; index++) {
         const line = chunk[index];
-        if (/^### (bg|en)\s*$/.test(line)) break;
+        if (isLanguage(/^### (\S+)\s*$/.exec(line)?.[1])) break;
         if (!line.trim()) continue;
         const heading = /^### (cardType|topic|occurrenceCount|interviewPriority|difficulty|provenance|answerReferences)(?::\s*(.*))?\s*$/.exec(line);
         if (!heading) throw new Error('metadata: unsupported heading or content');
         const [, field, scalar] = heading;
+        if (version === 4 && field === 'occurrenceCount') throw new Error('occurrenceCount: derived automatically in v4');
         if (field in metadata) throw new Error(field + ': duplicate field');
         if (field === 'provenance' || field === 'answerReferences') {
           const body: string[] = [];
@@ -45,7 +47,7 @@ export function parseV3(lines: string[]): BilingualDraft[] {
       }
     } catch (reason) { error = reason instanceof Error ? reason.message : 'metadata: invalid YAML'; }
     content.push(...chunk.slice(index));
-    const card = parseBilingual(content)[0] ?? { key: '', translations: {}, error: 'question: missing language content' };
+    const card = parseLanguages(content)[0] ?? { key: '', translations: {}, error: 'question: missing language content' };
     let contentFence = '';
     for (const line of chunk.slice(index)) {
       const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
@@ -55,17 +57,17 @@ export function parseV3(lines: string[]): BilingualDraft[] {
         continue;
       }
       if (contentFence) continue;
-      const legacy = /^#### (simple|example|details)\s*$/.exec(line);
-      if (legacy) error ??= legacy[1] + ': v3 examples and explanations belong in answer';
+      const legacy = /^ {0,3}#### (simple|example|details)\s*$/.exec(line);
+      if (legacy) error ??= legacy[1] + ': examples and explanations belong in answer';
       if (/^### (cardType|topic|occurrenceCount|interviewPriority|difficulty|provenance|answerReferences)(:|\s*$)/.test(line)) error ??= 'metadata: must precede language sections';
     }
     const { interviewPriority: _priority, difficulty: _difficulty, ...fields } = metadata;
-    try { card.metadata = validateMetadata(fields); }
+    try { card.metadata = validateMetadata(fields, version === 3); }
     catch (reason) { error ??= reason instanceof Error ? reason.message : 'metadata: invalid'; }
     for (const [language, translation] of Object.entries(card.translations)) {
       for (const field of ['question', 'answer'] as const) {
         if (field === 'question' && !translation[field]?.trim()) error ??= `${language}.${field}: required nonempty Markdown`;
-        if (translation[field].length > (field === 'question' ? 2000 : 20000)) error ??= `${language}.${field}: exceeds character limit`;
+        if ((translation[field]?.length ?? 0) > (field === 'question' ? 2000 : 20000)) error ??= `${language}.${field}: exceeds character limit`;
       }
       if ((translation.questionDetails?.length ?? 0) > 20000) error ??= `${language}.questionDetails: exceeds 20000 characters`;
     }

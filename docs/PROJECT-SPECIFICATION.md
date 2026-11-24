@@ -1,3 +1,5 @@
+> Historical product specification. The approved [v4 contract](FLASHCARDS-V4-SPECIFICATION.md) supersedes import/content/explanation requirements below. Historical examples are not current import templates.
+
 # Flashcards — Project Specification
 
 **Version:** 1.0  

@@ -2,21 +2,19 @@
 deckId: java-memory-model
 title: Java Memory Model
 description: Senior Java interview preparation — bilingual, structured flashcards
-formatVersion: 3
+formatVersion: 4
 primaryLanguage: en
 supportedLanguages: [en, bg]
-# Markdown v3 — supported by parser, validation, persistence, API and Study UI.
+# Markdown v4 — supported by parser, validation, persistence, API and Study UI.
 # One stable card key connects BG and EN variants. One file represents one deck.
-# Required per card: provenance; at least one language with question and answer.
-# Required: cardType (question | coding_task), topic, occurrenceCount (integer >= 0), provenance.type.
+# Required per card: provenance and at least one language with a question. Answers may be omitted or empty.
+# Required: cardType (question | coding_task), topic, provenance.type.
 # Optional: interviewPriority, difficulty (integers 1–5), questionDetails, answerReferences.
 # questionDetails and answer are Markdown; examples belong in answer, task code in questionDetails.
 # provenance: sourced (question found in source), mixed (adapted from source), generated (AI-created).
 # sourced/mixed require at least one verified provenance.sources entry with sourceName and sourceUrl.
 # Each source may include company, location (job location), interviewLocation (only when verified), publishedAt (YYYY-MM-DD when known).
-# occurrenceCount counts independently documented interview-question occurrences, NOT study repetitions.
-# occurrenceCount must equal the number of independently evidenced interview occurrences in provenance.sources; other references do not count; deduplicate reposts.
-# generated cards without documented occurrences use occurrenceCount: 0. Never invent sources, dates, or locations.
+# The derived count describes documented interview occurrences, NOT study repetitions.
 # answerReferences verify answer claims and are NOT evidence of the question's origin.
 # id is serialized as the unique ASCII key in `## card: id` (1-100 letters/digits/_/-).
 # Metadata precedes language sections. Each scalar heading appears at most once.
@@ -25,25 +23,57 @@ supportedLanguages: [en, bg]
 # A source without occurrenceId explains the origin/adaptation, NOT an interview occurrence.
 # occurrenceId is optional stable text identifying one independently documented interview.
 # Assign the SAME occurrenceId to reposts/accounts of that same interview; omit it on technical docs.
-# occurrenceCount equals the number of DISTINCT nonempty occurrenceId values, not source count.
+# occurrenceCount is automatically derived from DISTINCT nonempty occurrenceId values; do not author it.
 # Only use occurrenceId after reviewing real interview evidence at that source URL.
 # Syntax validation does not verify external claims; human/content review remains required.
 # Lists of answerReferences use {title, url}; HTTP(S) links only, without credentials.
 # Each language has question (max 2000 chars), answer (max 20000 chars), questionDetails (max 20000 chars).
 # coding_task requires nonempty questionDetails in every supplied language; starter code goes there.
 # Omitted languages are preserved on reimport. Supplied language fields merge; metadata replaces as a unit.
-# Reserved headings: ## card:, ### bg/en, #### question/questionDetails/answer; put literal forms in fences.
+# Reserved headings: ## card:, ### <canonical BCP 47 code>, #### question/questionDetails/answer; put literal forms in fences.
 # Code fences can use backticks or tildes. Other Markdown headings/tables/lists are content.
 # Examples and solution explanations belong inside answer, with no separate explanation controls.
-# Import validation errors identify card key, field and reason; v3 apply rejects any invalid card.
+# Import validation errors identify card key, field and reason; v4 apply rejects any invalid card.
 # No import migrates old cards; see FLASHCARDS-V3-RELOAD.md for deliberate recreation.
+#
+#
+# # v4 field reference and update rules
+#
+# The YAML frontmatter requires `formatVersion: 4`. `deckId` is an optional portable
+# source key (maximum 160 characters), not a database ID. Title is at most 160 characters;
+# description at most 2000. Visibility is PRIVATE or SHARED (default PRIVATE).
+# primaryLanguage and supportedLanguages use canonical BCP 47 codes; supported codes
+# must be unique and include the primary. Declare the primary for multilingual decks.
+# Existing target language configuration is preserved; incompatible languages fail.
+#
+# Card key: 1-100 ASCII letters/digits/underscore/hyphen, starting with letter/digit.
+# Required metadata: cardType enum question/coding_task, nonempty topic (max 2000),
+# provenance object. Optional ratings: interviewPriority/difficulty integers 1-5.
+# Provenance type: sourced/mixed/generated. Sources default to []; sourced/mixed
+# require a source. Every source requires sourceName and credential-free HTTP(S)
+# sourceUrl. Optional company/location/interviewLocation/occurrenceId are nonempty
+# strings (max 2000); publishedAt is a real YYYY-MM-DD string. References are optional
+# {title, url} entries with nonempty titles and credential-free HTTP(S) links.
+#
+# Per-language question is nonempty Markdown (max 2000), answer is optional on input
+# (max 20000), questionDetails optional (max 20000; required nonempty for coding tasks).
+# Missing answer preserves existing content, or initializes empty for a new translation.
+# A present empty answer clears it. Empty answers display an em dash. Metadata replaces
+# as a unit; omitted languages remain. Examples, code and explanation belong in answer.
+# No simple/example/details sections are supported. Literal reserved headings belong
+# inside fenced code. Other Markdown headings, lists and tables remain content.
+#
+# Common errors: missing/unsupported version (only 3/4 accepted), duplicate keys/fields,
+# invalid BCP 47 code, unsupported deck language, authored occurrenceCount in v4,
+# invalid URL/date/rating, generated provenance with occurrence IDs, missing task details,
+# or retired explanation headings. v3 compatibility is described in
+# [the historical reference](FLASHCARDS-V3-REFERENCE.md). New files should use v4.
 ---
 
 ## card: volatile-atomicity
 
 ### cardType: question
 ### topic: Java Memory Model
-### occurrenceCount: 0
 ### interviewPriority: 5
 
 ### difficulty: 3
@@ -105,7 +135,6 @@ If both threads read `5`, both may write `6` rather than `7`. Use `AtomicInteger
 
 ### cardType: question
 ### topic: Java Language
-### occurrenceCount: 0
 ### interviewPriority: 3
 
 ### difficulty: 2
@@ -169,7 +198,6 @@ Output:
 
 ### cardType: question
 ### topic: Java Memory Model
-### occurrenceCount: 0
 ### interviewPriority: 4
 
 ### difficulty: 5
@@ -211,7 +239,6 @@ The relation includes program order within a thread and synchronization rules, s
 
 ### cardType: coding_task
 ### topic: Java Concurrency
-### occurrenceCount: 0
 ### interviewPriority: 4
 ### difficulty: 3
 

@@ -66,15 +66,15 @@ npm run deploy
 
 Open the resulting HTTPS Worker URL and verify sign-in.
 
-## Markdown v3
+## Markdown v4
 
-Use the [import template](docs/FLASHCARDS-IMPORT-TEMPLATE.md) and [deck generator](skills/flashcards-deck-generator/README.md). One file represents a deck; `## card: id` provides a stable unique key shared by BG/EN. Both `question` and `coding_task` cards support Markdown question details and answers, tables and highlighted fenced code. Task statements and source metadata are available before revealing the answer.
+Use the [import template](docs/FLASHCARDS-IMPORT-TEMPLATE.md) and [deck generator](skills/flashcards-deck-generator/README.md). One file represents a deck; `## card: id` provides a stable unique key shared by requested-language. Both `question` and `coding_task` cards support Markdown question details and answers, tables and highlighted fenced code. Task statements and source metadata are available before revealing the answer.
 
-Required v3 card metadata: `cardType`, `topic`, `occurrenceCount`, `provenance`. Optional: integer 1?5 `interviewPriority` and `difficulty`, and `answerReferences`. Each supplied language needs `question` and `answer`; coding tasks also need `questionDetails`. Metadata is stored as JSON and preserved through import, reimport, editing, study and JSON backup export. Apply `0005_v3.sql` to local D1 with `npm run db:local` before using v3. It adds nullable storage without rewriting existing cards.
+Required v4 card metadata: `cardType`, `topic`, `provenance`. Optional: integer 1?5 `interviewPriority` and `difficulty`, and `answerReferences`. Each supplied language needs a nonempty `question`; `answer` may be omitted or empty; coding tasks also need `questionDetails`. Metadata is stored as JSON and preserved through import, reimport, editing, study and JSON backup export. Apply all migrations only to disposable test storage during development; see the v4 specification for production recovery prerequisites.
 
 Provenance sources establish origin/adaptation. Optional `occurrenceId` marks evidence of a documented interview; multiple sources for the same interview share one ID. `occurrenceCount` equals distinct interview IDs, never the number of URLs. Technical documentation does not establish interview occurrences. Answer references are separate technical verification links. The importer checks syntax and internal consistency; it cannot verify external evidence or detect reposts automatically.
 
-The card library filters by card type, topic, company, provenance, difficulty and priority. Legacy v1/v2 imports remain available for compatibility; legacy content is not automatically converted to v3. New decks should use v3. The manual card editor supports independently authored generated cards with type, topic and question details; use Markdown import to author provenance sources and answer references. Existing metadata is preserved on manual edits. A v3 import into a legacy deck requires deliberate replacement or a new target deck.
+The card library filters by card type, topic, company, provenance, difficulty and priority. Only v3/v4 files are accepted; previously imported decks remain usable; legacy decks retain canonical content after cleanup. New decks should use v4. The manual card editor supports independently authored generated cards with type, topic and question details; use Markdown import to author provenance sources and answer references. Existing metadata is preserved on manual edits. A v3 import into a legacy deck requires deliberate replacement or a new target deck.
 
 ## Study controls
 
@@ -88,6 +88,9 @@ No existing card content is migrated. See the [reload runbook](docs/FLASHCARDS-V
 
 Pre-v3 active sessions must be restarted; card content and saved progress are not converted or deleted.
 
-Browser regression checks: `npm run test:e2e` uses Microsoft Edge and isolated local D1 at `.wrangler/v3-e2e`, with a test-only access code. It checks real import, Study UI, keyboard controls and 320/375px layouts.
+Browser regression checks: `npm run test:e2e` uses Microsoft Edge and isolated local D1 in a fresh `.wrangler/v4-e2e-<timestamp>` directory per run, with a test-only access code. It checks real import, Study UI, keyboard controls and 320/375px layouts.
 
 See the [verification and acceptance matrix](docs/FLASHCARDS-V3-VERIFICATION.md) and [read-only production impact inventory](docs/FLASHCARDS-V3-IMPACT.md).
+
+
+Current contract: author v4; v3 remains import-compatible, v1/v2 and missing versions are rejected. Do not author occurrenceCount; responses derive distinct evidenced occurrence IDs. Use requested canonical BCP 47 content languages. Put examples/explanations/code inside answer. The app accepts omitted/empty answers; requests for complete educational flashcards still require technically complete answers. See docs/FLASHCARDS-V4-SPECIFICATION.md and the current import template.

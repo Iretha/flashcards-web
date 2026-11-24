@@ -2,9 +2,9 @@
 import { buildChatGptPrompt } from '../lib/chatgpt';
 import { aiProviders, buildAiUrl } from '../lib/ai-providers';
 
-export default function AskChatGpt({ question, language, instructions }: { question: string; language: Language; instructions?: string }) {
+export default function AskChatGpt({ question, questionDetails, language, instructions }: { question: string; questionDetails?: string; language: Language; instructions?: string }) {
   const label = language === 'bg' ? 'Попитай ChatGPT за този въпрос' : 'Ask ChatGPT about this question';
-  const prompt = buildChatGptPrompt(question, language, instructions);
+  const prompt = buildChatGptPrompt(question, language, instructions, questionDetails);
   return <span className="ai-providers">{aiProviders.map(provider => <a key={provider.id} className="ask-chatgpt" href={buildAiUrl(provider.id, prompt)}
     target="_blank" rel="noopener noreferrer" aria-label={provider.id === 'chatgpt' ? label : `Ask ${provider.name} about this question`} title={provider.name}
     onClick={event => event.stopPropagation()} onKeyDown={event => event.stopPropagation()}>

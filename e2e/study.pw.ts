@@ -99,7 +99,7 @@ test('studies an answerless imported card with a visual placeholder and AI links
   await page.getByLabel('Access code').fill('v3-e2e');
   await page.getByRole('button', {name:'Sign in', exact:true}).click();
   await page.getByRole('button', {name:'Import Markdown', exact:true}).click();
-  const source = '---\nformatVersion: 2\ntitle: Answerless study\nprimaryLanguage: en\n---\n## card: empty\n### en\n#### question\nWhat is happens-before?';
+  const source = '---\nformatVersion: 4\ntitle: Answerless study\nprimaryLanguage: en\n---\n## card: empty\n### cardType: question\n### topic: Java\n### provenance\ntype: generated\nsources: []\n### en\n#### question\nWhat is happens-before?';
   await page.getByLabel('Markdown files').setInputFiles({name:'empty.md',mimeType:'text/markdown',buffer:Buffer.from(source)});
   await page.getByRole('button', {name:'Preview import',exact:true}).click();
   await expect(page.getByText('0 invalid',{exact:false})).toBeVisible();

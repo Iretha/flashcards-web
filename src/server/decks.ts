@@ -1,12 +1,11 @@
 import { indexCards } from '../lib/search';
 import { editAccess, permissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
-import { validateMetadata } from '../lib/metadata';
+import { validateMetadata, derivedMetadata, metadataForStorage } from '../lib/metadata';
 import { MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR } from '../lib/import-limits';
 import type { CardMetadata } from '../lib/metadata';
 import { parseMarkdown, questionKey } from '../lib/markdown';
-import type { ImportCard } from '../lib/markdown';
-import { isLanguage, sections } from '../lib/translations';
+import { isLanguage } from '../lib/translations';
 import type { Translations } from '../lib/translations';
 import { planImport, uniqueQuestions } from './import-plan';
 import type { ImportTarget } from './import-plan';
@@ -20,11 +19,10 @@ export interface Deck {
   visibility: 'PRIVATE' | 'SHARED'; revision: number;
   third_party_access?: import('./third-party-access').ThirdPartyAccess;
 }
-export interface Card extends ImportCard, ImportTarget {
+export interface Card extends ImportTarget {
   deck_id: string; position: number; status: 'LEARNED' | 'UNLEARNED';
   times_shown: number; times_failed: number; times_learned: number;
   last_shown_at: number | null; last_learned_at: number | null;
-  simple_opens: number; example_opens: number; details_opens: number;
 }
 
 export async function getDeck(db: D1Database, user: string, id: string, write = false) {
@@ -56,7 +54,7 @@ export function decodeDeck<T extends Deck>(deck: T): T {
 type CardRow = Omit<Card, 'translations' | 'metadata'> & { translations: string; metadata: string | null };
 
 function decodeCard(card: CardRow): Card {
-  return { ...card, translations: JSON.parse(card.translations) as Translations, metadata: card.metadata ? JSON.parse(card.metadata) as CardMetadata : null };
+  return { ...card, translations: JSON.parse(card.translations) as Translations, metadata: derivedMetadata(card.metadata ? JSON.parse(card.metadata) as CardMetadata : null) };
 }
 
 export async function deckWithCards(db: D1Database, user: string, id: string, cardId?: string) {
@@ -73,32 +71,28 @@ function cardsForDeck(db: D1Database, user: string, deck: string, cardId?: strin
   const args = cardId ? [user, deck, user, cardId] : [user, deck, user];
   return db.prepare(`SELECT c.*, coalesce(p.status, 'UNLEARNED') AS status,
     coalesce(p.times_shown, 0) AS times_shown, coalesce(p.times_failed, 0) AS times_failed,
-    coalesce(p.times_learned, 0) AS times_learned, p.last_shown_at, p.last_learned_at,
-    coalesce(p.simple_opens, 0) AS simple_opens, coalesce(p.example_opens, 0) AS example_opens,
-    coalesce(p.details_opens, 0) AS details_opens
+    coalesce(p.times_learned, 0) AS times_learned, p.last_shown_at, p.last_learned_at
     FROM cards c JOIN decks d ON d.id = c.deck_id
     LEFT JOIN card_progress p ON p.card_id = c.id AND p.user_id = ?
     WHERE c.deck_id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?3))
       ${cardId ? 'AND c.id = ?' : ''} ORDER BY c.position, c.id`).bind(...args);
 }
 
-function readTranslations(input: unknown): Translations {
+function readTranslations(input: unknown, current: Translations = {}): Translations {
   const fields = object(input);
   check(Object.keys(fields).every(isLanguage), 'Use canonical BCP 47 language codes.');
   const translations: Translations = {};
   for (const language of Object.keys(fields)) {
     const entry = object(fields[language]);
+    check(Object.keys(entry).every(key => ['question', 'answer', 'questionDetails'].includes(key)), 'Unsupported translation field.');
     function markdown(field: string, max: number, optional = false) {
       const value = entry[field] ?? '';
       check(typeof value === 'string', 'Invalid ' + field + '.');
       return string(value, field, max, optional) ? value : '';
     }
-    const translation = { question: markdown('question', 2000), answer: markdown('answer', 20000, true) };
-    const extras = Object.fromEntries((['questionDetails', ...sections] as const).flatMap(section => {
-      const value = markdown(section, 20000, true);
-      return value ? [[section, value]] : [];
-    }));
-    translations[language] = { ...translation, ...extras };
+    const translation = { question: entry.question === undefined && current[language] ? current[language].question : markdown('question', 2000), answer: entry.answer === undefined ? current[language]?.answer ?? '' : markdown('answer', 20000, true) };
+    const questionDetails = entry.questionDetails === undefined ? current[language]?.questionDetails : markdown('questionDetails', 20000, true);
+    translations[language] = { ...translation, ...(questionDetails === undefined ? {} : { questionDetails }) };
   }
   return translations;
 }
@@ -141,7 +135,7 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
   return { id };
 }
 
-export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>, thirdParty = false, idempotency?: { key: string; payload: string }) {
+export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>, thirdParty = false, idempotency?: { key: string; payload: string }): Promise<{ id?: string; answer?: string }> {
   const deck = await getDeck(db, user, deckId, true);
   if (thirdParty) check(deck.third_party_access === 'READ_WRITE', 'Card not available.', 404);
   const now = Date.now();
@@ -164,13 +158,13 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       check(current, 'Card not available.', 404);
       const language = input.language === undefined ? current.primary_language : string(input.language, 'language', 64);
       check(Object.hasOwn(current.translations, language), 'Translation does not exist.');
-      const answer = string(input.answer, 'answer', 20000);
+      const answer = input.answer === undefined ? current.translations[language].answer : string(input.answer, 'answer', 20000, true);
       translations = { ...current.translations, [language]: { ...current.translations[language], answer } };
     } else if (input.translations !== undefined) {
-      translations = { ...current?.translations, ...readTranslations(input.translations) };
+      translations = { ...current?.translations, ...readTranslations(input.translations, current?.translations) };
     } else {
       const question = string(input.question, 'question', 2000);
-      const answer = string(input.answer ?? '', 'answer', 20000, true);
+      const answer = string(input.answer ?? current?.translations[deck.primaryLanguage ?? current.primary_language]?.answer ?? '', 'answer', 20000, true);
       const language = deck.primaryLanguage ?? current?.primary_language;
       check(language, 'Resolve the deck primary language before adding cards.');
       translations = { ...current?.translations, [language]: { ...current?.translations[language], question, answer } };
@@ -197,7 +191,7 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       .bind(user, idempotency.key, idempotency.payload, id, now, deckId, mutation)] : [];
     const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next]), ...receipt]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
-    return { id };
+    return { id, ...(method === 'answer' ? { answer: translations[String(input.language ?? current!.primary_language)].answer } : {}) };
   }
   const mutation = crypto.randomUUID();
   const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ? WHERE id = ?
@@ -250,17 +244,16 @@ export async function inspectImport(db: D1Database, user: string, input: Record<
 export function writeCards(db: D1Database, deck: string, mutation: string, now: number, cards: ImportTarget[], insertOnly = false) {
   const values = cards.map((card, position) => {
     const content = card.translations[card.primary_language]!;
-    return { ...card, ...content, position, questionKey: questionKey(content.question) };
+    return { ...card, metadata: metadataForStorage(card.metadata), position, questionKey: questionKey(content.question) };
   });
-  const write = db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, question, answer, position,
+  const write = db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, position,
     created_at, updated_at, import_key, primary_language, translations, interview_priority, difficulty, metadata)
-    SELECT value ->> 'id', ?, value ->> 'id', value ->> 'questionKey', value ->> 'question', value ->> 'answer',
+    SELECT value ->> 'id', ?, value ->> 'id', value ->> 'questionKey',
       (SELECT coalesce(max(position), -1) + 1 FROM cards WHERE deck_id = ?) + (value ->> 'position'),
       ?, ?, value ->> 'import_key', value ->> 'primary_language', value -> 'translations',
       value ->> 'interview_priority', value ->> 'difficulty', CASE WHEN json_type(value, '$.metadata') = 'object' THEN value -> 'metadata' ELSE NULL END
     FROM json_each(?) WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)
-    ${insertOnly ? '' : `ON CONFLICT(id) DO UPDATE SET question_key = excluded.question_key, question = excluded.question,
-      answer = excluded.answer, updated_at = excluded.updated_at, import_key = excluded.import_key,
+    ${insertOnly ? '' : `ON CONFLICT(id) DO UPDATE SET question_key = excluded.question_key, updated_at = excluded.updated_at, import_key = excluded.import_key,
       primary_language = excluded.primary_language, translations = excluded.translations,
       interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata`}`)
     .bind(deck, deck, now, now, JSON.stringify(values), deck, mutation);
@@ -278,7 +271,7 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
   if (input.replace === true) check(input.confirmReplacement === deck?.id, 'Confirm replacement with the exact target deck ID.');
   const { rows, changed, cards } = planImport(parsed, input.replace === true ? [] : existing, links, updates);
   for (const row of rows) {
-    if (parsed.version === 3 || input.replace === true) check(row.kind !== 'invalid', row.message ?? 'Invalid v3 card.');
+    if (parsed.version >= 3 || input.replace === true) check(row.kind !== 'invalid', row.message ?? 'Invalid v3 card.');
     check(row.kind !== 'link', 'Resolve how each card matches the existing deck.');
     if (row.kind === 'conflict') check(['keep', 'update'].includes(String(updates[row.index])), 'Resolve every content conflict.');
   }
@@ -327,8 +320,8 @@ export async function replacementImpact(db: D1Database, deck: string) {
 export function primaryLanguageStatements(db: D1Database, id: string, mutation: string, language: string, changed: boolean, cards: Card[]) {
   return changed ? cards.map(card => {
     const content = card.translations[language];
-    return db.prepare(`UPDATE cards SET primary_language = ?, question = ?, answer = ?, question_key = ?
+    return db.prepare(`UPDATE cards SET primary_language = ?, question_key = ?
       WHERE id = ? AND deck_id = ? AND EXISTS (SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
-      .bind(language, content.question, content.answer, questionKey(content.question), card.id, id, id, mutation);
+      .bind(language, questionKey(content.question), card.id, id, id, mutation);
   }) : [];
 }

@@ -1,11 +1,11 @@
-import { isLanguage, isSection, validTranslation } from './translations';
+import { isLanguage, validTranslation } from './translations';
 import type { CardMetadata } from './metadata';
-import type { Language, Translation, Translations } from './translations';
+import type { Language, Translation } from './translations';
 
-export interface BilingualDraft {
+export interface ImportDraft {
   key: string;
   metadata?: CardMetadata;
-  translations: Translations;
+  translations: Record<string, Omit<Translation, 'answer'> & { answer?: string }>;
   interviewPriority?: number;
   difficulty?: number;
   error?: string;
@@ -17,9 +17,9 @@ function endsCard(lines: string[], index: number) {
   return next === lines.length || /^ {0,3}##\s+card:/.test(lines[next]);
 }
 
-export function parseBilingual(lines: string[]): BilingualDraft[] {
-  const cards: BilingualDraft[] = [];
-  let card: BilingualDraft | undefined;
+export function parseLanguages(lines: string[]): ImportDraft[] {
+  const cards: ImportDraft[] = [];
+  let card: ImportDraft | undefined;
   let language: Language | undefined;
   let field: keyof Translation | undefined;
   let text: string[] = [];
@@ -43,7 +43,7 @@ export function parseBilingual(lines: string[]): BilingualDraft[] {
     saveField();
     if (card) {
       if (!Object.keys(card.translations).length ||
-        Object.values(card.translations).some(value => !validTranslation(value))) {
+        Object.values(card.translations).some(value => !validTranslation({ ...value, answer: value.answer ?? '' }))) {
         card.error ??= 'Each language needs a question and fields within the field limits.';
       }
       cards.push(card);
@@ -79,8 +79,8 @@ export function parseBilingual(lines: string[]): BilingualDraft[] {
       saveField();
       language = label;
       if (card.translations[language]) card.error = 'A language heading appears more than once.';
-      card.translations[language] ??= { question: '', answer: '' };
-    } else if (card && language && header?.[1] === '####' && (label === 'question' || label === 'answer' || label === 'questionDetails' || isSection(label))) {
+      card.translations[language] ??= { question: '' };
+    } else if (card && language && header?.[1] === '####' && (label === 'question' || label === 'answer' || label === 'questionDetails')) {
       saveField();
       field = label;
       const key = language + ':' + field;

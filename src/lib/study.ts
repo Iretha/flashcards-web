@@ -1,11 +1,11 @@
 import { startCycles, toggleRepeat, nextCycleCard, previousCycleCard } from './study-cycles';
 import type { CycleState } from './study-cycles';
-import type { Language, Section } from './translations';
+import type { Language } from './translations';
 
 export type Ordering = 'SEQUENTIAL' | 'RANDOM';
 export interface Settings { order: Ordering; timer: boolean; seconds: number; onlyUnlearned: boolean; language: Language; answersOpen?: boolean }
 export const defaults: Settings = { order: 'SEQUENTIAL', timer: false, seconds: 30, onlyUnlearned: false, language: 'en', answersOpen: false };
-export interface QueueCard { id: string; failed: number; visits: number }
+export interface QueueCard { id: string }
 export interface StudyState {
   cycles?: CycleState;
   queue: QueueCard[];
@@ -18,15 +18,14 @@ export interface StudyState {
   deadline: number | null;
   remainingMs: number | null;
   language?: Language;
-  explanation?: Section | null;
   historyRevealed?: boolean;
 }
-export type StudyAction = 'show' | 'learn' | 'repeat' | 'next' | 'previous' | 'forward' | 'timeout' | 'pause' | 'resume' | 'language' | 'explanation';
+export type StudyAction = 'show' | 'learn' | 'repeat' | 'next' | 'previous' | 'forward' | 'timeout' | 'pause' | 'resume' | 'language';
 export type Outcome = 'LEARNED' | 'REPEAT' | 'TIMEOUT' | 'NEXT';
 
 export function startStudy(queue: QueueCard[], settings: Settings, now: number, random = Math.random) {
   const state: StudyState = {
-    queue: queue.map(card => ({ ...card })), history: [], cursor: -1, current: null,
+    queue: queue.map(card => ({ id: card.id })), history: [], cursor: -1, current: null,
     deadline: null, remainingMs: null, revealed: settings.answersOpen ?? false, language: settings.language,
     answersOpen: settings.answersOpen ?? false, answerOverrides: {},
   };
@@ -76,7 +75,7 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
     state.current = state.cycles.complete ? null : state.history[state.cursor] ?? null;
     if (moved) {
       state.revealed = state.current ? state.answerOverrides?.[state.current] ?? state.answersOpen ?? false : false;
-      state.historyRevealed = state.revealed; state.explanation = null;
+      state.historyRevealed = state.revealed;
       state.remainingMs = null;
       state.deadline = state.current && settings.timer && !state.revealed ? now + settings.seconds * 1000 : null;
       if (state.history.length > cycles.history.length) shown = state.current;
@@ -86,4 +85,10 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
   }
   // Pre-v3 sessions are exposed as invalidated by the API and must be restarted.
   return { state, outcome, shown };
+}
+
+/** Drop retired extras while preserving valid cycle/history/progress state. */
+export function normalizeStudyState(value: StudyState & { explanation?: unknown }): StudyState {
+  const { explanation: _retired, ...state } = value;
+  return { ...state, queue: state.queue.map(card => ({ id: card.id })) };
 }

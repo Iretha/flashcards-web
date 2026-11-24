@@ -1,8 +1,6 @@
 export const languages = ['bg', 'en'] as const;
 export type Language = string;
-export const sections = ['simple', 'example', 'details'] as const;
-export type Section = typeof sections[number];
-export type Translation = { question: string; answer: string; questionDetails?: string } & Partial<Record<Section, string>>;
+export type Translation = { question: string; answer: string; questionDetails?: string };
 export type Translations = Record<Language, Translation>;
 
 export const studyControlLabels = {
@@ -36,14 +34,6 @@ export function isLanguage(value: unknown): value is Language {
   try { return Intl.getCanonicalLocales(value)[0] === value; } catch { return false; }
 }
 
-export function isSection(value: unknown): value is Section {
-  return sections.some(section => section === value);
-}
-
-export function legacyLanguage(question: string): Language {
-  return /[А-Яа-я]/u.test(question) ? 'bg' : 'en';
-}
-
 export function completeTranslation(value: Translation | undefined, cardType?: string): value is Translation {
   return Boolean(value && validTranslation(value) && (cardType !== 'coding_task' || value.questionDetails?.trim()));
 }
@@ -52,11 +42,6 @@ export function selectTranslation(translations: Translations, preferred: Languag
   const language = completeTranslation(translations[preferred], cardType) ? preferred : primary;
   const translation = completeTranslation(translations[language], cardType) ? translations[language] : undefined;
   return { language, translation, fallback: language !== preferred };
-}
-
-export function selectExplanation(translations: Translations, language: Language, section: Section, primary: string = language === 'en' ? 'bg' : 'en') {
-  const content = translations[language]?.[section];
-  return content ? { language, content } : { language: primary, content: translations[primary]?.[section] };
 }
 
 export function primaryLanguageFirst(languages: string[], primary?: string | null) {
@@ -74,5 +59,5 @@ export function reconcileLanguage(preferred: string, available: string[]) {
 
 export function validTranslation(value: Translation) {
   return Boolean(value && typeof value.question === 'string' && typeof value.answer === 'string' && value.question.trim() && value.question.length <= 2000 &&
-    value.answer.length <= 20000 && (value.questionDetails === undefined || (typeof value.questionDetails === 'string' && value.questionDetails.length <= 20000)) && sections.every(section => value[section] === undefined || (typeof value[section] === 'string' && value[section].length <= 20000)));
+    value.answer.length <= 20000 && (value.questionDetails === undefined || (typeof value.questionDetails === 'string' && value.questionDetails.length <= 20000)));
 }

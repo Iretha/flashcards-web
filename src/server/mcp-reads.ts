@@ -1,3 +1,4 @@
+import { derivedMetadata } from '../lib/metadata';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { thirdPartyAccessSql } from './third-party-access';
@@ -108,8 +109,8 @@ export async function readMcp(db: D1Database, user: string, tool: ToolName, raw:
       const resolved = translations[preferred] ? preferred : String(row.primary_language);
       if (!all && !translations[resolved]) throw new McpReadError('UNAVAILABLE');
       item = { deck_id: row.deck_id, card_id: row.id, resolved_language: all ? null : resolved, fallback_used: all ? false : resolved !== preferred };
-      const project = (t: Record<string, string>) => Object.fromEntries(['question','answer','questionDetails','simple','example','details'].filter(k => typeof t[k] === 'string').map(k => [k,t[k]]));
-      if (single) Object.assign(item, all ? { translations: Object.fromEntries(Object.entries(translations).map(([l,t]) => [l,project(t)])) } : project(translations[resolved]), { metadata: row.metadata ? JSON.parse(String(row.metadata)) : null, interview_priority: row.interview_priority, difficulty: row.difficulty });
+      const project = (t: Record<string, string>) => Object.fromEntries(['question','answer','questionDetails'].filter(k => typeof t[k] === 'string').map(k => [k,t[k]]));
+      if (single) Object.assign(item, all ? { translations: Object.fromEntries(Object.entries(translations).map(([l,t]) => [l,project(t)])) } : project(translations[resolved]), { metadata: derivedMetadata(row.metadata ? JSON.parse(String(row.metadata)) : null), interview_priority: row.interview_priority, difficulty: row.difficulty });
       else Object.assign(item, all ? { questions: Object.fromEntries(Object.entries(translations).map(([l,t]) => [l,t.question])) } : { question: translations[resolved].question });
     }
     if (matches.length < maximum) toolResult(single ? { item } : { items: [...matches.map(m => m.item), item], next_after: null });

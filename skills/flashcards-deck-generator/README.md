@@ -18,9 +18,9 @@ sourced и mixed примери и процедурата за проверка.
 Skill-ът не е самостоятелна CLI програма; зареди инструкциите изрично, ако средата
 не открива skills автоматично.
 
-Markdown v3 се поддържа от приложението. Използвай
+Markdown v4 се поддържа от приложението. Използвай
 [template](../../docs/FLASHCARDS-IMPORT-TEMPLATE.md): стабилен `## card: id`,
-`cardType`, `topic`, `occurrenceCount`, `provenance` и поне един пълен BG/EN вариант.
+`cardType`, `topic`, `provenance` и поне един пълен requested-language вариант.
 Coding Task изисква `questionDetails`; решението и примерите са в `answer`.
 
 `provenance.sources` съдържа реални източници за произход или адаптация.
@@ -31,3 +31,6 @@ Coding Task изисква `questionDetails`; решението и пример
 Валидирай файла с parser-а и изпълни A/B/C review за всяка карта и език.
 Разграничавай синтактична валидация, технически self-review и независим review.
 Не импортирай и не пресъздавай тестета без възложена операция.
+
+
+Current contract: author v4; v3 remains import-compatible, v1/v2 and missing versions are rejected. Do not author occurrenceCount; responses derive distinct evidenced occurrence IDs. Use requested canonical BCP 47 content languages. Put examples/explanations/code inside answer. The app accepts omitted/empty answers; requests for complete educational flashcards still require technically complete answers. See docs/FLASHCARDS-V4-SPECIFICATION.md and the current import template.

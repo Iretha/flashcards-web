@@ -8,7 +8,7 @@ import { HttpError } from './http';
 export const createCardSchema = z.object({
   deck_id: z.string().min(1).max(80),
   question: z.string().trim().min(1).max(2000),
-  answer: z.string().trim().min(1).max(20000),
+  answer: z.string().max(20000).optional(),
   idempotency_key: z.string().min(1).max(200).optional(),
   language: z.string().min(1).max(64).optional(),
 }).strict();
@@ -17,7 +17,7 @@ export async function createMcpCard(db: D1Database, user: string, raw: unknown) 
   if (!parsed.success) throw new Error('INVALID_ARGUMENTS');
   const { deck_id, question, answer, language, idempotency_key } = parsed.data;
   // Canonical validated request: omitted language remains distinct from an explicit language.
-  const payload = JSON.stringify([deck_id, question, answer, language ?? null]);
+  const payload = JSON.stringify([deck_id, question, answer ?? '', language ?? null]);
   async function replay() {
     if (!idempotency_key) return null;
     const allowed = await db.prepare(`SELECT id FROM decks WHERE id = ?1 AND ${thirdPartyAccessSql(2, 'write')}`).bind(deck_id, user).first();
@@ -32,7 +32,7 @@ export async function createMcpCard(db: D1Database, user: string, raw: unknown) 
   if (previous) return previous;
   try {
     const result = await changeCard(db, user, deck_id, { method: 'save', question, answer,
-      ...(language ? { translations: { [language]: { question, answer } } } : {}) }, true, idempotency_key ? { key: idempotency_key, payload } : undefined);
+      ...(language ? { translations: { [language]: { question, answer: answer ?? '' } } } : {}) }, true, idempotency_key ? { key: idempotency_key, payload } : undefined);
     return { card_id: result.id!, status: 'created' };
   } catch (error) {
     const committed = await replay();
@@ -42,7 +42,7 @@ export async function createMcpCard(db: D1Database, user: string, raw: unknown) 
 }
 export const updateCardSchema = z.object({
   card_id: z.string().min(1).max(80),
-  answer: z.string().trim().min(1).max(20000),
+  answer: z.string().max(20000).optional(),
   language: z.string().min(1).max(64).optional(),
 }).strict();
 
@@ -56,20 +56,20 @@ export async function updateMcpCard(db: D1Database, user: string, raw: unknown) 
       .first<{ deck_id: string; primary_language: string }>();
     if (!card) throw new Error('UNAVAILABLE');
     const selected = language ?? card.primary_language;
-    await changeCard(db, user, card.deck_id, { method: 'answer', id: card_id, answer, language: selected }, true);
-    return { card_id, language: selected, answer, status: 'updated' };
+    const result = await changeCard(db, user, card.deck_id, { method: 'answer', id: card_id, answer, language: selected }, true);
+    return { card_id, language: selected, answer: result.answer, status: 'updated' };
   } catch (error) {
     throw new Error(error instanceof HttpError && error.status === 400 ? 'INVALID_ARGUMENTS'
       : error instanceof HttpError && error.status === 409 ? 'CONFLICT' : 'UNAVAILABLE');
   }
 }
 export function registerMcpWrites(server: McpServer, db: D1Database, user: string) {
-  server.registerTool('update_card', { description: 'Update only the answer of an existing card translation.',
+  server.registerTool('update_card', { description: 'Update the canonical answer. Omission preserves the answer; empty clears it.',
     inputSchema: updateCardSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: true } }, async args => {
     try { return toolResult(await updateMcpCard(db, user, args)); }
     catch (error) { return { isError: true, content: [{ type: 'text' as const, text: error instanceof Error && ['INVALID_ARGUMENTS', 'CONFLICT'].includes(error.message) ? error.message : 'UNAVAILABLE' }] }; }
   });
-  server.registerTool('create_card', { description: 'Create a card in an authorized deck. Primary language content is required.',
+  server.registerTool('create_card', { description: 'Create a card in an authorized deck. Primary language question is required; missing/empty answer is accepted.',
     inputSchema: createCardSchema, annotations: { readOnlyHint: false, destructiveHint: false, idempotentHint: false } }, async args => {
     try { return toolResult(await createMcpCard(db, user, args)); }
     catch (error) { return { isError: true, content: [{ type: 'text' as const, text: error instanceof Error && ['INVALID_ARGUMENTS', 'CONFLICT'].includes(error.message) ? error.message : 'UNAVAILABLE' }] }; }

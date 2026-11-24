@@ -73,6 +73,10 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
             <p>Target: {file.title}</p>
             <p>{count('new')} new cards · {preview.existing} existing cards · {count('translation')} additional translations · {preview.rows.filter(row => file.choices[row.index] === 'update').length} translation updates · {count('metadata')} metadata updates · {count('duplicate')} duplicates · {count('conflict')} conflicts · {count('invalid')} invalid</p>
             {preview.rows.filter(row => row.metadata).filter((row, index, all) => all.findIndex(other => other.key === row.key) === index).map(row => <div key={'metadata-' + row.index}>{row.metadata && <CardSources metadata={row.metadata} />}</div>)}
+            {preview.rows.filter(row => row.answerOperation).map(row => <details key={'answer-' + row.index}>
+              <summary>{row.language?.toUpperCase()} / {row.question} / Answer: {row.answerOperation}</summary>
+              <pre>{row.incoming?.answer || '(empty answer)'}</pre>
+            </details>)}
             {preview.rows.filter(row => row.kind === 'invalid').map(row => <p key={row.index}>Invalid card {Number(row.index) + 1}: {row.question || row.key || '(empty question)'} {row.message}</p>)}
             {preview.rows.filter(row => row.kind === 'link').map(row => <fieldset className="stack" key={row.index}>
               <legend>{row.key} · {row.question}</legend>

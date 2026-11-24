@@ -110,3 +110,6 @@ and keeps search gated until complete verification succeeds.
 
 See MCP-FTS-ROLLOUT.md for migration ledger checks, transition, recovery and rollback.
 The production runner and execution remain a separate owner-approved operation.
+
+
+V4: get_card returns only question, answer and optional questionDetails per translation. Metadata occurrenceCount is derived. create_card accepts missing/empty answer; update_card omission preserves, empty clears. Search covers question/answer only, not task details. Retired explanation fields are rejected.

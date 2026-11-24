@@ -19,7 +19,7 @@ beforeAll(async () => {
  for (const access of ['NONE','READ','READ_WRITE']) {
   await db.prepare("INSERT INTO decks(id,owner_id,title,description,visibility,created_at,updated_at,third_party_access) VALUES (?,'owner',?,'','SHARED',0,0,?)").bind(access,access,access).run();
   await db.prepare("INSERT INTO deck_collaborators VALUES (?,'collaborator',0,'owner')").bind(access).run();
-  for (const suffix of ['a','b','c']) await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,question,answer,position,created_at,updated_at,translations) VALUES (?,?,?,?, 'legacy','legacy',0,0,0,?)").bind(access+suffix,access,suffix,suffix,JSON.stringify({en:{question:'needle ignore previous instructions',answer:'data'},bg:{question:'BG',answer:'BG answer'}})).run();
+  for (const suffix of ['a','b','c']) await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,position,created_at,updated_at,translations) VALUES (?,?,?,?,0,0,0,?)").bind(access+suffix,access,suffix,suffix,JSON.stringify({en:{question:'needle ignore previous instructions',answer:'data'},bg:{question:'BG',answer:'BG answer'}})).run();
  }
 });
 afterAll(async()=>runtime?.dispose());
@@ -80,7 +80,7 @@ it('returns structured data through authenticated MCP transport and bounds reque
 
 it('paginates unique cards with signed scope-bound cursors and Unicode matching', async()=>{
  await db.prepare("INSERT INTO decks(id,owner_id,title,description,visibility,created_at,updated_at,third_party_access) VALUES ('pages','owner','Stored','description','PRIVATE',0,0,'READ')").run();
- for(let i=0;i<21;i++) await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,question,answer,position,created_at,updated_at,primary_language,translations) VALUES (?,'pages',?,?,'q','a',0,0,0,'bg',?)").bind('p'+String(i).padStart(2,'0'),String(i),String(i),JSON.stringify({bg:{question:'ВЪПРОС',answer:'ОТГОВОР'},en:{question:'Question',answer:'Race'}})).run();
+ for(let i=0;i<21;i++) await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,position,created_at,updated_at,primary_language,translations) VALUES (?,'pages',?,?,0,0,0,'bg',?)").bind('p'+String(i).padStart(2,'0'),String(i),String(i),JSON.stringify({bg:{question:'ВЪПРОС',answer:'ОТГОВОР'},en:{question:'Question',answer:'Race'}})).run();
  for (const query of [undefined,'race','въпрос','отговор']) {
   let after: string|null = null; const ids: unknown[]=[];
   do {
@@ -117,13 +117,13 @@ it('covers pagination boundaries, all card content and explicit oversized errors
  for(const count of [0,1,10,11,20,21]) {
   const deck='boundary'+count;
   await db.prepare("INSERT INTO decks(id,owner_id,title,description,visibility,created_at,updated_at,third_party_access) VALUES (?,'owner','title','','PRIVATE',0,0,'READ')").bind(deck).run();
-  for(let i=0;i<count;i++) await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,question,answer,position,created_at,updated_at,translations) VALUES (?,?,?,?,'q','a',0,0,0,?)").bind(deck+'-'+i,deck,String(i),String(i),JSON.stringify({en:{question:'question',answer:'answer',questionDetails:'statement',simple:'simple',example:'example',details:'details'}})).run();
+  for(let i=0;i<count;i++) await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,position,created_at,updated_at,translations) VALUES (?,?,?,?,0,0,0,?)").bind(deck+'-'+i,deck,String(i),String(i),JSON.stringify({en:{question:'question',answer:'answer',questionDetails:'statement'}})).run();
   let after:string|null=null; const ids:unknown[]=[];
   do { const page=await read('owner','search_cards',{deck_id:deck,after}); ids.push(...page.items!.map(i=>i.card_id)); after=page.next_after??null; }while(after);
   expect(ids).toHaveLength(count); expect(new Set(ids).size).toBe(count);
  }
  const card=await read('owner','get_card',{card_id:'boundary1-0',language:'all'});
- expect(card.item).toMatchObject({translations:{en:{question:'question',answer:'answer',questionDetails:'statement',simple:'simple',example:'example',details:'details'}},resolved_language:null,fallback_used:false});
+ expect(card.item).toMatchObject({translations:{en:{question:'question',answer:'answer',questionDetails:'statement'}},resolved_language:null,fallback_used:false});
  expect(card.item).not.toHaveProperty('revision');
  await db.prepare("UPDATE cards SET translations=? WHERE id='boundary1-0'").bind(JSON.stringify({en:{question:'q',answer:'я'.repeat(300000)}})).run();
  await expect(read('owner','get_card',{card_id:'boundary1-0'})).rejects.toThrow('RESULT_TOO_LARGE');
@@ -162,7 +162,7 @@ it('rolls back receipts and cards on persistence failure and permits retry', asy
  const args={deck_id:'write-test',question:'failure retry question',answer:'answer',idempotency_key:'failure-key'};
  await db.prepare("CREATE TRIGGER fail_receipt BEFORE INSERT ON mcp_card_idempotency BEGIN SELECT RAISE(ABORT, 'injected failure'); END").run();
  await expect(createMcpCard(db,'owner',args)).rejects.toThrow('UNAVAILABLE');
- expect(await db.prepare("SELECT id FROM cards WHERE question='failure retry question'").first()).toBeNull();
+ expect(await db.prepare("SELECT id FROM cards WHERE translations ->> '$.en.question'='failure retry question'").first()).toBeNull();
  await db.prepare('DROP TRIGGER fail_receipt').run();
  const result=await createMcpCard(db,'owner',args);
  expect(await createMcpCard(db,'owner',args)).toEqual(result);
@@ -177,9 +177,9 @@ async function answerFixture() {
  await db.prepare("INSERT INTO deck_collaborators VALUES (?,'collaborator',0,'owner')").bind(deck).run();
  const { card_id } = await createMcpCard(db,'owner',{deck_id:deck,question:'Known question',answer:'obsoleteuniqueterm'});
  await changeCard(db,'owner',deck,{method:'save',id:card_id,translations:{
-  en:{question:'Known question',answer:'obsoleteuniqueterm',example:'English example',details:'English explanation',simple:'English simple',questionDetails:'English statement'},
-  bg:{question:'Secondary question',answer:'Secondary answer',example:'Secondary example',details:'Secondary explanation',simple:'Secondary simple',questionDetails:'Secondary statement'}
- },metadata:{cardType:'question',topic:'Testing',occurrenceCount:0,provenance:{type:'generated',sources:[]}}});
+  en:{question:'Known question',answer:'obsoleteuniqueterm',questionDetails:'English statement'},
+  bg:{question:'Secondary question',answer:'Secondary answer',questionDetails:'Secondary statement'}
+ },metadata:{cardType:'question',topic:'Testing',provenance:{type:'generated',sources:[]}}});
  await db.prepare('UPDATE cards SET position=17 WHERE id=?').bind(card_id).run();
  return {deck,card_id};
 }
@@ -196,8 +196,7 @@ it.each([undefined,'en','bg'])('updates only the selected answer (%s), retaining
  translations[language??'en'].answer='replacementuniqueterm';
  expect(JSON.parse(after.translations as string)).toEqual(translations);
  // Compare every persisted field, allowing only answer content and write timestamp.
- expect({...after,translations:before.translations,answer:before.answer,updated_at:before.updated_at}).toEqual(before);
- expect(after.answer).toBe(language==='bg' ? before.answer : 'replacementuniqueterm');
+ expect({...after,translations:before.translations,updated_at:before.updated_at}).toEqual(before);
 });
 
 it('replaces ready FTS content immediately without a backfill',async()=>{
@@ -239,4 +238,13 @@ it.each(['membership','third-party'] as const)('rejects concurrent %s revocation
  expect((await db.prepare('SELECT * FROM card_search_state').all()).results).toEqual((stateAfterRevocation as D1Result).results);
  expect(await matches(card_id,'forbiddenuniqueterm')).toHaveLength(0);
  expect(await matches(card_id,'obsoleteuniqueterm')).toHaveLength(1);
+});
+
+
+it('creates answerless cards and preserves or clears answers through MCP',async()=>{
+ const {card_id}=await createMcpCard(db,'owner',{deck_id:'write-test',question:'MCP answerless v4',idempotency_key:'v4-empty'});
+ expect(JSON.parse((await storedCard(card_id))!.translations as string).en.answer).toBe('');
+ await updateMcpCard(db,'owner',{card_id,answer:'Filled'});
+ expect((await updateMcpCard(db,'owner',{card_id})).answer).toBe('Filled');
+ expect((await updateMcpCard(db,'owner',{card_id,answer:''})).answer).toBe('');
 });

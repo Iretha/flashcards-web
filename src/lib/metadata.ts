@@ -11,12 +11,12 @@ export interface ProvenanceSource {
 export interface CardMetadata {
   cardType: 'question' | 'coding_task';
   topic: string;
-  occurrenceCount: number;
+  readonly occurrenceCount: number;
   provenance: { type: 'sourced' | 'mixed' | 'generated'; sources: ProvenanceSource[] };
   answerReferences?: { title: string; url: string }[];
 }
 
-export function validateMetadata(input: unknown): CardMetadata {
+export function validateMetadata(input: unknown, legacyV3 = false): CardMetadata {
   const fail = (field: string, reason: string): never => { throw new Error(field + ': ' + reason); };
   const record = (value: unknown, field: string): Record<string, unknown> => {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return fail(field, 'expected an object');
@@ -40,7 +40,7 @@ export function validateMetadata(input: unknown): CardMetadata {
   keys(data, ['cardType', 'topic', 'occurrenceCount', 'provenance', 'answerReferences'], 'metadata');
   if (data.cardType !== 'question' && data.cardType !== 'coding_task') fail('cardType', 'expected question or coding_task');
   text(data.topic, 'topic');
-  if (!Number.isSafeInteger(data.occurrenceCount) || Number(data.occurrenceCount) < 0) fail('occurrenceCount', 'expected an integer >= 0');
+  if (legacyV3 && (!Number.isSafeInteger(data.occurrenceCount) || Number(data.occurrenceCount) < 0)) fail('occurrenceCount', 'expected an integer >= 0');
   const provenance = record(data.provenance, 'provenance');
   keys(provenance, ['type', 'sources'], 'provenance');
   if (provenance.type !== 'sourced' && provenance.type !== 'mixed' && provenance.type !== 'generated') fail('provenance.type', 'expected sourced, mixed or generated');
@@ -61,7 +61,9 @@ export function validateMetadata(input: unknown): CardMetadata {
     return source as unknown as ProvenanceSource;
   });
   if (provenance.type !== 'generated' && !normalized.length) fail('provenance.sources', 'sourced/mixed requires a verifiable source');
-  if (data.occurrenceCount !== evidence.size) fail('occurrenceCount', 'must equal distinct documented interview occurrenceId values, not source count');
+  if (!legacyV3 && data.occurrenceCount !== undefined) fail('occurrenceCount', 'derived automatically; omit from authored metadata');
+  if (!legacyV3 && provenance.type === 'generated' && evidence.size) fail('provenance', 'generated cards cannot claim interview occurrences');
+  if (legacyV3 && data.occurrenceCount !== evidence.size) fail('occurrenceCount', 'must equal distinct documented interview occurrenceId values, not source count');
   if (data.answerReferences !== undefined) {
     if (!Array.isArray(data.answerReferences)) fail('answerReferences', 'expected a list');
     (data.answerReferences as unknown[]).forEach((value, index) => {
@@ -70,5 +72,19 @@ export function validateMetadata(input: unknown): CardMetadata {
       text(ref.title, `answerReferences[${index}].title`); url(ref.url, `answerReferences[${index}].url`);
     });
   }
-  return { ...data, provenance: { ...provenance, sources: normalized } } as unknown as CardMetadata;
+  return { ...data, occurrenceCount: countOccurrences(normalized), provenance: { ...provenance, sources: normalized } } as unknown as CardMetadata;
+}
+
+/** Derived metadata retains historical evidence even for contradictory generated records. */
+export function derivedMetadata(value: CardMetadata | null): CardMetadata | null {
+  return value && { ...value, occurrenceCount: countOccurrences(value.provenance.sources) };
+}
+export function metadataForStorage(value: CardMetadata | null | undefined) {
+  if (!value) return null;
+  const { occurrenceCount: _derived, ...authored } = value;
+  return authored;
+}
+
+export function countOccurrences(sources: ProvenanceSource[]): number {
+  return new Set(sources.map(source => source.occurrenceId).filter(id => typeof id === 'string' && id.trim())).size;
 }

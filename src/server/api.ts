@@ -1,3 +1,4 @@
+import { derivedMetadata } from '../lib/metadata';
 import { setThirdPartyAccess } from './third-party-access';
 import { deviceAuth } from './device-auth';
 import { emailAuth, googleCallback, googleStart, methods } from './supabase-auth';
@@ -74,8 +75,8 @@ async function dispatch(
           db.prepare('SELECT * FROM card_progress WHERE user_id = ?').bind(user.id),
           db.prepare('SELECT * FROM study_events WHERE user_id = ? ORDER BY created_at, rowid').bind(user.id),
         ]);
-        return json({ version: 1, username: user.username, exportedAt: new Date().toISOString(), decks,
-          cards: cards.results.map(card => ({ ...card, metadata: card.metadata ? JSON.parse(String(card.metadata)) : null, translations: JSON.parse(String(card.translations)) as Translations })),
+        return json({ version: 2, username: user.username, exportedAt: new Date().toISOString(), decks,
+          cards: cards.results.map(card => ({ ...card, metadata: derivedMetadata(card.metadata ? JSON.parse(String(card.metadata)) : null), translations: JSON.parse(String(card.translations)) as Translations })),
           progress: progress.results, history: history.results,
         }, 200, { 'Content-Disposition': 'attachment; filename="flashcards-backup.json"' });
       }

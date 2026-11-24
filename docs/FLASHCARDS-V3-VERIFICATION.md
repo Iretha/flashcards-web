@@ -1,3 +1,5 @@
+> Historical v3 implementation record. Current behavior is governed by [v4](FLASHCARDS-V4-SPECIFICATION.md). Legacy explanation actions/counters have been retired; v1/v2 file import is unsupported.
+
 # Flashcards v3 implementation verification
 
 Verified locally on Windows with Node 24, Miniflare D1 and headless Microsoft Edge on 2026-11-21. Review mode: engineering self-review plus executable unit, integration and browser regression checks; no independent human content/source review is claimed.

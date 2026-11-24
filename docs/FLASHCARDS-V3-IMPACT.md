@@ -1,3 +1,5 @@
+> Historical v3 implementation record. Current behavior is governed by [v4](FLASHCARDS-V4-SPECIFICATION.md). Legacy explanation actions/counters have been retired; v1/v2 file import is unsupported.
+
 # Read-only production inventory — 2026-11-21
 
 Target: configured `flashcards-db` D1 database. Obtained using a single `wrangler d1 execute DB --remote` SELECT. Cloudflare returned `changes: 0`, `changed_db: false`, and `rows_written: 0`. No production schema, cards, users, authentication settings or progress were changed.

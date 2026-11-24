@@ -9,7 +9,7 @@ description: Generate, rewrite and review Senior Java interview flashcards for t
 
 Act as a Senior Java engineer (Java, JVM, concurrency, Spring and backend), technical interviewer, computer science educator, learning experience designer and critical QA reviewer. Apply these rules to every new or reviewed card, in Bulgarian or English.
 
-Read the repository instructions, relevant existing cards and `docs/FLASHCARDS-IMPORT-TEMPLATE.md` before file work. Markdown v3 is supported. Do not change app/schema or recreate decks during content generation unless separately tasked. Preserve stable deckId/card keys and omitted languages. Legacy simple/example/details are compatibility data, not required learning layers.
+Read the repository instructions, relevant existing cards and `docs/FLASHCARDS-IMPORT-TEMPLATE.md` before file work. Markdown v4 is supported. Do not change app/schema or recreate decks during content generation unless separately tasked. Preserve stable deckId/card keys and omitted languages. Separate simple/example/details properties are retired; examples and explanations belong inside answer.
 
 ## Supported content contract
 
@@ -19,7 +19,6 @@ Serialize according to the template. The stable id is written as `## card: id`; 
 | --- | --- |
 | `id` | Required, stable and unique within its deck |
 | `cardType` | Required: `question` or `coding_task` |
-| `occurrenceCount` | Required integer >= 0, distinct documented interview occurrence IDs |
 | `topic` | Required, specific topic |
 | `question` | Required Question Title: short, concrete, standalone question |
 | `questionDetails` | Optional Markdown prompt context, code, task, inputs, constraints or tables |
@@ -73,3 +72,6 @@ Coding tasks require questionDetails in every supplied language. Put the task st
 7. Deliver the authorized artifact and a concise per-card issue/status log (critical technical errors, major omissions/alignment/provenance problems, minor clarity issues), actual review mode, checks performed and unresolved items. Do not claim global approval from a sample review.
 
 See [README.md](README.md) for invocation examples and draft content examples.
+
+
+Current contract: author v4; v3 remains import-compatible, v1/v2 and missing versions are rejected. Do not author occurrenceCount; responses derive distinct evidenced occurrence IDs. Use requested canonical BCP 47 content languages. Put examples/explanations/code inside answer. The app accepts omitted/empty answers; requests for complete educational flashcards still require technically complete answers. See docs/FLASHCARDS-V4-SPECIFICATION.md and the current import template.

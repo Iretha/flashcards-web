@@ -6,8 +6,8 @@ import type { Deck } from './decks';
 import { check, HttpError, json } from './http';
 import { uniqueQuestions } from './import-plan';
 import type { ImportTarget } from './import-plan';
-import { validateMetadata } from '../lib/metadata';
-import { isLanguage, sections, validTranslation } from '../lib/translations';
+import { validateMetadata, derivedMetadata } from '../lib/metadata';
+import { isLanguage, validTranslation } from '../lib/translations';
 import type { Translation, Translations } from '../lib/translations';
 
 class InvalidField extends HttpError {
@@ -72,7 +72,7 @@ function cardValues(value: unknown, id: string, current?: ImportTarget): ImportT
     for (const language of Object.keys(entries)) {
       if (!(language in entries)) continue;
       const path = 'translations.' + language;
-      const keys = ['question', 'answer', 'questionDetails', ...sections] as const;
+      const keys = ['question', 'answer', 'questionDetails'] as const;
       const patch = fields(entries[language], path, keys);
       const next = { ...translations[language] } as Translation;
       for (const key of keys) {
@@ -180,7 +180,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
         check(card, 'Card not available.', 404);
         return respond(cardData(card, deck.revision));
       }
-      const matches = cards.filter(card => !q || [card.id, card.import_key, ...Object.values(card.translations).flatMap(Object.values)]
+      const matches = cards.filter(card => !q || [card.id, card.import_key, ...Object.values(card.translations).flatMap(t => [t.question, t.answer])]
         .some(value => value?.toLowerCase().includes(q)));
       return json({ data: matches.map(card => cardData(card, deck.revision)), revision: deck.revision }, 200, { ETag: `"${deck.revision}"` });
     }
@@ -285,7 +285,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
     const saved = row as unknown as Omit<ImportTarget, 'translations' | 'metadata'> & {
       deck_id: string; position: number; translations: string; metadata: string | null; revision: number;
     };
-    return respond(cardData({ ...saved, translations: JSON.parse(saved.translations), metadata: saved.metadata ? JSON.parse(saved.metadata) : null },
+    return respond(cardData({ ...saved, translations: JSON.parse(saved.translations), metadata: derivedMetadata(saved.metadata ? JSON.parse(saved.metadata) : null) },
       saved.revision), status, extra);
   } catch (error) {
     const unique = error instanceof Error && error.message.includes('UNIQUE constraint failed');

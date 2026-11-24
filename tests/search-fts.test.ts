@@ -129,8 +129,8 @@ it('rejects verification races and retries a backfill source-CAS miss',async()=>
 });
 it('searches beyond 5000 cards, handles no-match and deduplicates before keyset pagination',async()=>{
  await db.prepare(`WITH RECURSIVE n(i) AS (VALUES(0) UNION ALL SELECT i+1 FROM n WHERE i<5020)
- INSERT INTO cards(id,deck_id,stable_key,question_key,question,answer,position,created_at,updated_at,translations)
- SELECT printf('large%05d',i),'deck',printf('k%d',i),printf('q%d',i),'q','a',0,0,0,
+ INSERT INTO cards(id,deck_id,stable_key,question_key,position,created_at,updated_at,translations)
+ SELECT printf('large%05d',i),'deck',printf('k%d',i),printf('q%d',i),0,0,0,
  json_object('en',json_object('question',CASE WHEN i>=5000 THEN 'unique needle' ELSE 'common text' END,'answer','answer'),
  'bg',json_object('question',CASE WHEN i>=5000 THEN 'unique needle' ELSE 'common text' END,'answer','answer')) FROM n`).run();
  const rows=(await db.prepare("SELECT id,translations FROM cards").all<{id:string;translations:string}>()).results;

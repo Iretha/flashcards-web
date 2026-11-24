@@ -41,3 +41,14 @@ it('stops bubbling without cancelling native link navigation', () => {
   expect(stopped).toBe(true);
   expect(link.type).toBe('a');
 });
+
+
+it('includes task details as untrusted context and requests the preferred language',()=>{
+ const details='```java\nint count = 0;\n```';
+ const prompt=buildChatGptPrompt('Fallback question','de','Controlled instructions',details);
+ expect(prompt).toContain(details);expect(prompt).toContain('<card-content>');
+ expect(prompt.indexOf('</card-content>')).toBeLessThan(prompt.indexOf('Controlled instructions'));
+ expect(prompt).toContain('BCP 47 code "de"');
+ const element=AskChatGpt({question:'Fallback question',questionDetails:details,language:'de',instructions:'Controlled instructions'});
+ for(const link of element.props.children) expect(decodeURIComponent(link.props.href)).toContain(prompt);
+});

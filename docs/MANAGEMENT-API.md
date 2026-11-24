@@ -62,11 +62,11 @@ IDs in paths are the server-generated resource IDs. The list of cards uses deck 
 | `metadata` | Optional v3 metadata object or null |
 | `id`, `deck_id`, `position`, `revision` | Read-only resource IDs, order and deck revision |
 
-Each new translation requires nonempty Markdown `question` (up to 2,000 characters). `answer` is a string of up to 20,000 characters; on creation it may be omitted and defaults to `""`. Empty or whitespace-only supplied answers normalize to `""`. During PATCH, omitting `answer` preserves the existing answer; supplying `answer: ""` clears it. Optional Markdown `questionDetails`, `simple`, `example` and `details` each allow up to 20,000 characters. PATCH merges fields within each supplied language. An empty string clears an optional section. Questions follow the importer's normalized uniqueness checks, with the D1 primary-question constraint also enforced.
+Each new translation requires nonempty Markdown `question` (up to 2,000 characters). `answer` is a string of up to 20,000 characters; on creation it may be omitted and defaults to `""`. Empty or whitespace-only supplied answers normalize to `""`. During PATCH, omitting `answer` preserves the existing answer; supplying `answer: ""` clears it. Optional Markdown `questionDetails` allows up to 20,000 characters. PATCH merges fields within each supplied language. An empty string clears an optional section. Questions follow the importer's normalized uniqueness checks, with the D1 primary-question constraint also enforced.
 
-A supplied metadata object uses the [existing v3 contract](FLASHCARDS-IMPORT-TEMPLATE.md). It contains `cardType` (`question` or `coding_task`), nonempty `topic`, nonnegative integer `occurrenceCount`, `provenance` and optional `answerReferences`. Provenance has `type` (`sourced`, `mixed` or `generated`) and `sources`; sourced and mixed cards require at least one source. Each source has `sourceName` and `sourceUrl` and may include `company`, `location`, `interviewLocation`, `publishedAt` (YYYY-MM-DD) or `occurrenceId`. The count equals the number of distinct documented occurrence IDs. References each contain `title` and `url`. URLs use HTTP(S) without credentials. Each language of a coding task requires `questionDetails`.
+A supplied metadata object uses the [current v4 contract](FLASHCARDS-IMPORT-TEMPLATE.md). It contains `cardType` (`question` or `coding_task`), nonempty `topic`, `provenance` and optional `answerReferences`. Provenance has `type` (`sourced`, `mixed` or `generated`) and `sources`; sourced and mixed cards require at least one source. Each source has `sourceName` and `sourceUrl` and may include `company`, `location`, `interviewLocation`, `publishedAt` (YYYY-MM-DD) or `occurrenceId`. The count equals the number of distinct documented occurrence IDs. References each contain `title` and `url`. URLs use HTTP(S) without credentials. Each language of a coding task requires `questionDetails`.
 
-For original, unsourced material, omit `metadata` or set it to null. For content based on a real source without interview evidence, use `occurrenceCount: 0` and omit occurrence IDs. The same card ID and study progress are preserved by PATCH. A Markdown import can match API-created deck and card records by `source_key` and `import_key`, subject to its existing rules for mixing legacy and v3 cards.
+For original, unsourced material, omit `metadata` or set it to null. For content based on a real source without interview evidence, omit occurrence IDs. The same card ID and study progress are preserved by PATCH. A Markdown import can match API-created deck and card records by `source_key` and `import_key`, subject to its existing rules for mixing legacy and v3 cards.
 
 ## Retries and concurrent edits
 
@@ -103,7 +103,7 @@ The deck creation example returns HTTP 201 with `Location: /api/decks/{id}`, `ET
 An example validation response is HTTP 400 with the following body.
 
 ```json
-{"error":{"code":"validation_error","message":"Unsupported field.","details":[{"field":"translations.fr","message":"Unsupported field."}]}}
+{"error":{"code":"validation_error","message":"Unsupported field.","details":[{"field":"translations.invalid_code","message":"Unsupported field."}]}}
 ```
 
 Other error codes are `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `revision_mismatch` (412), `payload_too_large` (413), `unsupported_media_type` (415), `precondition_required` (428) and `internal_error` (500).
@@ -158,3 +158,6 @@ Every Management API deck response includes server-calculated `permissions: {can
 Answerless cards retain their IDs and study progress when updated. The study answer panel displays a visual em dash and existing external AI links still use the question. No generated answer is saved automatically.
 
 A future MCP adapter must call the existing individual card POST endpoint for each extracted card, using a distinct idempotency key per creation and retrying identical request bytes. Multiple calls have partial-success semantics: a failed call does not roll back earlier successful cards. Record each result and retry only as appropriate; normalized duplicate questions return 409. There is no batch transaction, upload endpoint, OAuth flow or MCP server. Adapter authentication, tool definitions, extraction and retry orchestration remain future work.
+
+
+V4 breaking contract: translation fields are question/answer/questionDetails only. Metadata input must omit occurrenceCount; response count is derived. Generated input cannot claim occurrences. Text search covers question and answer only; questionDetails is returned but not text-indexed. Root card question/answer and explanation counters are removed. Export version 2 retains canonical content, progress and historical events; it is not a supported restore format.

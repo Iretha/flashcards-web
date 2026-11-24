@@ -1,3 +1,5 @@
+> Historical v3 implementation record. Current behavior is governed by [v4](FLASHCARDS-V4-SPECIFICATION.md). Legacy explanation actions/counters have been retired; v1/v2 file import is unsupported.
+
 # Flashcards v3 recreation runbook
 
 ## Stage A: preparation (implemented)

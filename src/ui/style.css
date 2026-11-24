@@ -160,7 +160,6 @@ progress { display: block; width: 100%; accent-color: var(--accent); }
   transform: rotate(45deg);
   box-shadow: 0 0 12px color-mix(in srgb, var(--accent) 35%, transparent);
 }
-.study .study-explanation { --answer-base-size: clamp(.55rem, 1.25vw, .95rem); }
 .study .study-note { font-size: max(11pt, .925rem); line-height: 1.35; }
 .study.stack > :is(.markdown, .study-note) { margin-top: .5rem; }
 .actions button { min-height: 56px; }
@@ -374,7 +373,6 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
     --answer-inline-code-min: .875rem;
     --answer-code-size: calc(.875rem * var(--answer-scale, 1));
   }
-  .study .study-explanation { --answer-base-size: .9375rem; }
   .study .markdown:not(.answer) h2 { font-size: 1rem; }
   .study .markdown:not(.answer) :not(pre) > code { font-size: max(.875rem, .9em); }
   .study .markdown:not(.answer) .code-block { font-size: .875rem; }

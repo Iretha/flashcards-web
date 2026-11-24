@@ -87,7 +87,7 @@ describe('deck language validation', () => {
 });
 
 it('respects a declared original language in legacy Markdown instead of guessing English', () => {
-  const parsed = parseMarkdown('---\nprimaryLanguage: de\n---\n## Frage?\n\nAntwort.');
+  const parsed = parseMarkdown('---\nformatVersion: 4\nprimaryLanguage: de\n---\n## card: de\n### cardType: question\n### topic: Test\n### provenance\ntype: generated\nsources: []\n### de\n#### question\nFrage?\n#### answer\nAntwort.');
   const plan = planImport(parsed, [], {}, {});
   expect(plan.changed[0]).toMatchObject({ primary_language: 'de', translations: { de: { question: 'Frage?', answer: 'Antwort.' } } });
 });

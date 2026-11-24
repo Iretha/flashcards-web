@@ -34,8 +34,8 @@ it.each([
 });
 
 it('requires source evidence and permits generated cards with zero occurrences', () => {
-  expect(validateMetadata({ cardType: 'question', topic: 'Java', occurrenceCount: 0, provenance: { type: 'generated' } }).provenance.sources).toEqual([]);
-  expect(() => validateMetadata({ cardType: 'question', topic: 'Java', occurrenceCount: 0, provenance: { type: 'sourced' } })).toThrow('provenance.sources');
+  expect(validateMetadata({ cardType: 'question', topic: 'Java', provenance: { type: 'generated' } }).provenance.sources).toEqual([]);
+  expect(() => validateMetadata({ cardType: 'question', topic: 'Java', provenance: { type: 'sourced' } })).toThrow('provenance.sources');
 });
 
 it.each([
@@ -50,7 +50,7 @@ it.each([
 });
 
 it('toggles answer and expires without moving or changing repeat membership', () => {
-  let state = startStudy([{ id: 'a', failed: 0, visits: 0 }], defaults, 0);
+  let state = startStudy([{ id: 'a' }], defaults, 0);
   state = advance(state, defaults, 'show', 1).state;
   expect(state.revealed).toBe(true);
   state = advance(state, defaults, 'show', 2).state;
@@ -61,7 +61,7 @@ it('toggles answer and expires without moving or changing repeat membership', ()
 
 it('removes unchecked pending repeat cards and can add a historical card in a later cycle', () => {
   const config = { ...defaults, timer: false };
-  let state = startStudy(['a', 'b', 'c'].map(id => ({ id, visits: 0, failed: 0 })), config, 0);
+  let state = startStudy(['a', 'b', 'c'].map(id => ({ id })), config, 0);
   const act = (action: Parameters<typeof advance>[2]) => { state = advance(state, config, action, 0).state; };
   act('repeat'); act('next'); act('repeat'); act('next');
   expect(state.current).toBe('c');

@@ -34,9 +34,9 @@ B Educator, C Learner. Не редактирай файла; върни проб
 
 При разрешена редакция поправи проблемите и повтори трите проверки. Проверката на Markdown не доказва техническа коректност.
 
-## Поддържан Markdown v3 формат
+## Поддържан Markdown v4 формат
 
-Задължителни: стабилен `## card: id`, `cardType`, `topic`, `occurrenceCount`,
+Задължителни: стабилен `## card: id`, `cardType`, `topic`,
 `provenance` и question/answer за всеки включен език. Coding Task изисква
 questionDetails. `provenance.sources` описва произхода или адаптацията.
 Източник за доказано независимо интервю има `occurrenceId`; препубликациите
@@ -49,8 +49,8 @@ Question Details и Answer са Markdown. Кодът за анализ и proven
 
 Следващите примери са редакционни илюстрации, не import синтаксис.
 За import използвай [template](../../../docs/FLASHCARDS-IMPORT-TEMPLATE.md),
-с cardType и occurrenceCount (0 за примерите без доказано интервю).
-Поддържаният v3 importer проверява структурата; това не заменя A/B/C review.
+с cardType и derived occurrence count (0 за примерите без доказано интервю).
+Поддържаният v4 importer проверява структурата; това не заменя A/B/C review.
 
 ## Концептуална карта, AI Generated, без необходимост от код
 
@@ -122,3 +122,6 @@ Yes. Assignment permits widening primitive conversion from `int` to `long`. It p
 е answer reference. Неизвестен произход на съществуваща карта се отбелязва за преглед.
 Никога не измисляй URL, цитат или твърдение за реално интервю. Проверявай URL и
 подкрепящия пасаж, преди да отбележиш verified.
+
+
+Current contract: author v4; v3 remains import-compatible, v1/v2 and missing versions are rejected. Do not author occurrenceCount; responses derive distinct evidenced occurrence IDs. Use requested canonical BCP 47 content languages. Put examples/explanations/code inside answer. The app accepts omitted/empty answers; requests for complete educational flashcards still require technically complete answers. See docs/FLASHCARDS-V4-SPECIFICATION.md and the current import template.
