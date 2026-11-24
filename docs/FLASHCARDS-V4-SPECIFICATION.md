@@ -40,19 +40,16 @@ interview occurrences for generated content. Historical v3/persisted contradicti
 retain sources/IDs and use the same derived count everywhere; they require content
 review, not silent reclassification. Derivation does not verify real-world evidence.
 
-## Retirement and migration
+## Canonical migration and compatibility
 
-Discard simple/example/details without merging. Remove root question/answer
-columns and explanation counters using a forward migration; historical migrations
-remain unchanged. Valid canonical translations take precedence over mirrors,
-including intentionally empty answers. Recover absent question/answer from mirrors
-only when canonical data is missing; fail on irreconcilable malformed translations.
-Preserve IDs, import/source keys, ordering, normalized uniqueness, permissions,
-progress and all historical events. Retain stable_key because historical distinct
-values exist in repository fixtures and production values are unknown.
-Remove explanation actions/state and obsolete queue failed/visits; normalize old
-session extras without invalidating valid cycles. Retain learn and historical event
-kinds. Remove test-only compareImport.
+Migration 0018 removed retired simple/example/details, root question/answer mirrors
+and explanation counters. It preserved canonical translations (including empty
+answers), recovered missing canonical text from mirrors where valid, and rejected
+irreconcilable malformed content. IDs, source/import/stable keys, permissions,
+progress and historical events were preserved. Stable keys remain because distinct
+historical values exist. Valid cycle sessions retain their state after obsolete
+extras are removed. Legacy learn and historical event kinds remain supported;
+explanation actions are rejected. Historical migrations must remain unchanged.
 
 ## Contracts and integrations
 
@@ -63,38 +60,94 @@ existing answers. Management/MCP text search covers question, questionDetails an
 External AI requests include the resolved question and matching questionDetails,
 never the stored answer, and request the user's selected output language. Authored
 content is delimited untrusted data, not application instructions.
-JSON export version advances to 2; no restore implementation is promised.
+Export behavior is defined below.
 
-## Verification and rollout
+## Deployment and recovery
 
-Acceptance requires fresh/upgrade migration tests, reconciliation failure tests,
-v3/v4 parser and reimport tests, generalized languages, answerless API/MCP flows,
-search synchronization, retained study behavior, authorization/idempotency/revision
-regressions, documented example parsing, typecheck, build and browser tests.
-Production rollout is not authorized. Before rollout stop writes, obtain a verified
-full database/schema recovery snapshot, rehearse isolated recovery and migration,
-compare identity/content/progress/event counts and foreign keys, review legacy
-metadata contradictions, and coordinate breaking API/import changes with clients.
-Browser JSON export alone is not a demonstrated restorable backup.
+The owner confirmed deployment of commit `4b130a52f73dad53b857aeae1f96f1fd3599a2f8`,
+including migrations 0018-0020, canonical data preservation and search verification.
+External authenticated integration and physical-device checks remain separate.
+See [search architecture and recovery](SEARCH-ARCHITECTURE.md) for native Unicode
+behavior, epoch consistency, migration reconstruction and incompatible transitions.
+Browser JSON export is not a demonstrated restorable full-database backup.
 
-
-## Deployment and search recovery gate
-
-Migration 0020 reconstructs native search directly from canonical translations. SQL triggers maintain it thereafter. See [deployment and repair](MCP-FTS-ROLLOUT.md). Free text requires three Unicode code points and uses native SQLite Unicode behavior.
-
-Legacy generated records with occurrence IDs retain every source and identifier and
-report their derived count consistently, without silently asserting zero or changing
-provenance. During authorized rollout, inventory these records for content review
-using provenance.type=generated and nonempty source occurrenceId. New v4/API metadata
-rejects that contradiction. Historical source claims are not independently verified.
-
-Stable keys remain: historical fixtures use distinct values and no production data
-inspection was authorized. Legacy learn remains a supported action producing LEARNED;
-all historical event kinds and trigger interpretations remain intact. Text search
-covers question, questionDetails and answer consistently; Management API
-also retains identifier/import-key lookup. Search includes task details through questionDetails.
+Legacy generated records with occurrence IDs retain their sources, identifiers and
+derived counts. They require content review rather than silent reclassification;
+new v4/API input rejects that contradiction. Derivation does not verify source truth.
 
 The complete bilingual [v4 example](FLASHCARDS-V4-EXAMPLE.md), current template and historical v3 reference are all checked through the production parser in tests/markdown.test.ts.
 
 
-Search uses native FTS5 and automatic SQL triggers after forward migration 0020; there is no activation step. Required reconstruction belongs in the affected forward migration; see the [search maintenance runbook](MCP-FTS-ROLLOUT.md). No additional Worker or endpoint is introduced. E2E tests use owned disposable storage cleaned after normal success/failure; KEEP_E2E_STORAGE=1 retains it for debugging. Interrupted/forcibly terminated runs may retain storage and require manual inspection.
+## Decks, access and persistence
+
+Decks have title, description, owner, source identity, ordered cards and PRIVATE or
+SHARED visibility. SHARED permits authenticated users to study; active collaborators
+can also read private decks and edit content. Owners alone manage visibility,
+collaborators, AI instructions and whole-deck deletion. Sharing changes preserve
+identity and personal history. Multiple accessible decks may be studied together.
+See [Management API](MANAGEMENT-API.md) for permission and concurrency contracts and
+[authentication architecture](AUTH-ARCHITECTURE.md) for identity/session boundaries.
+
+Import accepts multiple files with per-destination visibility and explicit target
+selection. Duplicate question checks are scoped to the destination deck and use
+Unicode/case/whitespace normalization independently of search. Preview classifies
+new, unchanged, conflicting and invalid rows; review conflicts before applying.
+Normal reimport preserves card IDs/progress and does not erase omitted cards.
+See [replacement procedure](CARD-REPLACEMENT.md) for destructive replacement.
+
+## Study and progress
+
+Study settings select sequential or random initial order, optional timer (default
+30 seconds; accepted range 1-3600), language and initial answer visibility. All
+selected cards enter the first cycle regardless of legacy learned state. Later
+cycles snapshot Repeat membership in the initial order. Unchecking a pending repeat
+skips it; newly marked historical cards join the next snapshot. Next at a boundary
+with no marks completes the session. History navigation does not record another
+presentation. Show/Hide toggles the answer; expiry reveals without advancing or
+changing Repeat. Navigation resets the answer/timer for that view.
+
+Repeat marks are global within the session across history/cycle boundaries. D1
+persists the versioned session and per-user/card progress/history across refresh
+and devices; stale mutations are rejected and retried requests must not inflate
+counts. One study session per user is shared across devices. Pause/exit permits
+resumption. Legacy learn remains supported; explanation actions/counters are removed.
+Reset makes progress unlearned without deleting historical events and invalidates
+affected active sessions. Progress/history remain independent for users sharing cards.
+
+With focus on the study panel, Enter/Space toggles answers, Left/Right navigates,
+R toggles Repeat and Escape/Back pauses and returns to the library. Tab navigates
+controls and Space activates focused checkboxes. Do not intercept text entry.
+Responsive controls, readable Markdown/code, visible focus and keyboard/touch access
+remain requirements; no essential action should require hover or dragging. Physical
+LG webOS compatibility requires real-device checks, not desktop test inference.
+
+## Card library and retained progress
+
+The card library supports deck order (ascending position), hardest first
+(descending actual presentation count), easiest first (ascending presentation
+count), learned first (LEARNED before UNLEARNED), and recently shown (descending
+last-shown timestamp, with missing timestamps treated as zero). Hardest/easiest
+sorting uses accumulated presentations, not the authored difficulty rating.
+
+Progress belongs to each user/card pair, including shared cards. Stored progress
+retains shown, failed and learned counts, learned/unlearned status and last
+shown/learned timestamps. The card list displays shown and failed counts; legacy
+cards without metadata additionally display legacy status and times learned.
+Deck responses aggregate the current user's learned-card count, presentations and
+failures alongside total cards. These historical statistics remain distinct from
+current Repeat-cycle controls; they do not restore a Learned study button or
+change first-cycle eligibility.
+
+## Export and operational boundaries
+
+Authenticated GET `/api/export` downloads JSON version 2: accessible decks/cards,
+the caller's progress and ordered history, without authentication secrets. It is
+not every user's database backup and has no supported restore endpoint. Historical
+events may refer to removed cards. Full recovery requires a verified database/schema
+snapshot, isolated restoration rehearsal and identity/content/progress checks.
+
+The application targets the existing Cloudflare infrastructure and approved free
+service plans. Offline caching must not compromise D1 progress correctness; no
+offline synchronization contract or calendar spaced-repetition system is promised.
+See [local verification](LOCAL-DEVELOPMENT.md), [external AI links](../EXTERNAL-AI-INTEGRATION.md)
+and [content generation](../skills/flashcards-deck-generator/README.md).

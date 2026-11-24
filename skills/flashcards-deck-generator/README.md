@@ -32,5 +32,12 @@ Coding Task изисква `questionDetails`; решението и пример
 Разграничавай синтактична валидация, технически self-review и независим review.
 Не импортирай и не пресъздавай тестета без възложена операция.
 
+## Reimport and other languages
 
-Current contract: author v4; v3 remains import-compatible, v1/v2 and missing versions are rejected. Do not author occurrenceCount; responses derive distinct evidenced occurrence IDs. Use requested canonical BCP 47 content languages. Put examples/explanations/code inside answer. The app accepts omitted/empty answers; requests for complete educational flashcards still require technically complete answers. See docs/FLASHCARDS-V4-SPECIFICATION.md and the current import template.
+Request canonical BCP 47 languages such as de, fr, pt-BR or zh-Hant; bg/en are
+examples. Preserve deckId and card keys. Omit an answer to preserve existing content;
+include an empty answer heading only to clear intentionally. Complete educational
+requests still require complete answers and every-card A/B/C review.
+See the [current contract](../../docs/FLASHCARDS-V4-SPECIFICATION.md) for importer
+semantics and the template for serialization. v3 is compatibility input; author v4.
+Do not author occurrenceCount.

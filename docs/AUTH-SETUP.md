@@ -1,6 +1,6 @@
 # Authentication setup and operational checklist
 
-Implementation on feature/auth. No external configuration, remote migration or deployment was performed. New methods are off unless explicitly enabled. Legacy ACCESS_CODE and username login remain available. Do not run npm run deploy as a setup check: it includes remote migrations.
+The implementation is part of the [accepted deployed baseline](../README.md). Deployment does not establish enabled provider flags or external acceptance. New methods are off unless explicitly enabled. Legacy ACCESS_CODE and username login remain available. Do not run npm run deploy as a setup check: it includes remote migrations.
 
 ## Required configuration
 
@@ -17,7 +17,7 @@ Use ignored .dev.vars for local credentials and Worker secret bindings for sensi
 | AUTH_SITE_ORIGIN | Google/email | Exact application origin including scheme and optional local port, no trailing slash/path |
 | AUTH_RATE_LIMIT_SECRET | email | Owner-generated random secret of at least 32 characters; HMAC pseudonymizes email/IP counters |
 
-Use a dedicated provider test project/mailboxes when authorized. Local HTTPS is preferred for Secure cookie testing; loopback browser exceptions are not proof of production behavior. SDK is server-only and uses ephemeral request storage; persistSession is true only because the installed SDK needs its storage adapter for PKCE. No access/refresh token is written to a persistent store. JWTs are ES256/RS256 only; configure asymmetric keys before enabling. No service-role, Google client secret or SMTP password is needed in Workers. No secrets have been invented or installed by this change.
+Use a dedicated provider test project/mailboxes when authorized. Local HTTPS is preferred for Secure cookie testing; loopback browser exceptions are not proof of production behavior. SDK is server-only and uses ephemeral request storage; persistSession is true only because the installed SDK needs its storage adapter for PKCE. No access/refresh token is written to a persistent store. JWTs are ES256/RS256 only; configure asymmetric keys before enabling. No service-role, Google client secret or SMTP password is needed in Workers.
 
 ## Supabase and Google
 
@@ -30,15 +30,15 @@ Use a dedicated provider test project/mailboxes when authorized. Local HTTPS is 
 
 ## SMTP: Brevo preferred, Resend alternative
 
-Supabase's default sender is team-address-only and two messages/hour; not suitable for general login. Configure **custom SMTP in Supabase**, not Workers. Prefer Brevo Free after transactional activation; use the SMTP host/port/login/key from that account's SMTP dashboard, require TLS and set an authenticated From address. Resend alternative: smtp.resend.com with documented TLS port, username resend and SMTP API key password. No provider was enrolled or configured here.
+Do not rely on Supabase's restricted default sender for general login; verify current provider limits. Configure **custom SMTP in Supabase**, not Workers. Prefer Brevo Free after transactional activation; use the SMTP host/port/login/key from that account's SMTP dashboard, require TLS and set an authenticated From address. Resend alternative: smtp.resend.com with documented TLS port, username resend and SMTP API key password.
 
 Verify an owned sending domain and publish provider-generated SPF/DKIM records; configure DMARC and inspect alignment in real received messages. Do not paste DNS records from another account. Disable open/click tracking for auth mail. Check spam placement, bounces, complaints, delays and provider suppression behavior. Do not buy a paid plan, dedicated IP or automatic credits. Domain renewal can be an existing unavoidable cost; do not claim it is free.
 
-Before enablement verify actual Free plan, transactional eligibility, SMTP/API rate limits, card requirement, quota/reset/exhaustion/queue behavior and no automatic paid upgrades in the selected account. Previous official-source review is in AUTH-OTP-QR-PROPOSAL.md (Brevo 300/day; Resend 100/day and 3,000/month). Supabase custom SMTP initially limits sending to 30/hour; configure within provider quota and test 429 behavior. Worker email budgets: 1/minute, 3/15min and 10/day/email, 20 sends/hour/IP; verification 5/5min/email and 30/15min/IP. Provider timeout/rejection returns the same delivery acknowledgment to avoid enumeration; UI explains that delivery may be unavailable. No automatic send retries. Direct public Supabase endpoints can bypass Worker counters, so set provider-side abuse controls and alerts too. Do not impose a CAPTCHA that silently prevents TV direct OTP; validate any progressive challenge on supported devices.
+Before enablement verify actual Free plan, transactional eligibility, SMTP/API rate limits, card requirement, quota/reset/exhaustion/queue behavior and no automatic paid upgrades in the selected account. Provider quotas change: verify current account limits before enablement and test 429 behavior. Worker email budgets: 1/minute, 3/15min and 10/day/email, 20 sends/hour/IP; verification 5/5min/email and 30/15min/IP. Provider timeout/rejection returns the same delivery acknowledgment to avoid enumeration; UI explains that delivery may be unavailable. No automatic send retries. Direct public Supabase endpoints can bypass Worker counters, so set provider-side abuse controls and alerts too. Do not impose a CAPTCHA that silently prevents TV direct OTP; validate any progressive challenge on supported devices.
 
 ## Controlled identity mapping: no public endpoint
 
-Before any remote mapping/migration: obtain separate owner approval, take a consistent full D1 export/backup, restore it locally in isolation, verify FK integrity and users/decks/cards/progress/history/session/token counts and content hashes, and record before/after manifest. Browser export alone is insufficient. Do not replay history INSERTs. Remote operations are not authorized by this implementation task.
+Before any remote mapping/migration: obtain separate owner approval, take a consistent full D1 export/backup, restore it locally in isolation, verify FK integrity and users/decks/cards/progress/history/session/token counts and content hashes, and record before/after manifest. Browser export alone is insufficient. Do not replay history INSERTs. Remote operations require explicit owner authorization.
 
 For each person record in a restricted audit manifest: environment, exact existing users.id, old supabase_sub (possibly null), verified provider sub, authentication verification evidence, owner approval, timestamp/operator and rollback value. Do not include tokens, OTPs or credentials. Verify subject from Supabase user administration and a controlled actual login, not client claims or email matching. Preflight that user exists and subject is not assigned elsewhere. Apply only an expected-value conditional change:
 
@@ -71,7 +71,7 @@ Workers invocation logs are disabled in wrangler configuration to avoid recordin
 - On phone test login-before-approval with legacy, Google and OTP; verify account/device/phrase, deny, approve, phone logout and logout-all.
 - Test direct TV Email OTP even if Google UI is unavailable. No third-party cookies, client Web Crypto, WebSockets or TV camera required.
 - Desktop/mobile light/dark, phone scan/manual entry, Google cancellation, delayed/expired OTP, feature flag rollback, old-cookie validity and deck/history/API access.
-- Measure actual Workers CPU (10ms Free), D1 rows/index writes and request budgets under staging load. Local pass does not certify Free CPU, deliverability or LG compatibility.
+- Measure actual Workers CPU against the current account limits, D1 rows/index writes and request budgets under staging load. Local pass does not certify Free CPU, deliverability or LG compatibility.
 
 Phase 5 removal of legacy login is NOT IMPLEMENTED and requires separate validation, proposal and explicit approval.
 
@@ -87,4 +87,4 @@ Legacy accounts are never found by email or profile attributes. An unmapped lega
 
 Abuse protection retains Google start limits (20 per IP per 15 minutes), single-use five-minute callback admission, provider verification/timeouts and existing OTP budgets. Provisioning does bounded work and stores no profile or email. Distributed valid-identity abuse and provider/D1 quotas remain operational limitations; monitor redacted failure counts and provider-side controls. No CAPTCHA, new paid dependency or email requirement was introduced.
 
-Local validation: npm test uses ephemeral Miniflare D1 and mocked provider responses with real signed JWTs; npm run typecheck, npm run build and npm run test:e2e cover compilation and existing browser regressions. No live Google, SMTP or physical LG compatibility is established. Rollback: disable the relevant server flags or revert this code while retaining schema, users, mappings and sessions. The previous build will reject only unmapped subjects; keep newly created mappings. Never delete registered users or restore stale data as rollback. No production deployment, remote migration, secret rotation or flag change was performed.
+Local tests use mocked provider responses and signed test JWTs; they do not establish live Google, SMTP or physical LG compatibility. Disable relevant flags for rollback while retaining schema, users, mappings and sessions. Never restore stale data over new progress.

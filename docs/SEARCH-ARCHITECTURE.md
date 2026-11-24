@@ -1,4 +1,4 @@
-# Native search and deployment
+# Search architecture and operations
 
 Canonical content lives in cards.translations. Migration 0020 creates minimal card_search_keys (integer id, card_id foreign key, language, unique card/language) and card_search using FTS5 trigram case_sensitive 0. SQL triggers index every translation, combine question and nonempty questionDetails with a newline, and keep answer separate. Ordinary application writes perform no indexing calls. Unrelated card updates do not rebuild documents.
 

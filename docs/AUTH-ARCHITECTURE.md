@@ -1,6 +1,6 @@
 # Flashcards authentication architecture and external services
 
-Status: implementation on `feature/auth`; Google and Email OTP were manually exercised locally by the owner. QR on physical LG TV and production rollout remain unverified. This document describes architecture, not permission to deploy.
+Status: deployed with the [accepted application baseline](../README.md). Enabled provider flags and authenticated external/device acceptance are separate from deployment.
 
 ## Overview
 
@@ -76,39 +76,15 @@ The phone's session and Supabase tokens are **not** copied to the TV. QR request
 - Legacy `ACCESS_CODE` login is intentionally retained; retiring it requires a separate decision and rollout.
 - Feature flags independently control Google, Email OTP and QR, including server endpoints.
 
-## Configuration reference
+Configuration and provider setup are authoritative in [AUTH-SETUP.md](AUTH-SETUP.md).
 
-| Binding | Function |
-| --- | --- |
-| `ACCESS_CODE` | Existing legacy shared-code login |
-| `AUTH_GOOGLE_ENABLED` | Enables Google sign-in |
-| `AUTH_EMAIL_ENABLED` | Enables email OTP |
-| `AUTH_QR_ENABLED` | Enables QR/device login |
-| `SUPABASE_URL` | Supabase project HTTPS origin |
-| `SUPABASE_PUBLISHABLE_KEY` | Public Supabase client key, not a service-role key |
-| `AUTH_SITE_ORIGIN` | Exact Flashcards application origin |
-| `AUTH_RATE_LIMIT_SECRET` | Secret for HMAC-protected email/IP rate-limit identifiers |
+## Legacy access limitation
 
-Local credentials go in ignored `.dev.vars`; deployed sensitive values must be configured as Worker secrets. SMTP credentials stay in Supabase. Do not commit actual credentials or publish full callback URLs containing codes.
+Knowing ACCESS_CODE and another username permits entry as that legacy identity.
+It is a convenience gate, not proof of individual account ownership. Legacy login
+is rate-limited; retiring it requires separate approval. Application progress is
+keyed by immutable D1 user/card IDs. Identity mapping must not substitute email
+or display names for those IDs. Replaying history INSERTs can double-count progress.
 
-## Operating and release checklist
-
-- Confirm Google OAuth client, Supabase project/redirect allowlist and JWT signing-key configuration.
-- Confirm Supabase Email OTP template, expiry and custom Brevo SMTP sender; check SPF/DKIM/DMARC and actual message delivery.
-- Check Supabase/Brevo/Cloudflare free-plan quotas, suspension/pausing, rate limits and failure behavior; provider quotas may change.
-- Back up **full** D1 data, rehearse isolated restore and verify user/deck/progress/history integrity **before** any authorized remote migration.
-- Test a genuinely new Google identity, an existing mapped identity and a distinct identity sharing an email; ensure no legacy data is claimed.
-- Test actual HTTPS QR activation on LG TV with phone, denial, expiry, replay and logout-all.
-- Enable methods individually and retain rollback flags and legacy access. Do not delete newly registered users or restore stale production data over new learning progress.
-
-## Evidence and status
-
-The implementation agent reported 127 passing unit/integration tests, 8 Edge browser tests, clean typecheck and successful build at commit `c3ba9065fc6c2f528949920ef0a331c32393dfa0`. These are **agent-reported** checks, not an independent external audit. Owner reports local Google and Email OTP sign-in working with the same visible decks/progress; this does not by itself prove every identity-linking edge case. No production deployment or remote migration is authorized or documented as completed.
-
-## Detailed references
-
-- [AUTH-SETUP.md](AUTH-SETUP.md): exact provider configuration, secrets, operational controls, mapping, backups and LG acceptance checklist.
-- [AUTH-IMPLEMENTATION-REPORT.md](AUTH-IMPLEMENTATION-REPORT.md): implementation scope, tests, limitations and changes.
-- [AUTH-OTP-QR-PROPOSAL.md](AUTH-OTP-QR-PROPOSAL.md): design rationale and provider considerations.
-- [AUTH-OTP-QR-IMPLEMENTATION-PLAN.md](AUTH-OTP-QR-IMPLEMENTATION-PLAN.md): phased implementation plan.
-- Source: `src/server/supabase-auth.ts`, `src/server/device-auth.ts`, `src/server/auth.ts`, `migrations/0012_parallel_auth.sql`.
+See [authentication operations](AUTH-SETUP.md) for configuration, controlled
+mapping, revocation, recovery and external acceptance checks.

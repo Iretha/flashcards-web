@@ -22,7 +22,7 @@ Serialize according to the template. The stable id is written as `## card: id`; 
 | `topic` | Required, specific topic |
 | `question` | Required Question Title: short, concrete, standalone question |
 | `questionDetails` | Optional Markdown prompt context, code, task, inputs, constraints or tables |
-| `answer` | Required Markdown direct answer, brief reasoning and essential qualifications |
+| `answer` | Required for complete educational content; importer permits omitted/empty Markdown answers |
 | `provenance.type` | Required: `sourced`, `generated` or `mixed` |
 | `provenance.sources[].sourceName` | Required on every supplied source; sourced/mixed need at least one source |
 | `provenance.sources[].sourceUrl` | Required real HTTP(S) URL on every supplied source |
@@ -54,7 +54,7 @@ Determine provenance from how the question was obtained, independently of answer
 
 Never invent sources, links or quotations. A page about the topic alone does not establish sourced provenance. Never claim a question is common or was asked in an interview without evidence. If a source cannot be confirmed, flag it as unverified for review. Unknown origins of existing questions must remain unresolved, not be relabeled generated; generated is valid only for genuinely agent-authored questions. Unresolved provenance prevents full approval. Store sources in provenance.sources and keep detailed verification/rephrasing notes in the review artifact.
 
-Every supplied source requires sourceName/sourceUrl. Optional company, location (job location), interviewLocation (only explicitly evidenced) and publishedAt (publication date, YYYY-MM-DD) must never be invented. An adaptation source may be technical documentation without interview evidence. Use occurrenceId only when a source documents an actual interview; reuse that ID for reposts/accounts of the same interview. occurrenceCount equals DISTINCT evidenced occurrenceId values, not URL count. Generated cards without documented interviews use 0. Answer references are separate {title, url} technical links and never increase occurrenceCount. Validation checks consistency, not truth or source independence.
+Every supplied source requires sourceName/sourceUrl. Optional company, location (job location), interviewLocation (only explicitly evidenced) and publishedAt (publication date, YYYY-MM-DD) must never be invented. An adaptation source may be technical documentation without interview evidence. Use occurrenceId only when a source documents an actual interview; reuse that ID for reposts/accounts of the same interview. Responses derive occurrenceCount from distinct evidenced occurrenceId values, not URL count; never author it. Generated cards without documented interviews have a derived count of 0. Answer references are separate {title, url} technical links and never increase occurrenceCount. Validation checks consistency, not truth or source independence.
 
 Coding tasks require questionDetails in every supplied language. Put the task statement and optional starter code there; never include the solution before reveal. Optional examples and solution explanation belong in answer. Do not request IDE/compiler/code execution in the app.
 
@@ -74,11 +74,11 @@ Coding tasks require questionDetails in every supplied language. Put the task st
 See [README.md](README.md) for invocation examples and draft content examples.
 
 
-Current contract: author v4; v3 remains import-compatible, v1/v2 and missing versions are rejected. Do not author occurrenceCount; responses derive distinct evidenced occurrence IDs. Use requested canonical BCP 47 content languages. Put examples/explanations/code inside answer. The app accepts omitted/empty answers; requests for complete educational flashcards still require technically complete answers. See docs/FLASHCARDS-V4-SPECIFICATION.md and the current import template.
-
 Markdown heading rules: `#### question`, `#### answer` and `#### questionDetails`
 start structural fields. Once a field starts, other headings are ordinary Markdown
 content, except reserved card/language/metadata headings and retired
 `#### simple`, `#### example`, `#### details` outside fences. To quote reserved
 headings literally, use a fenced code block. Content must begin under a supported
 field heading. See docs/FLASHCARDS-V4-SPECIFICATION.md.
+
+Serialization and reimport semantics are authoritative in [the template](../../../docs/FLASHCARDS-IMPORT-TEMPLATE.md). Author v4; v3 remains compatibility input.

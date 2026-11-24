@@ -29,7 +29,7 @@ DB binding and schema. Both server and migrations explicitly use --local and
 No production data is downloaded; no remote migration or deployment is involved.
 SQLite data under .wrangler/state/v3/d1 survives server restarts. .wrangler/ and
 .dev.vars are already ignored by Git. Keep that directory when restarting.
-`db:local` remains an alias for local migrations. E2E uses separate .wrangler/v3-e2e.
+`db:local` remains an alias for local migrations. `npm run test:e2e` uses a unique `.wrangler/v4-e2e-<UUID>` directory, removed after normal success/failure. `KEEP_E2E_STORAGE=1` or interruption retains it for inspection. The separate `db:e2e` command targets `.wrangler/v3-e2e`; it is not the runner storage.
 
 ## Reset
 
@@ -41,7 +41,7 @@ Run `npm run db:migrate:local` again. Startup never resets data automatically.
 
 Create and edit decks and cards; set original and supported languages. Study
 multiple decks together and check fallback and disabled language buttons on cards
-without translations. Exercise Learned, Repeat, and subsequent study cycles.
+without translations. Exercise Repeat, history navigation and subsequent study cycles.
 Stop and restart with npm run dev; sign in with the same username and verify your
 content and progress remain. No test content is seeded automatically.
 
@@ -59,4 +59,4 @@ content and progress remain. No test content is seeded automatically.
 `dev` builds into dist-local and explicitly runs its generated Wrangler config. This keeps local server assets separate from dist, which other builds and E2E replace. Run only one dev instance at a time.
 
 
-Search-affecting migrations must include required reconstruction in forward SQL and local regression tests; see [search migration and repair procedures](MCP-FTS-ROLLOUT.md).
+Search-affecting migrations must include required reconstruction in forward SQL and local regression tests; see [search migration and repair procedures](SEARCH-ARCHITECTURE.md).

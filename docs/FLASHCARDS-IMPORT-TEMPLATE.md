@@ -34,7 +34,7 @@ supportedLanguages: [en, bg]
 # Code fences can use backticks or tildes. Other Markdown headings/tables/lists are content.
 # Examples and solution explanations belong inside answer, with no separate explanation controls.
 # Import validation errors identify card key, field and reason; v4 apply rejects any invalid card.
-# No import migrates old cards; see FLASHCARDS-V3-RELOAD.md for deliberate recreation.
+# No import migrates old cards; see CARD-REPLACEMENT.md for deliberate recreation.
 #
 #
 # # v4 field reference and update rules

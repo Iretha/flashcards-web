@@ -36,7 +36,7 @@ Issue a new token and revoke the old one to rotate a credential. The management 
 | GET | `/api/decks/{id}/cards/{cardId}` | — | 200 `{data: Card}` |
 | PATCH | `/api/decks/{id}/cards/{cardId}` | Partial card fields | 200 `{data: Card}` |
 
-IDs in paths are the server-generated resource IDs. The list of cards uses deck order, and `q` matches case-insensitive substrings of IDs, import keys and text in any translation, including supplemental sections. Lists return all matches.
+IDs in paths are the server-generated resource IDs. The list of cards uses deck order, and `q` matches exact card IDs/import keys or native FTS5 text matches. See [search semantics](SEARCH-ARCHITECTURE.md). Lists return all matches.
 
 ### Deck fields
 
@@ -47,9 +47,20 @@ IDs in paths are the server-generated resource IDs. The list of cards uses deck 
 | `visibility` | `PRIVATE` or `SHARED`, defaults to `PRIVATE` |
 | `source_key` | Optional nonempty string up to 160 characters, unique per owner, or null. Maps to Markdown `deckId`. |
 | `chatgpt_default` | `universal` or `legacy`, defaults to `universal` |
-| `chatgpt_en`, `chatgpt_bg` | Optional nonempty strings up to 10,000 characters, or null to clear |
+| `chatgpt_en`, `chatgpt_bg` | Optional nonblank strings of at most 10,000 JavaScript string units (UTF-16 code units), or null to clear |
+| `primaryLanguage` | Request and response: canonical BCP 47 code; defaults to `en` on creation. |
+| `supportedLanguages` | Request and response: nonempty array of unique canonical BCP 47 codes including `primaryLanguage`; defaults to `[primaryLanguage]` on creation. |
+| `confirmPrimaryLanguageChange` | Request only: must be `true` when changing the primary language of a populated deck. |
 | `id`, `owned`, `revision` | Read-only string, boolean and integer |
 | `permissions` | Read-only calculated `can_read`, `can_edit`, `can_manage` booleans |
+
+Omitted language configuration fields preserve their existing values on PATCH.
+Codes must already be canonical (for example, `pt-BR`, not `pt-br`). Every card
+must contain complete content in the deck primary language, including nonblank
+questionDetails for coding tasks; empty answers are allowed. Configuration changes
+validate every existing card and cannot remove support for a language still used
+by a card. A confirmed primary-language change designates that language as the
+original for every card while preserving translations.
 
 ### Card fields
 
@@ -59,7 +70,7 @@ IDs in paths are the server-generated resource IDs. The list of cards uses deck 
 | `primary_language` | Canonical BCP 47 code with a translation. Uses the configured deck primary language when available. |
 | `import_key` | Optional identifier matching `[A-Za-z0-9][A-Za-z0-9_-]{0,99}`, unique within the deck, or null |
 | `difficulty`, `interview_priority` | Optional integers from 1 to 5 or null |
-| `metadata` | Optional v3 metadata object or null |
+| `metadata` | Optional canonical metadata object or null |
 | `id`, `deck_id`, `position`, `revision` | Read-only resource IDs, order and deck revision |
 
 Each new translation requires nonempty Markdown `question` (up to 2,000 characters). `answer` is a string of up to 20,000 characters; on creation it may be omitted and defaults to `""`. Empty or whitespace-only supplied answers normalize to `""`. During PATCH, omitting `answer` preserves the existing answer; supplying `answer: ""` clears it. Optional Markdown `questionDetails` allows up to 20,000 characters. PATCH merges fields within each supplied language. An empty string clears an optional section. Questions follow the importer's normalized uniqueness checks, with the D1 primary-question constraint also enforced.
@@ -91,7 +102,7 @@ curl -i "$BASE/api/decks/$DECK_ID/cards" \
 curl -i -X PATCH "$BASE/api/decks/$DECK_ID/cards/$CARD_ID" \
   -H "Authorization: Bearer $FLASHCARDS_TOKEN" \
   -H 'Content-Type: application/json' -H 'If-Match: "1"' \
-  -d '{"translations":{"en":{"example":"The Danube Delta."}}}'
+  -d '{"translations":{"en":{"questionDetails":"Consider the river mouth."}}}'
 ```
 
 The deck creation example returns HTTP 201 with `Location: /api/decks/{id}`, `ETag: "0"` and a body such as the following.
@@ -107,11 +118,6 @@ An example validation response is HTTP 400 with the following body.
 ```
 
 Other error codes are `unauthorized` (401), `forbidden` (403), `not_found` (404), `method_not_allowed` (405), `conflict` (409), `revision_mismatch` (412), `payload_too_large` (413), `unsupported_media_type` (415), `precondition_required` (428) and `internal_error` (500).
-
-## Future MCP adapter
-
-Expose list, get, create and patch operations as tools with equivalent input schemas. Use OAuth authorization code with PKCE for interactive MCP clients, publish protected resource metadata and verify token issuer, audience, expiry and scopes. Resolve the verified OAuth identity to a Flashcards user and obtain that user's scoped Flashcards credential from a server-side secret store. Send that credential to this API. Keep MCP access tokens scoped to the MCP resource. Preserve idempotency keys across retries and surface revision conflicts for reconciliation. [MCP TypeScript SDK authorization guide](https://ts.sdk.modelcontextprotocol.io/v2/serving/authorization)
-
 
 ## Deck collaborators
 
@@ -131,7 +137,7 @@ Migration `0009_deck_collaborators.sql` is additive and retains existing `owner_
 
 ## Self-service tokens
 
-Open the Settings icon in the toolbar and select API Tokens outside study mode. Name the token (1?80 characters), select Read only (default) or Read & Write, and an expiration of 30, 90 (default), 180 or 365 days. Copy the token immediately: it cannot be retrieved again. Keep it in a secret manager, never publish it or put it in URLs. Send `Authorization: Bearer <token>` over HTTPS. Revoke compromised tokens immediately.
+Open the Settings icon in the toolbar and select API Tokens outside study mode. Name the token (nonblank, at most 80 JavaScript string units before trimming), select Read only (default) or Read & Write, and an expiration of 30, 90 (default), 180 or 365 days. Copy the token immediately: it cannot be retrieved again. Keep it in a secret manager, never publish it or put it in URLs. Send `Authorization: Bearer <token>` over HTTPS. Revoke compromised tokens immediately.
 
 Browser-session endpoints (bearer tokens cannot manage tokens):
 - GET /api/tokens returns metadata only, never hashes or plaintext.
@@ -142,7 +148,7 @@ Mutations require same Origin and application/json. Unsupported fields including
 
 Migration 0010 preserves operator credentials and expiration. Missing historical metadata remains null; legacy tokens can be revoked by their owner in Settings. Personal token revocation and expiration are checked on each subsequent authentication. Write scope intersects current owner/collaborator permissions.
 
-MCP uses dedicated personal bearer URLs with separate credential purpose. No MCP OAuth flow is implemented; real ChatGPT connectivity remains unverified. See [MCP contracts](MCP-READ-TOOLS.md).
+MCP uses dedicated personal bearer URLs with separate credential purpose. No MCP OAuth flow is implemented; real ChatGPT connectivity remains unverified. See [MCP contracts](MCP-TOOLS.md).
 
 Token descriptions are optional text of up to 500 characters, accepted as `description` at creation and returned in listings. Update your own token using POST /api/tokens with `{action: "describe", id, description}`. The same session, CSRF and rate limits apply. Migration 0011 adds a nullable description column without changing credentials. Legacy tokens without descriptions display "Used for curl requests and other testing purposes."; this label is editable and is not usage telemetry.
 
@@ -157,10 +163,10 @@ Every Management API deck response includes server-calculated `permissions: {can
 
 Answerless cards retain their IDs and study progress when updated. The study answer panel displays a visual em dash and existing external AI links still use the question. No generated answer is saved automatically.
 
-MCP create_card and update_card use shared canonical mutation logic, not a REST proxy. create_card supports an optional idempotency_key. Separate tool calls have partial-success semantics: a failed call does not roll back earlier successful cards. No batch upload tool or MCP OAuth flow is implemented. See [current tool contracts](MCP-READ-TOOLS.md).
+MCP create_card and update_card use shared canonical mutation logic, not a REST proxy. create_card supports an optional idempotency_key. Separate tool calls have partial-success semantics: a failed call does not roll back earlier successful cards. No batch upload tool or MCP OAuth flow is implemented. See [current tool contracts](MCP-TOOLS.md).
 
 
 V4 breaking contract: translation fields are question/answer/questionDetails only. Metadata input must omit occurrenceCount; response count is derived. Generated input cannot claim occurrences. Text search covers question, questionDetails and answer; questionDetails is included in the text index. Root card question/answer and explanation counters are removed. Export version 2 retains canonical content, progress and historical events; it is not a supported restore format.
 
 
-Native search uses SQL triggers and case-insensitive FTS5 trigram indexing for question, questionDetails and answer in every translation. Free-text queries require three Unicode code points after trimming; empty queries list cards, and exact card IDs/import keys remain available independently. Native Unicode folding does not normalize composed/decomposed forms or expand sharp S. Migration 0020 reconstructs the index without application maintenance. See [deployment and SQL repair](MCP-FTS-ROLLOUT.md).
+Search behavior and recovery are defined in the [search runbook](SEARCH-ARCHITECTURE.md).

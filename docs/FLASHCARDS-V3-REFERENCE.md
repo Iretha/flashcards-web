@@ -9,7 +9,7 @@ primaryLanguage: en
 supportedLanguages: [en, bg]
 # Markdown v3 — supported by parser, validation, persistence, API and Study UI.
 # One stable card key connects BG and EN variants. One file represents one deck.
-# Required per card: provenance; at least one language with question and answer.
+# Required per card: provenance; at least one language with question. Answer may be omitted or empty.
 # Required: cardType (question | coding_task), topic, occurrenceCount (integer >= 0), provenance.type.
 # Optional: interviewPriority, difficulty (integers 1–5), questionDetails, answerReferences.
 # questionDetails and answer are Markdown; examples belong in answer, task code in questionDetails.
@@ -38,7 +38,7 @@ supportedLanguages: [en, bg]
 # Code fences can use backticks or tildes. Other Markdown headings/tables/lists are content.
 # Examples and solution explanations belong inside answer, with no separate explanation controls.
 # Import validation errors identify card key, field and reason; v3 apply rejects any invalid card.
-# No import migrates old cards; see FLASHCARDS-V3-RELOAD.md for deliberate recreation.
+# No import migrates old cards; see CARD-REPLACEMENT.md for deliberate recreation.
 ---
 
 ## card: volatile-atomicity
