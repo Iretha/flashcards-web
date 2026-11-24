@@ -1,12 +1,12 @@
+import { splitSql } from './sql';
 import { readFileSync, readdirSync } from 'node:fs';
 import { Miniflare, convertV4MiniflareOptions } from 'miniflare';
 import { expect, it } from 'vitest';
-import { backfillSearch, verifySearch } from '../src/lib/search';
 import { derivedMetadata } from '../src/lib/metadata';
 
 function statements(file: string) {
  const sql = readFileSync('migrations/'+file,'utf8');
- return file==='0002_progress.sql' ? [sql] : file==='0001_initial.sql' ? sql.trim().split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/) : ['0015_card_search_fts.sql','0016_fts_consistency_recovery.sql'].includes(file) ? sql.trim().split(/;\s*(?=CREATE)/) : sql.split(';').filter(s=>s.trim());
+ return file==='0020_native_search.sql'?splitSql(sql):file==='0002_progress.sql' ? [sql] : file==='0001_initial.sql' ? sql.trim().split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/) : ['0015_card_search_fts.sql','0016_fts_consistency_recovery.sql'].includes(file) ? sql.trim().split(/;\s*(?=CREATE)/) : sql.split(';').filter(s=>s.trim());
 }
 async function database() {
  const runtime = new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:{DB:'migration'}}));
@@ -51,7 +51,17 @@ it('upgrades populated content without rebuilding identities, progress, history,
  expect(session.status).toBe('ACTIVE');expect(session.version).toBe(9);
  expect(JSON.parse(session.session_state)).toEqual({...state,explanation:undefined,queue:[{id:'card'}]});
  expect((await db.prepare('PRAGMA foreign_key_check').all()).results).toEqual([]);
- await backfillSearch(db);await verifySearch(db);
+ await db.batch(statements('0019_search_details.sql').map(s=>db.prepare(s)));
+ const canonicalBefore=(await db.prepare('SELECT * FROM cards').all()).results;
+ const migrationStart=performance.now();
+ await db.batch(statements('0020_native_search.sql').map(s=>db.prepare(s)));
+ console.log('Populated native migration ms',performance.now()-migrationStart);
+ expect((await db.prepare('SELECT * FROM cards').all()).results).toEqual(canonicalBefore);
+ expect((await db.prepare('SELECT * FROM study_events').all()).results).toEqual(events.results);
+ expect((await db.prepare('SELECT * FROM deck_collaborators').all()).results).toEqual(members);
+ expect((await db.prepare('SELECT count(*) AS n FROM card_search').first())?.n).toBe(2);
+ expect((await db.prepare("SELECT name FROM sqlite_master WHERE name IN ('card_search_rows','card_search_ready')").all()).results).toEqual([]);
+ expect((await db.prepare('PRAGMA foreign_key_check').all()).results).toEqual([]);
  }finally{await runtime.dispose()}
 });
 it.each([{}, {en:{question:'Valid',answer:''}}])('recovers only absent primary content and preserves empty answers',async translations=>{
@@ -67,5 +77,14 @@ it('fails atomically on irreconcilable content',async()=>{
  await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,question,answer,position,created_at,updated_at,translations) VALUES('bad','deck','key','q','Root','Root',0,0,0,?)").bind(JSON.stringify({en:{question:42,answer:'Keep'}})).run();
  await expect(db.batch(statements('0018_canonical_content.sql').map(s=>db.prepare(s)))).rejects.toThrow();
  expect(await db.prepare('SELECT question,answer FROM cards').first()).toEqual({question:'Root',answer:'Root'});
+ }finally{await runtime.dispose()}
+});
+
+it('rolls back a failed native schema migration batch locally',async()=>{
+ const {runtime,db}=await database();try{
+ for(const file of ['0018_canonical_content.sql','0019_search_details.sql']) await db.batch(statements(file).map(sql=>db.prepare(sql)));
+ const before=(await db.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all()).results;
+ await expect(db.batch([...statements('0020_native_search.sql').map(sql=>db.prepare(sql)),db.prepare('INSERT INTO nonexistent_table VALUES(1)')])).rejects.toThrow();
+ expect((await db.prepare("SELECT name,sql FROM sqlite_master ORDER BY name").all()).results).toEqual(before);
  }finally{await runtime.dispose()}
 });

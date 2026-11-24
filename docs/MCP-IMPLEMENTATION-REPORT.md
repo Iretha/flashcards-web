@@ -1,3 +1,5 @@
+> Historical implementation chronology. Ping-only tools and deferred deck/card access describe earlier stages. See [current MCP contracts](MCP-READ-TOOLS.md) and [deployment acceptance](MCP-PREPROD-DEPLOYMENT.md).
+
 # MCP implementation gate report
 
 ## Follow-up source verification — 2026-11-23

@@ -1,6 +1,6 @@
 # MCP local preflight and owner deployment
 
-The owner classifies the existing historically named Cloudflare `production` service as logical **preprod**. Do not create or rename resources. Branch: `feature/auth`. Service: `flashcards-api`. Account: `034dd26900a0d3924b33a8e24289bc8e`. D1 binding: `DB`; database: `flashcards-db`; ID: `5c34da3b-c2af-4f58-96ae-b3e34e46f075`. HTTPS base: `https://flashcards-api.milena-bd-034.workers.dev`.
+The owner classifies the existing historically named Cloudflare `production` service as logical **preprod**. Do not create or rename resources. Branch: `refactor/cleanup`. Service: `flashcards-api`. Account: `034dd26900a0d3924b33a8e24289bc8e`. D1 binding: `DB`; database: `flashcards-db`; ID: `5c34da3b-c2af-4f58-96ae-b3e34e46f075`. HTTPS base: `https://flashcards-api.milena-bd-034.workers.dev`.
 
 Dashboard target: https://dash.cloudflare.com/034dd26900a0d3924b33a8e24289bc8e/workers/services/view/flashcards-api/production
 
@@ -10,35 +10,11 @@ Set runtime `PERSONAL_MCP_URLS_ENABLED=true` in production or development. False
 
 ## Owner commands (PowerShell, repository root)
 
-These are manual commands, not executed during preflight. `--env=` explicitly selects Wrangler's top-level/default configuration: the existing dashboard service named production. Do not use `--env production`: no named Wrangler environment exists. Do not use npm run deploy, which combines remote migration and default deployment without these checks.
+Remote operations require explicit owner authorization. Preserve existing configuration, bindings, authentication and secrets; do not add deployment arguments or credentials. Review the configured target and pending migrations before authorizing deployment.
 
-```powershell
-git branch --show-current
-$env:CLOUDFLARE_ACCOUNT_ID = '034dd26900a0d3924b33a8e24289bc8e'
-npx wrangler whoami
-npx wrangler deployments list --config wrangler.jsonc --env= --name flashcards-api
-npx wrangler d1 migrations list DB --remote --config wrangler.jsonc --env=
-```
+Use `npm run deploy` as the standard entry point. It builds first, applies pending remote migrations automatically, and publishes with `wrangler deploy --keep-vars`; either build or migration failure stops publication.
 
-Stop if account, binding/ID, Worker, or pending migration list differ from this target. Record the current active version immediately before deploying. Previously observed version, not a fresh rollback guarantee: d9bede13-6e88-4ba7-b72d-15dfbf4b317c.
-
-```powershell
-npx wrangler d1 migrations apply DB --remote --config wrangler.jsonc --env=
-npm run build
-if ($LASTEXITCODE -ne 0) { throw 'Build failed' }
-```
-
-Inspect `dist/server/wrangler.json` before deploying: name flashcards-api, expected D1 ID, unchanged assets and auth bindings, invocation_logs=false. Do not publish .dev.vars. Keep existing authentication secrets and settings. Only then:
-
-```powershell
-npx wrangler deploy --config dist/server/wrangler.json --env= --name flashcards-api --keep-vars --var PERSONAL_MCP_URLS_ENABLED:true
-```
-
-`--keep-vars` preserves existing dashboard variables; secret bindings must remain untouched. Capture the new deployment version and verify actual deployed variables and binding. Rollback code with the freshly recorded previous version (replace placeholder), retaining the additive schema and all data:
-
-```powershell
-npx wrangler rollback PREVIOUS_VERSION_ID --config wrangler.jsonc --env= --name flashcards-api
-```
+For incompatible schema transitions, follow the [search transition and recovery precautions](MCP-FTS-ROLLOUT.md): prepare restorable recovery, rehearse locally, pause writers and traffic, then publish compatible code before resuming. Failed publication does not roll back migrations. Rolling back code alone may be incompatible with the migrated schema.
 
 ## Dashboard checks before generating a bearer URL
 
@@ -46,7 +22,7 @@ Verify the exact account/service, D1 ID, HTTPS endpoint, and existing authentica
 
 ## Owner acceptance after deployment
 
-Use a dedicated synthetic account. Verify sign-in, deck listing/editing, sharing, owner-only third-party setting persistence, collaborator denial, personal URL generation and secret-once presentation. Use HTTPS with an MCP SDK client to initialize, list only ping, and invoke ping. Verify invalid, expired and revoked credentials fail and cross-purpose credentials are rejected. Do not paste secrets into shell command arguments or reports. Record only redacted statuses. Revoke every test credential.
+Use a dedicated synthetic account. Verify sign-in, deck listing/editing, sharing, owner-only third-party setting persistence, collaborator denial, personal URL generation and secret-once presentation. Use HTTPS with an MCP SDK client to initialize, verify the seven tools listed in [MCP tools](MCP-READ-TOOLS.md), and invoke ping. Verify authorized read tools, denial for nonmembers and NONE decks, and search summaries versus get_card content. On disposable synthetic cards in a READ_WRITE deck, verify create_card and update_card, including omitted/empty answers; verify writes fail for READ decks and revoked collaborators. Verify invalid, expired and revoked credentials fail and cross-purpose credentials are rejected. Do not paste secrets into shell command arguments or reports. Record only redacted statuses. Revoke every test credential.
 
 ChatGPT status is **UNVERIFIED**. After protocol acceptance, open ChatGPT custom connector management, create a connection, select No authentication if offered and privately paste the dedicated personal URL. Ask ChatGPT to discover and execute ping; expected tool response: Planerox MCP connected. If unavailable or failing, record timestamp, redacted error and request ID, never the URL. Revoke afterward. SDK tests are not a real ChatGPT test.
 

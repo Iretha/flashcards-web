@@ -45,3 +45,17 @@ it('rejects authored v4 occurrence count and contradictory generated evidence',(
  const source=file('').replace('sources: []','sources:\n  - sourceName: Evidence\n    sourceUrl: https://example.com\n    occurrenceId: interview');
  expect(parseMarkdown(source).cards[0].error).toContain('generated');
 });
+
+it.each([3,4])('preserves ordinary Markdown headings within fields in v%s', version => {
+ const question = 'Frage?\n## Context\n### Background\n#### Clarification';
+ const answer = 'Answer\n## Overview\n### Reasoning\n#### unsupported\nStill answer content';
+ const parsed = parseMarkdown(file('\n## Context\n### Background\n#### Clarification\n#### answer\n'+answer, version));
+ expect(parsed.cards[0]).not.toHaveProperty('error');
+ expect(parsed.cards[0].translations.de).toEqual({question, answer});
+});
+it.each([3,4])('rejects retired structural fields after an answer in v%s', version => {
+ for (const field of ['simple','example','details']) {
+  expect(parseMarkdown(file('\n#### answer\nAnswer\n#### '+field+'\nRetired', version)).cards[0].error).toMatch(/belong in answer/);
+ }
+ expect(parseMarkdown(file('',version).replace('#### question','#### unsupported')).cards[0].error).toBeTruthy();
+});

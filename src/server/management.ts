@@ -1,3 +1,4 @@
+import { quoteSearch } from '../lib/search';
 import { canEditDeck, editAccess, managementPermissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { authenticateClient, digest } from './auth';
@@ -173,15 +174,22 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
         return json({ data: (await listDecks(db, user, access)).map(item => deckData(item, user)) });
       }
       if (!cardsRoute) return respond(deckData(await getDeck(db, user, deckId), user));
-      const q = url.searchParams.has('q') ? text(url.searchParams.get('q'), 'q', 200).trim().toLowerCase() : '';
+      const q = url.searchParams.has('q') ? text(url.searchParams.get('q'), 'q', 200, false).trim() : '';
+      const searchEpoch = q ? await db.prepare('SELECT epoch FROM card_search_state WHERE id=1').first<{epoch:number}>() : null;
       const { deck, cards } = await deckWithCards(db, user, deckId, cardId || undefined);
       if (cardId) {
         const card = cards.find(item => item.id === cardId);
         check(card, 'Card not available.', 404);
         return respond(cardData(card, deck.revision));
       }
-      const matches = cards.filter(card => !q || [card.id, card.import_key, ...Object.values(card.translations).flatMap(t => [t.question, t.answer])]
-        .some(value => value?.toLowerCase().includes(q)));
+      const exact = cards.filter(card => card.id === q || card.import_key === q);
+      requireField(!q || exact.length > 0 || Array.from(q).length >= 3, 'q', 'Free-text search requires at least three Unicode characters.');
+      const found = q && Array.from(q).length >= 3 ? new Set((await db.prepare('SELECT card_id FROM card_search WHERE card_search MATCH ? AND card_id IN (SELECT id FROM cards WHERE deck_id=?)').bind(quoteSearch(q),deckId).all<{card_id:string}>()).results.map(row => row.card_id)) : new Set<string>();
+      const matches = cards.filter(card => !q || exact.includes(card) || found.has(card.id));
+      if (q) {
+        const end = await db.prepare('SELECT epoch FROM card_search_state WHERE id=1').first<{epoch:number}>();
+        check(end?.epoch === searchEpoch?.epoch, 'Search changed. Retry the request.', 409);
+      }
       return json({ data: matches.map(card => cardData(card, deck.revision)), revision: deck.revision }, 200, { ETag: `"${deck.revision}"` });
     }
 

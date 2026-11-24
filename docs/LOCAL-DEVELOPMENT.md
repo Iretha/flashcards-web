@@ -58,3 +58,5 @@ content and progress remain. No test content is seeded automatically.
 - Never add --remote to local commands or use deploy for local development.
 `dev` builds into dist-local and explicitly runs its generated Wrangler config. This keeps local server assets separate from dist, which other builds and E2E replace. Run only one dev instance at a time.
 
+
+Search-affecting migrations must include required reconstruction in forward SQL and local regression tests; see [search migration and repair procedures](MCP-FTS-ROLLOUT.md).

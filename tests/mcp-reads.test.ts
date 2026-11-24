@@ -1,4 +1,4 @@
-import { backfillSearch } from '../src/lib/search';
+import { splitSql } from './sql';
 import { mcp } from '../src/server/mcp';
 import { digest } from '../src/server/auth';
 import { readFileSync, readdirSync } from 'node:fs';
@@ -7,14 +7,15 @@ import { beforeAll, afterAll, expect, it } from 'vitest';
 import { readMcp, cursorKey, toolResult, RESULT_BYTES } from '../src/server/mcp-reads';
 let runtime: Miniflare, db: D1Database;
 const key = await cursorKey('test-credential');
-const read = async (user: string, tool: Parameters<typeof readMcp>[2], args: unknown) => { if(await db.prepare('SELECT 1 FROM cards c WHERE NOT EXISTS(SELECT 1 FROM card_search_ready r WHERE r.card_id=c.id AND r.version=1) LIMIT 1').first()) await backfillSearch(db); return readMcp(db,user,tool,args,key); };
+const read = (user: string, tool: Parameters<typeof readMcp>[2], args: unknown) => readMcp(db,user,tool,args,key);
 beforeAll(async () => {
  runtime = new Miniflare(convertV4MiniflareOptions({ modules: true, script: 'export default {fetch(){return new Response("ok")}}', d1Databases: {DB:'mcp-reads'} }));
  db = await runtime.getD1Database('DB') as unknown as D1Database;
  for (const file of readdirSync('migrations').filter(f=>f.endsWith('.sql')).sort()) {
   const sql=readFileSync('migrations/'+file,'utf8');
-  await db.batch((file==='0002_progress.sql' ? [sql] : ((file==='0015_card_search_fts.sql'||file==='0016_fts_consistency_recovery.sql') ? sql.trim().split(/;\s*(?=CREATE)/) : file==='0001_initial.sql' ? sql.trim().split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/) : sql.split(';').filter(s=>s.trim()))).map(s=>db.prepare(s)));
+  await db.batch((file==='0020_native_search.sql' ? splitSql(sql) : file==='0002_progress.sql' ? [sql] : (file==='0020_native_search.sql' ? splitSql(sql) : (file==='0015_card_search_fts.sql'||file==='0016_fts_consistency_recovery.sql') ? sql.trim().split(/;\s*(?=CREATE)/) : file==='0001_initial.sql' ? sql.trim().split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/) : sql.split(';').filter(s=>s.trim()))).map(s=>db.prepare(s)));
  }
+
  for (const user of ['owner','collaborator','stranger']) await db.prepare('INSERT INTO users(id,username,username_key,created_at,last_login_at) VALUES (?,?,?,0,0)').bind(user,user,user).run();
  for (const access of ['NONE','READ','READ_WRITE']) {
   await db.prepare("INSERT INTO decks(id,owner_id,title,description,visibility,created_at,updated_at,third_party_access) VALUES (?,'owner',?,'','SHARED',0,0,?)").bind(access,access,access).run();
@@ -97,7 +98,7 @@ it('paginates unique cards with signed scope-bound cursors and Unicode matching'
  }
  const all=await read('owner','search_cards',{deck_id:'pages',query:'race',language:'all'});
  expect(all.items![0]).toMatchObject({questions:{bg:'ВЪПРОС',en:'Question'},resolved_language:null,fallback_used:false});
- for(const args of [{},{query:''},{query:'  ',deck_id:'pages'},{deck_id:'pages',limit:10},{deck_id:'pages',after:'bad'}]) await expect(read('owner','search_cards',args)).rejects.toThrow('INVALID_ARGUMENTS');
+ for(const args of [{},{deck_id:'pages',limit:10},{deck_id:'pages',after:'bad'}]) await expect(read('owner','search_cards',args)).rejects.toThrow('INVALID_ARGUMENTS');
 });
 it('measures exact duplicated serialized UTF-8 result size',()=>{
  const base=new TextEncoder().encode(JSON.stringify(toolResult({value:''}))).length;
@@ -201,13 +202,13 @@ it.each([undefined,'en','bg'])('updates only the selected answer (%s), retaining
 
 it('replaces ready FTS content immediately without a backfill',async()=>{
  const {card_id}=await answerFixture();
- expect(await db.prepare('SELECT version FROM card_search_ready WHERE card_id=?').bind(card_id).first()).toEqual({version:1});
+ expect(await db.prepare('SELECT language FROM card_search_keys WHERE card_id=?').bind(card_id).first()).not.toBeNull();
  expect(await matches(card_id,'obsoleteuniqueterm')).toHaveLength(1);
  const state=await db.prepare('SELECT epoch FROM card_search_state WHERE id=1').first<{epoch:number}>();
  await updateMcpCard(db,'owner',{card_id,answer:'replacementuniqueterm'});
  expect(await matches(card_id,'replacementuniqueterm')).toHaveLength(1);
  expect(await matches(card_id,'obsoleteuniqueterm')).toHaveLength(0);
- expect(await db.prepare('SELECT version FROM card_search_ready WHERE card_id=?').bind(card_id).first()).toEqual({version:1});
+ expect(await db.prepare('SELECT language FROM card_search_keys WHERE card_id=?').bind(card_id).first()).not.toBeNull();
  expect((await db.prepare('SELECT epoch FROM card_search_state WHERE id=1').first<{epoch:number}>())!.epoch).toBeGreaterThan(state!.epoch);
 });
 
@@ -215,7 +216,7 @@ it.each(['membership','third-party'] as const)('rejects concurrent %s revocation
  const {deck,card_id}=await answerFixture();
  const before=await storedCard(card_id);
  const indexed=await db.prepare('SELECT * FROM card_search WHERE card_id=? ORDER BY language').bind(card_id).all();
- const ready=await db.prepare('SELECT * FROM card_search_ready WHERE card_id=?').bind(card_id).all();
+ const ready=await db.prepare('SELECT * FROM card_search_keys WHERE card_id=?').bind(card_id).all();
  let reachedWrite=false;
  let stateAfterRevocation:unknown;
  // Delegate all SQL to real D1; inject revocation only after reads and before its atomic batch.
@@ -234,7 +235,7 @@ it.each(['membership','third-party'] as const)('rejects concurrent %s revocation
  expect(reachedWrite).toBe(true);
  expect(await storedCard(card_id)).toEqual(before);
  expect(await db.prepare('SELECT * FROM card_search WHERE card_id=? ORDER BY language').bind(card_id).all()).toMatchObject({results:indexed.results});
- expect(await db.prepare('SELECT * FROM card_search_ready WHERE card_id=?').bind(card_id).all()).toMatchObject({results:ready.results});
+ expect(await db.prepare('SELECT * FROM card_search_keys WHERE card_id=?').bind(card_id).all()).toMatchObject({results:ready.results});
  expect((await db.prepare('SELECT * FROM card_search_state').all()).results).toEqual((stateAfterRevocation as D1Result).results);
  expect(await matches(card_id,'forbiddenuniqueterm')).toHaveLength(0);
  expect(await matches(card_id,'obsoleteuniqueterm')).toHaveLength(1);

@@ -18,8 +18,12 @@ the canonical persisted Translation. v4 uses the existing card/language heading
 syntax and metadata, except authored occurrenceCount is rejected. v3 requires and
 validates its historical occurrenceCount against distinct occurrence IDs.
 Languages use the shared canonical BCP 47 validator, including regional/script codes.
-Unknown and retired section headings fail validation; literal reserved headings
-inside fenced Markdown remain content.
+Only question, answer and questionDetails are structural field headings (####).
+After a field begins, other headings remain ordinary Markdown content, except
+reserved card/language/metadata headings and retired #### simple/example/details
+headings outside fences. Retired fields fail validation. Literal reserved headings
+inside fenced Markdown remain content. Put ordinary content after a supported field
+heading; unsupported content before a field is invalid.
 
 Missing answer initializes an empty answer for creation and preserves the old
 answer on update. A present empty answer clears it. Preview and execution use the
@@ -55,8 +59,7 @@ kinds. Remove test-only compareImport.
 Browser, Management API, MCP and exports expose canonical translations without root
 mirrors or explanation statistics. New metadata inputs exclude occurrenceCount;
 responses derive it. All write interfaces allow empty answers; omission preserves
-existing answers. Management/MCP text search covers question and answer, with task
-details excluded explicitly from text search (still returned as content).
+existing answers. Management/MCP text search covers question, questionDetails and answer.
 External AI requests include the resolved question and matching questionDetails,
 never the stored answer, and request the user's selected output language. Authored
 content is delimited untrusted data, not application instructions.
@@ -77,13 +80,7 @@ Browser JSON export alone is not a demonstrated restorable backup.
 
 ## Deployment and search recovery gate
 
-Migration 0018 deliberately invalidates affected derived search rows through existing
-triggers. Before reopening search, backfill using the existing shared backfillSearch
-and verifySearch functions in an approved maintenance context. The existing
-scripts/backfill-card-search.mjs utility is LOCAL ONLY; do not use it as a remote
-migration command. A production maintenance invocation must be independently reviewed
-and authorized. Until the index is verified, MCP returns controlled SEARCH_NOT_READY
-rather than partial search results. No remote operation was performed by this task.
+Migration 0020 reconstructs native search directly from canonical translations. SQL triggers maintain it thereafter. See [deployment and repair](MCP-FTS-ROLLOUT.md). Free text requires three Unicode code points and uses native SQLite Unicode behavior.
 
 Legacy generated records with occurrence IDs retain every source and identifier and
 report their derived count consistently, without silently asserting zero or changing
@@ -94,8 +91,10 @@ rejects that contradiction. Historical source claims are not independently verif
 Stable keys remain: historical fixtures use distinct values and no production data
 inspection was authorized. Legacy learn remains a supported action producing LEARNED;
 all historical event kinds and trigger interpretations remain intact. Text search
-covers question and answer, excluding questionDetails consistently; Management API
-also retains identifier/import-key lookup. This intentionally retires its former
-incidental search over task details and is a documented client-visible change.
+covers question, questionDetails and answer consistently; Management API
+also retains identifier/import-key lookup. Search includes task details through questionDetails.
 
 The complete bilingual [v4 example](FLASHCARDS-V4-EXAMPLE.md), current template and historical v3 reference are all checked through the production parser in tests/markdown.test.ts.
+
+
+Search uses native FTS5 and automatic SQL triggers after forward migration 0020; there is no activation step. Required reconstruction belongs in the affected forward migration; see the [search maintenance runbook](MCP-FTS-ROLLOUT.md). No additional Worker or endpoint is introduced. E2E tests use owned disposable storage cleaned after normal success/failure; KEEP_E2E_STORAGE=1 retains it for debugging. Interrupted/forcibly terminated runs may retain storage and require manual inspection.

@@ -1,77 +1,35 @@
-﻿# FTS production rollout and recovery — preparation only
+# Native search and deployment
 
-No remote operation is authorized by this document. Owner approval is required
-before any production execution. The local runner cannot access Cloudflare.
+Canonical content lives in cards.translations. Migration 0020 creates minimal card_search_keys (integer id, card_id foreign key, language, unique card/language) and card_search using FTS5 trigram case_sensitive 0. SQL triggers index every translation, combine question and nonempty questionDetails with a newline, and keep answer separate. Ordinary application writes perform no indexing calls. Unrelated card updates do not rebuild documents.
 
-## Preflight: read-only verification
+Free text requires three Unicode code points after trimming. Empty or omitted queries retain listing behavior. Phrases are escaped as literal FTS phrases, including quotes and punctuation; no wildcard syntax is accepted. Native SQLite Unicode folding applies: canonical composition is not normalized, sharp S does not equal ss, and Turkish I behavior differs from JavaScript normalization. Import duplicate normalization remains independent. Management exact card ID/import-key lookup and MCP get_card remain available for short keys. Search retains authorization, deduplication and keyset ordering. The global epoch protects multi-statement MCP reads against card, deck and collaborator changes; SEARCH_CHANGED requires retrying the whole request.
 
-Record the target account/database ID, deployed code version, current schema,
-backup/restore capability, and exact migration ledger (`d1_migrations`: name/id).
-Compare ledger names and checksums of the corresponding reviewed SQL with this
-checkout. D1 tracks filenames, not merely numeric prefixes. Preserve historical
-0015_card_search_fts.sql unchanged. 0016_fts_consistency_recovery.sql is additive
-migration history; it rebuilds derived storage and does not alter source cards.
+## Commands
 
-If either discarded 0015 legacy-language/JSON draft appears in the ledger, stop:
-retain its actual historical SQL and prepare a separately reviewed forward upgrade.
-Never rename/rewrite an applied ledger entry or assume the remote ledger matches
-local state. Do not run the current generic deploy command without this preflight.
+Ordinary deployment: `npm run deploy` builds, applies pending migrations and publishes with `--keep-vars`. Existing Wrangler configuration, bindings and authentication remain unchanged. This flag alone does not preserve every configuration change.
 
-## Ordered rollout (requires separate approval)
+Local migration: `npm run db:migrate:local`
 
-1. Validate backup and a restore rehearsal, including virtual-table limitations.
-   Source cards are authoritative; FTS can be rebuilt. Record baseline counts.
-2. Gate MCP text search and pause content writers. Stop old deployments/jobs that
-   could write cards with the old FTS synchronization code. Do not leave old and
-   new write paths active together during this migration.
-3. Apply the reviewed schema migrations to the explicitly verified target. 0016
-   removes old derived rows/markers and adds map/epoch/version machinery. Existing
-   source content, translations and primary languages remain unchanged.
-4. Deploy the matching writer/search code while the operational gate remains on.
-   Existing search requests fail explicitly while cards lack versioned readiness.
-5. Through a separately approved operator environment with the real D1 binding,
-   run backfillSearch(db) from src/lib/search.ts in resumable bounded units. Do not
-   point the local Miniflare CLI at production files or treat it as a remote tool.
-   A remote bounded runner/command must be reviewed before production execution;
-   a single long-lived Worker invocation must not index the whole database.
-6. verifySearch(db) compares every source translation's normalized fields with
-   mapping and FTS content, checks versioned markers/orphans, executes FTS internal
-   integrity-check, and activates with an epoch compare-and-swap. Keep writers
-   paused until verification succeeds, otherwise verification can fail/retry.
-7. Check missing/version-mismatched readiness count = zero, source card/translation
-   counts unchanged, schema/version correct, FTS/mapping row counts equal, plus
-   owner/collaborator/stranger, Cyrillic, short queries, pagination smoke checks.
-8. Remove the search gate and resume only new writers. Monitor SEARCH_CHANGED,
-   SEARCH_NOT_READY, latency, database CPU, rows read/written and storage growth.
+Remote migration: `npm run db:migrate:remote`
 
-## Failure and rollback
+Local repair: `npx wrangler d1 execute DB --local --persist-to .wrangler/state --config wrangler.jsonc --file scripts/repair-search.sql`
 
-Migration failure: stop and inspect; D1 rolls back the failed migration. Do not
-manually mark it applied. Keep gates on until actual schema/ledger are reconciled.
-Backfill interruption: rerun backfill; markers are committed per card. Source CAS
-prevents stale work from replacing newer translations. Pending cards block search.
-Verification failure: state becomes blocked; investigate then run an explicit
-rebuild. No activation is allowed on partial or failed verification.
+Remote repair: `npx wrangler d1 execute DB --remote --config wrangler.jsonc --file scripts/repair-search.sql`
 
-Rebuild: beginSearchRebuild(db) atomically gates search and clears markers, mapping
-and FTS (including orphan rows). Repeating it while rebuilding preserves progress.
-Then backfillSearch(db) resumes and verifies before activation. Use verifySearch(db)
-for audits. A failed audit gates search; use explicit rebuild to repair it.
-Local CLI: `node scripts/backfill-card-search.mjs <persist-dir> <database-id>
-[backfill|rebuild|verify]`. Stop wrangler dev before using its local persistence.
+The DB binding selects flashcards-db; confirm its database_id and target environment in wrangler.jsonc and Cloudflare Dashboard before administration. Remote commands are documentation only.
 
-Rollback is operational, not reverse SQL: gate search, pause writers and retain
-source data. Do not roll back to writers that populate only the old FTS table,
-which would bypass mapping synchronization. Prefer rolling forward to a corrected
-compatible build. Any source-data restore is separately approved and followed by
-a full rebuild/verification. Do not drop migrations/tables or edit the ledger as
-part of rollback. Never export FTS shadow tables as the only recovery source.
+## Exceptional repair
 
-References: Cloudflare documents D1 session sequential consistency separately
-from batch transactional execution. This implementation relies on the former plus
-triggered epochs, not an inferred multi-statement snapshot:
-https://developers.cloudflare.com/d1/best-practices/read-replication/
-https://developers.cloudflare.com/d1/worker-api/d1-database/
-Physical database corruption that prevents FTS deletion/integrity operations needs
-an approved restore/recreate procedure; the rebuild repairs logical missing,
-incorrect and orphan index rows, not damaged SQLite storage files.
+Use repair only for damaged derived data. Pause application traffic and all writers, prepare recovery, then execute the complete SQL file (also suitable for D1 Console statements). It clears mapping and FTS, reconstructs every translation from canonical JSON and checks FTS integrity. Standalone multi-statement execution is not assumed atomic. If interrupted, keep traffic paused and repeat the entire script. It is safe to repeat. Verify foreign_key_check, translation/mapping/FTS counts, rowid correspondence and representative searches before resuming. FTS rebuild alone cannot recover canonical content absent from the FTS table.
+
+## One-time incompatible schema transition
+
+Prepare and validate a full restorable database recovery point. Rehearse pending migrations against an isolated populated copy. Pause traffic and writers before migration: the previous application depends on removed tables. Publish the new application immediately after successful migration, then check authorization, multilingual/details/answer searches, edits, clears, deletions and learning history before resuming traffic. A publication failure does not roll back migrations: keep traffic paused and retry publication of this schema-compatible application, or execute the rehearsed full recovery procedure. Ordinary deploy has no extra maintenance flags or credentials and performs no unconditional reconstruction.
+
+E2E uses a fixed port; simultaneous runs are unsupported. The runner owns a unique disposable storage directory and removes only that directory after completion. Forced interruption or KEEP_E2E_STORAGE=1 can retain it for inspection.
+
+## Future migrations
+
+Assess search impact whenever canonical card schema, searchable fields, translations or JSON structure, FTS configuration, mapping, synchronization triggers, or relevant foreign keys/cascades change. Update affected triggers and FTS structures and embed required reconstruction in that same forward SQL migration. Never edit historical migrations. Update the canonical repair SQL when its procedure changes, and add local migration regression coverage for consistency, inserts/updates/deletes/cascades and canonical data preservation. Keep API documentation and specifications synchronized.
+
+Reconstruction is necessary when a schema/index change makes existing derived rows invalid or incomplete, or for exceptional damage recovery. It is unnecessary for ordinary mutations and unrelated schema changes. Do not add backfill runners, activation endpoints, remote adapters or deployment-wide reconstruction/verification. The repair script is the sole manual reconstruction mechanism. See [mandatory repository rules](../AGENTS.md).

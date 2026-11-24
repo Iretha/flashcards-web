@@ -70,6 +70,13 @@ supportedLanguages: [en, bg]
 # [the historical reference](FLASHCARDS-V3-REFERENCE.md). New files should use v4.
 ---
 
+# Markdown heading rules: `#### question`, `#### answer` and `#### questionDetails`
+# start structural fields. Once a field starts, other headings are ordinary Markdown
+# content, except reserved card/language/metadata headings and retired
+# `#### simple`, `#### example`, `#### details` outside fences. To quote reserved
+# headings literally, use a fenced code block. Content must begin under a supported
+# field heading. See docs/FLASHCARDS-V4-SPECIFICATION.md.
+
 ## card: volatile-atomicity
 
 ### cardType: question

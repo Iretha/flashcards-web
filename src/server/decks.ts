@@ -1,4 +1,3 @@
-import { indexCards } from '../lib/search';
 import { editAccess, permissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { validateMetadata, derivedMetadata, metadataForStorage } from '../lib/metadata';
@@ -257,7 +256,7 @@ export function writeCards(db: D1Database, deck: string, mutation: string, now: 
       primary_language = excluded.primary_language, translations = excluded.translations,
       interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata`}`)
     .bind(deck, deck, now, now, JSON.stringify(values), deck, mutation);
-  return [write,...indexCards(db,cards, 'EXISTS(SELECT 1 FROM decks WHERE id=?2 AND mutation=?3 AND c.deck_id=id)',[deck,mutation])];
+  return [write];
 }
 
 export async function applyImport(db: D1Database, user: string, input: Record<string, unknown>) {

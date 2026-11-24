@@ -142,7 +142,7 @@ Mutations require same Origin and application/json. Unsupported fields including
 
 Migration 0010 preserves operator credentials and expiration. Missing historical metadata remains null; legacy tokens can be revoked by their owner in Settings. Personal token revocation and expiration are checked on each subsequent authentication. Write scope intersects current owner/collaborator permissions.
 
-Future MCP integration may require OAuth depending on client requirements. No MCP or OAuth is implemented, and manual token-entry support in ChatGPT is not asserted.
+MCP uses dedicated personal bearer URLs with separate credential purpose. No MCP OAuth flow is implemented; real ChatGPT connectivity remains unverified. See [MCP contracts](MCP-READ-TOOLS.md).
 
 Token descriptions are optional text of up to 500 characters, accepted as `description` at creation and returned in listings. Update your own token using POST /api/tokens with `{action: "describe", id, description}`. The same session, CSRF and rate limits apply. Migration 0011 adds a nullable description column without changing credentials. Legacy tokens without descriptions display "Used for curl requests and other testing purposes."; this label is editable and is not usage telemetry.
 
@@ -157,7 +157,10 @@ Every Management API deck response includes server-calculated `permissions: {can
 
 Answerless cards retain their IDs and study progress when updated. The study answer panel displays a visual em dash and existing external AI links still use the question. No generated answer is saved automatically.
 
-A future MCP adapter must call the existing individual card POST endpoint for each extracted card, using a distinct idempotency key per creation and retrying identical request bytes. Multiple calls have partial-success semantics: a failed call does not roll back earlier successful cards. Record each result and retry only as appropriate; normalized duplicate questions return 409. There is no batch transaction, upload endpoint, OAuth flow or MCP server. Adapter authentication, tool definitions, extraction and retry orchestration remain future work.
+MCP create_card and update_card use shared canonical mutation logic, not a REST proxy. create_card supports an optional idempotency_key. Separate tool calls have partial-success semantics: a failed call does not roll back earlier successful cards. No batch upload tool or MCP OAuth flow is implemented. See [current tool contracts](MCP-READ-TOOLS.md).
 
 
-V4 breaking contract: translation fields are question/answer/questionDetails only. Metadata input must omit occurrenceCount; response count is derived. Generated input cannot claim occurrences. Text search covers question and answer only; questionDetails is returned but not text-indexed. Root card question/answer and explanation counters are removed. Export version 2 retains canonical content, progress and historical events; it is not a supported restore format.
+V4 breaking contract: translation fields are question/answer/questionDetails only. Metadata input must omit occurrenceCount; response count is derived. Generated input cannot claim occurrences. Text search covers question, questionDetails and answer; questionDetails is included in the text index. Root card question/answer and explanation counters are removed. Export version 2 retains canonical content, progress and historical events; it is not a supported restore format.
+
+
+Native search uses SQL triggers and case-insensitive FTS5 trigram indexing for question, questionDetails and answer in every translation. Free-text queries require three Unicode code points after trimming; empty queries list cards, and exact card IDs/import keys remain available independently. Native Unicode folding does not normalize composed/decomposed forms or expand sharp S. Migration 0020 reconstructs the index without application maintenance. See [deployment and SQL repair](MCP-FTS-ROLLOUT.md).

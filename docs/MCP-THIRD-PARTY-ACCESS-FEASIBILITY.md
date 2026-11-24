@@ -1,3 +1,5 @@
+> Historical feasibility analysis; statements that no MCP server exists describe the pre-implementation state. See [current MCP contracts](MCP-READ-TOOLS.md).
+
 ﻿# MCP Third-Party Access — Current-State Assessment
 
 Date: 2026-11-23. Assessment only; no implementation approval implied.

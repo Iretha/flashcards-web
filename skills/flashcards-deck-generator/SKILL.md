@@ -17,3 +17,10 @@ Generate the requested count where feasible and review every card using the shar
 
 
 Current contract: author v4; v3 remains import-compatible, v1/v2 and missing versions are rejected. Do not author occurrenceCount; responses derive distinct evidenced occurrence IDs. Use requested canonical BCP 47 content languages. Put examples/explanations/code inside answer. The app accepts omitted/empty answers; requests for complete educational flashcards still require technically complete answers. See docs/FLASHCARDS-V4-SPECIFICATION.md and the current import template.
+
+Markdown heading rules: `#### question`, `#### answer` and `#### questionDetails`
+start structural fields. Once a field starts, other headings are ordinary Markdown
+content, except reserved card/language/metadata headings and retired
+`#### simple`, `#### example`, `#### details` outside fences. To quote reserved
+headings literally, use a fenced code block. Content must begin under a supported
+field heading. See docs/FLASHCARDS-V4-SPECIFICATION.md.

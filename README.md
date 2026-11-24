@@ -55,7 +55,6 @@ Review pending production migrations before applying them.
 
 ```sh
 npx wrangler d1 migrations list DB --remote
-npx wrangler d1 migrations apply DB --remote
 ```
 
 Verify that the existing `flashcards-api` Worker has an `ACCESS_CODE` secret. Set it only if missing. To validate the build without publishing, run `npm run build` followed by `npx wrangler deploy --dry-run`. Deploy when the production schema and secret are ready.
@@ -94,3 +93,21 @@ See the [verification and acceptance matrix](docs/FLASHCARDS-V3-VERIFICATION.md)
 
 
 Current contract: author v4; v3 remains import-compatible, v1/v2 and missing versions are rejected. Do not author occurrenceCount; responses derive distinct evidenced occurrence IDs. Use requested canonical BCP 47 content languages. Put examples/explanations/code inside answer. The app accepts omitted/empty answers; requests for complete educational flashcards still require technically complete answers. See docs/FLASHCARDS-V4-SPECIFICATION.md and the current import template.
+
+
+Native search uses SQL triggers and case-insensitive FTS5 trigram indexing for question, questionDetails and answer in every translation. Free-text queries require three Unicode code points after trimming; empty queries list cards, and exact card IDs/import keys remain available independently. Native Unicode folding does not normalize composed/decomposed forms or expand sharp S. Migration 0020 reconstructs the index without application maintenance. See [deployment and SQL repair](docs/MCP-FTS-ROLLOUT.md).
+
+## Search maintenance and repository rules
+
+Follow [AGENTS.md](AGENTS.md) for development rules and the [search runbook](docs/MCP-FTS-ROLLOUT.md) for migration reconstruction and incompatible transition precautions. Remote commands require explicit owner authorization. `npm run deploy` builds, applies pending migrations automatically and publishes with `--keep-vars`, stopping on failure. Failed publication does not roll back migrations.
+
+Manual repair, only for exceptional derived-data recovery after following the runbook:
+
+```sh
+# Local
+npx wrangler d1 execute DB --local --persist-to .wrangler/state --config wrangler.jsonc --file scripts/repair-search.sql
+# Remote: explicit owner authorization required
+npx wrangler d1 execute DB --remote --config wrangler.jsonc --file scripts/repair-search.sql
+```
+
+Ordinary writes use SQL triggers; ordinary deployments perform no unconditional index reconstruction or full-index verification.
