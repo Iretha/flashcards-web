@@ -107,8 +107,8 @@ change unrelated behavior. No new tests in this documentation phase.
 
 ## IMP-007 — MCP classification capabilities
 
-- Objective/scope: get_card classifications/revision, create and existing update_card
-  approved extension of existing update_card for answer and classification patches; search_cards unchanged.
+- Objective/scope: get_card classifications/revision and approved create_card/update_card
+  extensions for classification fields and answer patches; search_cards unchanged.
 - Out of scope: global search, Study controls, separate classification tool or broader access.
 - Dependencies: IMP-006; approved T-07 capability expansion, pending implementation authorization.
 - Components: mcp-reads.ts, mcp-writes.ts, mcp.ts registration, schemas/tests/docs.
@@ -130,7 +130,8 @@ change unrelated behavior. No new tests in this documentation phase.
 - Dependencies: IMP-002/003; T-03/T-04/T-09.
 - Components: study.ts, study-cycles.ts, sessions.ts, session/migration tests.
 - Database impact: existing JSON/session CAS; no per-user fanout infrastructure.
-- API impact: state/options/count/limit fields and read-time reconciliation semantics.
+- API impact: state/options/count fields and read-time reconciliation; ordinary start
+  validation only, no active-growth limit fields.
 - Security impact: whole scope current access, no unavailable labels/events.
 - Migration impact: lazy guarded adapter, no restart of valid sessions.
 - Automated tests: live addition/removal/reinclude/rank/start-limit, adapter random/history states.

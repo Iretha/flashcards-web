@@ -1,8 +1,8 @@
 # Owner-approved technical decisions — Card Classification & Study Filters
 
 Status: Approved product decisions; documentation update pending. Not authorization to implement.
-Repository: `Iretha/flashcards-web`  
-Branch: `feature/card-classification-study-filters`  
+Repository: `Iretha/flashcards-web`
+Branch: `feature/card-classification-study-filters`
 Reference specification: `4560247d76670f0b440a151ac696da860ce9411a`
 
 ## Authority

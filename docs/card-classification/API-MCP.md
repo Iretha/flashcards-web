@@ -79,7 +79,7 @@ replay and atomic write. SHARED alone insufficient. No Study or broader token pe
 
 ## Browser Study Apply
 
-GET /api/study/home include applied settings, available options, eligibleTotal,
+GET /api/study and GET /api/home include applied settings, available options, eligibleTotal,
 remainingInCycle, version/current/status. No overflow-specific fields. COMPLETE never
 reopens: display read-only settings/history and Restart. Q-02 RESOLVED: configure
 on COMPLETE is rejected without changing applied settings, queue or version.

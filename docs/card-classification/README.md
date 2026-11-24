@@ -8,6 +8,7 @@ Base: `441e1896e1622778f9648510ee4f561dd1d58ca2` (main and fetched origin/main m
 
 ## Document ownership
 
+- [Owner-approved technical decisions](../OWNER-APPROVED-TECHNICAL-DECISIONS.md): authoritative T-01–T-16 and resolved Q-01–Q-02.
 - [Decision register](DECISIONS.md): all approved decisions and T-01-T-16 traceability and remaining questions.
 - [Technical specification](TECHNICAL-SPECIFICATION.md): card model, normalization, filtering, sorting and UI.
 - [Migration plan](MIGRATION-PLAN.md): data conversion, search consistency and deployment.
@@ -18,7 +19,7 @@ Base: `441e1896e1622778f9648510ee4f561dd1d58ca2` (main and fetched origin/main m
 - [Testing and acceptance](TESTING-ACCEPTANCE.md): automated/manual/performance evidence.
 
 These are proposed technical contracts implementing approved product requirements.
-T-01-T-16 are approved by OWNER-APPROVED-TECHNICAL-DECISIONS.md against reference
+T-01-T-16 are approved by [OWNER-APPROVED-TECHNICAL-DECISIONS.md](../OWNER-APPROVED-TECHNICAL-DECISIONS.md) against reference
 4560247d76670f0b440a151ac696da860ce9411a; they supersede conflicting earlier proposals.
 New questions must be escalated, never silently resolved. No functional implementation is authorized.
 
