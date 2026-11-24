@@ -2,34 +2,31 @@
 
 No migration is authored/executed by this documentation task.
 
-## Preparation and approval gates
+## Approved preparation contract T-02
 
-Resolve T-01 and T-02 before migration implementation. SQL upper() is not full JS
-Unicode uppercase and cannot implement NFC. Do not substitute an approximate SQL
-normalizer. AGENTS forbids adding a custom maintenance/migration runner.
-
-T-02 recommendation: after separately authorized snapshot capture, generate reviewed
-static literal mapping SQL locally with the shared normalizer. Embed mappings in
-the forward migration, verify all encountered scalar topic values covered, abort on
-unknown/malformed data. Freeze writers across final capture and cutover; regenerate
-on drift. This procedure and snapshot authorization require explicit owner approval.
-Alternative mechanism needs an explicit architecture exception. No production read
-or generated migration is authorized now.
+Use standard SQL migrations, no custom runner. Before preparing migration inspect
+existing distinct topic values only in authorized data. Compare UPPER/TRIM against
+the canonical JS normalizer for the actual domain: Unicode/NFC, case expansion,
+edge/internal whitespace, repeated spaces/tabs/newlines/NBSP. Use SQL functions only
+where equivalence is proven; explicit reviewed SQL mappings for exceptions. Guard
+unknown/invalid values and capture/cutover drift; abort rather than approximate.
+No production access or real migration preparation/execution in this documentation task.
 
 ## Forward transition
 
 1. Select next unused migration after actual applied head (repository head 0020).
 Never edit historical SQL. Rehearse populated fixtures and capture preservation
 baselines for cards/decks/translations/progress/events/metadata/session JSON.
-2. Add owner-approved card_topics and reverse index. Add universal ratings/origin
-with constraints. T-01 proposal: priority NULL unless attested mapping exists;
-retain interview_priority unchanged and clearly legacy in responses/export.
-Do not copy or invert ambiguous values; later removal requires completed mapping.
+2. Add owner-approved card_topics and reverse index. Add universal ratings/creationMode
+with INTEGER NOT NULL DEFAULT3 and integer/range CHECKs for both ratings;
+creation_mode NOT NULL DEFAULT UNKNOWN with enum CHECK. Priority initializes to3
+absent attested compatible mapping. Retain raw interview_priority, never infer scale
+compatibility/direction. Separate FI-001 removal is outside this migration.
 3. Insert one normalized membership per scalar topic, no semicolon splitting.
 Metadata null yields no membership. Blank/invalid scalar metadata triggers diagnostic
 and failure, not silent loss. Use PK for dedup after normalization. Verify coverage,
 then remove metadata.topic in same forward transition: no dual canonical storage.
-4. Likelihood NULL; origin UNKNOWN. Never infer from other ratings/provenance.
+4. Missing/unattested likelihood -> 3; creation_mode UNKNOWN. Never infer from other ratings/provenance.
 5. coding_task -> task via JSON update; null metadata -> {cardType:question}; missing
 type -> question for otherwise valid metadata. Preserve all source properties,
 references, translations, details and identifiers. Reject invalid types/task specs;
@@ -39,7 +36,8 @@ exclusion instead of forced restart. Keep historical events; keep existing FKs.
 7. Membership INSERT/DELETE/UPDATE triggers increment existing card_search_state.epoch.
 No FTS text writes; no second epoch. Multiple increments per transaction harmless.
 8. Keep valid active/exhausted session data; lazy versioned adapter initializes new
-fields without resetting current/order/history/Repeat/timer. See lifecycle spec.
+fields without resetting current/order/history/Repeat/timer. Existing COMPLETE stays
+terminal: no read/resume/filter/new-card reopening. See lifecycle spec.
 
 ## Atomic canonical writes
 
@@ -77,4 +75,6 @@ IDs/import keys/translations/details unchanged; progress/events/source metadata 
 references preserved; expected normalized memberships, no duplicates/orphans/old
 canonical topic; raw priority retained; defaults correct; session current/history/
 Repeat/order/timer preserved; FK check and FTS parity pass. Produce transformed/rejected
-counts and exact diagnostics. No silent repair or arbitrary rating assignment.
+counts and exact diagnostics. Default3 is expressly approved T-01/T-13, not a
+reassessment. T-10 normalized topic bounds apply after deduplication; reject offending
+rows diagnostically. No active-session overflow state or growth cap.

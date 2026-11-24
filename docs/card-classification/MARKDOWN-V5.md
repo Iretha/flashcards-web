@@ -1,21 +1,23 @@
 # Markdown v5 specification and legacy conversion
 
-Proposed exact grammar for review. Standard import becomes v5-only at cutover;
+Approved planned grammar revised by T-11/T-13/T-14; not implemented. Standard import becomes v5-only at cutover;
 legacy converts and previews first. Database migration is separate.
 
 ## Grammar
 
 UTF-8, optional BOM; YAML frontmatter formatVersion: 5 required. Retain existing
 deckId/title/description/visibility/primaryLanguage/supportedLanguages validation.
-Card boundary ## card: KEY, existing deck-local import-key rules.
+Card boundary ## card: KEY, existing deck-local import-key rules. Create defaults:
+topics[], priority3, likelihood3, creationMode UNKNOWN, cardType question. Enforce
+10 unique normalized topics and 200 UTF-16 units per topic after deduplication.
 Each metadata heading occurs at most once before languages:
 
 | Heading | Body/value |
 |---|---|
 | ### topics | YAML string list or [] |
-| ### priority: | Integer 1..5 or null |
-| ### likelihood: | Integer 1..5 or null |
-| ### origin: | MANUAL, AI, UNKNOWN; empty/null resets UNKNOWN |
+| ### priority: | Integer 1..5; null resets to3 |
+| ### likelihood: | Integer 1..5; null resets to3 |
+| ### creationMode: | MANUAL, AI, UNKNOWN; empty/null resets UNKNOWN |
 | ### cardType: | question or task; empty/null invalid |
 | ### difficulty: | Existing integer 1..5 or null; optional |
 | ### provenance | Existing YAML object, or null |
@@ -43,7 +45,7 @@ supportedLanguages: [en, bg]
 - Transaction Isolation
 ### priority: 1
 ### likelihood: 2
-### origin: MANUAL
+### creationMode: MANUAL
 ### cardType: task
 ### en
 #### question
@@ -64,8 +66,8 @@ Specify concurrent operations and consistency guarantees.
 | Field | Create omission | Update omission | Explicit clear |
 |---|---|---|---|
 | topics | [] | Preserve | [] |
-| priority/likelihood | null | Preserve | null |
-| origin | UNKNOWN | Preserve | null/empty -> UNKNOWN |
+| priority/likelihood | 3 | Preserve | null resets to3 |
+| creationMode | UNKNOWN | Preserve | UNKNOWN or null/empty -> UNKNOWN |
 | cardType | question | Preserve | Invalid; explicitly choose question |
 | difficulty | null | Preserve | null |
 | provenance | Absent | Preserve | null |
@@ -84,11 +86,14 @@ separate, owner-only and explicitly confirmed with impact report.
 
 ## JSON export
 
-Propose export version 3 for incompatible classification cutover. topics DTO array
+Approved JSON Export v3 for classification cutover. topics DTO array
 comes from memberships; canonical metadata has type/provenance/references only.
-Retain raw legacy interview_priority pending T-01; no reinterpretation. Retain caller
+Export raw legacy interview_priority as interviewPriority, with numeric 1..5 ratings,
+creationMode, difficulty, existing content/progress/history/access-related data.
+Provenance and answerReferences stay in metadata alongside explicit cardType; no
+duplicate evidence fields. No reinterpretation of legacy raw values. Retain caller
 progress/history/access scope; exclude session settings. No implied restore endpoint
-or full-database backup guarantee. Consumer/version transition requires spec acceptance.
+or full-database backup guarantee. Exclude active Study settings/filters/sort.
 
 ## Legacy conversion
 
@@ -110,14 +115,19 @@ Historical generated+occurrence contradictions require review; do not silently s
 evidence or relax existing new-input validation. DB preservation and authored validation
 are different responsibilities.
 
-Unresolved non-null interviewPriority blocks import-ready output until T-01 mapping;
-retain raw value in diagnostic artifact. No implicit copy/inversion or data loss.
+Unattested legacy interviewPriority initializes universal priority to3, never maps
+implicitly; retain raw value in conversion diagnostics. Never overwrite matched-card
+legacy value. New-card lossless transfer of a non-null raw legacy rating is not
+specified by the approved v5 authoring grammar: escalate before emitting import-ready
+output for those cards; do not discard it or invent a field. See DECISIONS.md.
+Conversion of unaffected cards and database migration are independent.
 Legacy unit-metadata replacement converts to explicit full supplied headings; omission
 semantics from original source must be preserved for patch/reimport intent.
 
 ## Catalog likelihood conversion
 
-Only attested old rubric 5 highest -> new=6-old; null unchanged. v5 never inverts.
+Only attested old rubric 5 highest -> new=6-old; missing/null yields default3 in
+final card state, never inverted. Diagnostic raw values remain preserved. v5 never inverts.
 For catalogs without formatVersion use explicit reviewed per-file old-scale manifest,
 not numeric heuristics. Record source hash, rubric and conversion version in review
 diagnostics, not unsupported card metadata. Emit target-scale marker/rubric and reject
@@ -129,7 +139,7 @@ nosql-interview-questions.md, jdbc-interview-questions.md only after confirming 
 legend. Update guidelines/legends/examples and values atomically. Keep each file IDs
 starting at 1; no global numbering or question edits. P1–P4 catalog values retain
 meaning under approved universal Priority labels; no reassessment. Editorial origin
-labels stay; app origin UNKNOWN absent reliable attestation. Evidence Markdown stays.
+labels stay; app creationMode UNKNOWN absent reliable attestation. Evidence Markdown stays.
 No new evidence schema: qualifiers can remain existing sourceName text when lossless;
 otherwise report limitation for review. Answer-scope notes remain catalog information.
 Catalogs are not full import decks: missing answers/task specs need separately approved

@@ -7,30 +7,30 @@ evidence; no measured performance is claimed here.
 
 | Area | Concrete acceptance scenarios |
 |---|---|
-| Normalizer | NFC composed/decomposed, spaces/tabs/newlines/NBSP, case expansion, dedup collisions, empty element rejection, empty array, bounds/idempotence |
+| Normalizer | NFC composed/decomposed, spaces/tabs/newlines/NBSP, case expansion, dedup collisions, empty element rejection, empty array, 10 unique/200 UTF-16 after normalization and dedup; 11/201 rejected atomically; existing raw payload caps; idempotence |
 | Membership | PK duplicate rejection, reverse index plan, card deletion cascade, no orphan/deck copy, atomic rollback |
 | Migration | Populated null/full metadata, source/reference preservation, coding_task->task/details, IDs/progress/events/session parity; unknown map abort; FK/FTS parity |
-| Priority | Strict int1..5/null, no strings/fractions; ambiguous raw legacy retained and universal null until approved mapping |
-| Likelihood | Strict scale; attested catalog 6-old; null; already-target refuses inversion; counts/IDs/question text unchanged |
-| Origin | Create UNKNOWN, omission preserve, explicit values; answer translation/provenance do not infer origin |
+| Priority | Strict int1..5; missing/null create3, omitted update preserve/null reset3; raw legacy unchanged, new3 absent attested mapping |
+| Likelihood | Mandatory default3/reset; attested catalog 6-old; raw null never inverted; already-target refuses inversion; counts/IDs/question text unchanged |
+| Creation Mode | Create UNKNOWN, omission preserve, explicit values; answer translation/provenance do not infer creationMode |
 | Type | Default question; type-only metadata no fake source; task every retained language details; clear details invalid for task |
 | v5 | Grammar, duplicate/unknown headings, fenced headings, aliases rejected, limits, presence/empty distinctions, preview/apply parity |
-| Legacy | v3/v4 only conversion, sources/count validation, scalar topic one value, lossless translations/answers/details; ambiguous priority diagnostics |
-| Reimport | IDs/progress preserved, omitted fields/languages/cards retained; explicit topics/rating/reference clears; type changes validated |
-| Options | 1/2/30 decks UNION DISTINCT; no phantom enum; null present-only; independent of Repeat/filters; stale selection remains restrictive |
+| Legacy | v3/v4 only conversion, sources/count validation, scalar topic one value, lossless translations/answers/details; default3 plus retained raw legacy diagnostics/Q-01 |
+| Reimport | IDs/progress preserved, omitted fields/languages/cards retained; explicit topics/reference clears and rating null reset3; type changes validated |
+| Options | 1/2/30 decks UNION DISTINCT; no phantom enum; No Topics present-only/collision-free sentinel OR names; no missing-rating options; independent of Repeat/filters; stale selection remains restrictive |
 | Predicates | Each field one/multiple, OR within/AND across all five; all empty; clear one/all; no Evidence/Difficulty filters |
-| Sorting | Every field both directions/default, null/UNKNOWN/no-topics last; sequences/prefixes/Unicode; stable ties/ranks; global deck interleave; history unchanged |
+| Sorting | Every field both directions/default, numeric ratings; UNKNOWN/no-topics last; sequences/prefixes/Unicode; stable ties/ranks; global deck interleave; history unchanged |
 | Live additions | Eligible/ineligible additions, preserve frontier, tail append, explicit Apply resorts; deterministic new ranks/default |
 | Re-inclusion | Passed excluded, unpassed restored, current excluded/reincluded, Repeat admission preserved |
 | Deletion/access | Current/pending/history deletion/revoke; no disclosure/new outcome; other decks continue; access regain; cascade |
-| History | Circular first->last, one/zero accessible, duplicate positions; Next tail->frontier->consume; no SHOWN from browsing; Repeat viewed card |
+| History | Circular first->last, one/zero accessible, duplicate positions; ACTIVE Next toward frontier/learning; COMPLETE last Next wraps first; single-entry browse no-op; no SHOWN from browsing; Repeat viewed card |
 | Repeat | Initial pass, boundaries, mark/unmark historical, newly admitted card in repeat cycle, no accidental infinite history loop |
-| Completion | Filtered exhaustion same ID reopens; no passed reset/filter clear; new card resume; explicit start-new guarded |
-| Limits | Start 5000/5001; growth/recovery without truncation; filters don't change scope cap |
+| Completion | COMPLETE never reopens by reads/Apply/resume/new cards/classification; Restart new ID same decks/settings/Repeat; local navigation/passed reset only; persistent progress/statistics/user history retained; failure retains prior session |
+| Limits | Start/restart30/31 decks and5000/5001 cards; active growth above5000 admitted normally, no extra API state/block/truncation or cap recheck |
 | Apply/concurrency | Draft no effect; single atomic update; stale version no mutation; source drift; duplicate request no count inflation |
 | Resume | Refresh/login/two authenticated device clients; settings/history/Repeat/timer restored; user-isolated shared decks |
 | Management | Read/create/PATCH, strict field/presence rules, If-Match/idempotency, atomic memberships, revoke between read/write |
-| MCP | Approved capability schemas; unchanged answer-only tool; create receipt; scope/grants/revocation; size limits; no session/global search tools |
+| MCP | Approved capability schemas; existing update_card answer/classification/combined patches, old valid requests preserved; no separate tool; create receipt; scope/grants/revocation; size limits; no session/global search tools |
 | Regressions | Existing timer semantics, Difficulty controls/values, FTS Unicode/3-codepoint rules/exact lookup/details/answers/all translations/epoch |
 
 Use existing tests/study.test.ts, study-cycles.test.ts, api.test.ts, ui-api.test.ts,
@@ -43,7 +43,7 @@ expectations only with approved lifecycle evidence.
 ## Manual acceptance
 
 Desktop/mobile/light/dark/BG/EN: start before controls, five dropdowns only Study,
-no chips, full labels; Apply/Cancel/Clear/Default; empty results/completion still editable.
+no chips, full labels; Apply/Cancel/Clear/Default; active empty results editable; COMPLETE settings/history and Restart; editing policy follows Q-02, never reopens.
 Keyboard Tab/Space/arrows/Escape and global R isolation; popup focus restore and screen
 reader checkbox names/count announcement. TV physical remote Back/OK/directional focus,
 no hover-only controls. Shared deck two users independently Apply; two devices same user
@@ -53,7 +53,7 @@ remain usable. Task Specification content visible and translations retained.
 ## Performance and native verification
 
 Benchmark 1/2/30 decks, up to 5000 cards, zero/one/many topics, skewed common topics,
-large membership sets, Apply/resume/source churn and Fully Live overflow/recovery.
+large membership sets, Apply/resume/source churn and Fully Live growth beyond5000 without special handling; restart uses ordinary start limits.
 Measure SQL duration, rows read/written, Worker CPU, serialized state/response bytes,
 queries and bound parameters. Do not fetch all answers for projections. D1 currently
 documents 100 parameters/query; recheck target plan/version during implementation.
@@ -64,6 +64,10 @@ local experiments, not new endpoints. EXPLAIN QUERY PLAN must demonstrate revers
 topic index for selective lookup and PK for card memberships; record temp-sort/full
 scan trade-offs for broad matches. No index-per-combination speculation. Compare live
 queue projection memory/state growth across cycles, preserving required history.
+Ordinary classification changes must preserve still-eligible positions despite sort-key
+changes; append newly eligible unpassed, no passed-card requeue. No Topics sentinel
+never writes card_topics, literal NO TOPICS stays separate; stale sentinel stays restrictive.
+
 No acceptance latency budget was supplied: record baseline/results and obtain owner
 agreement on material limits before performance sign-off.
 
@@ -77,3 +81,17 @@ Applicable unit/integration/migration/E2E checks plus typecheck/build; clean dif
 docs/contracts/templates aligned; exact migration-runner failure rehearsal; recovery
 validated locally. Production migration/deploy/commit/push each require separate owner
 authorization. No local verification result is evidence of production/device success.
+
+## Approval synchronization checks
+
+DEC/T matrix covers T-01-T-16. No planned nullable universal rating/default-null,
+missing-rating sort branch, unimplemented former classification alias, separate MCP
+classification tool, COMPLETE reopen or special active overflow behavior. Verify explicit
+persisted type-only metadata, max10/200 normalization, non-destructive Restart, circular
+completed Next, No Topics collision resistance and FI-001 deferral. Historical notes
+must be clearly superseded, not normative. No migration/catalog conversion during docs.
+
+Q-01 acceptance: never silently lose a raw legacy rating in new-card conversion;
+approved transfer contract or explicit diagnostic before affected import-ready output.
+Q-02 acceptance: test chosen completed-setting editing policy without reopening,
+and Restart uses the authoritative applied settings under session version guard.

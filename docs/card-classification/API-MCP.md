@@ -1,77 +1,114 @@
 # API and MCP contracts
 
-Planned changes. Keep current credentials, origin checks, scope, grants, revision
-guards, idempotency and error envelopes. [Capability approval](DECISIONS.md) required.
+Owner-approved planned contracts T-07/T-11-T-16, not implemented. No broader access,
+Study MCP tools or global classification search. Preserve existing credentials,
+origin/CSRF checks, grants, ownership/collaboration and atomic mutation guards.
 
-## Shared card contract
+## Shared card fields
 
-Management fields add topics:string[], priority:number|null, likelihood:number|null,
-origin enum. Card Type only metadata.cardType question/task. Create defaults
-[]/null/null/UNKNOWN/question. PATCH omission preserves; topics [] clears; ratings
-null clears; origin null invalid (use UNKNOWN). metadata null explicitly clears
-provenance/references and resets to {cardType:question}; validate final translations.
-Metadata object patch becomes presence-aware for cardType/provenance/answerReferences;
-provenance null clears, answerReferences [] clears. Reject metadata.topic/coding_task
-after cutover; use legacy converter. Difficulty contract unchanged.
-Response includes normalized topics, universal ratings, origin, canonical metadata,
-revision and clearly legacy interview_priority pending T-01. No root duplicate type.
+External topics:string[], priority:int1..5, likelihood:int1..5, creationMode:
+MANUAL|AI|UNKNOWN, metadata.cardType:question|task. DB maps creationMode to creation_mode.
+No aliases for former unimplemented classification name; unrelated origin unchanged.
+Type explicitly persisted for every card. difficulty stays existing nullable scale.
 
-Existing Management /api/decks/{id}/cards GET/list/POST/PATCH routes retained. No new
-global search/filter parameters. POST exact-body idempotency and PATCH deck If-Match
-remain. Missing If-Match 428; stale 412; conflicting receipt 409; invalid fields 400.
-Classifications/memberships/receipt commit atomically. Metadata contract is incompatible;
-document cutover, reject obsolete fields instead of ignoring them. Read/write authorization
-remains distinct from MCP third-party policy.
+| Input | Create | Partial update |
+|---|---|---|
+| Omitted rating | 3 | Preserve |
+| null rating | 3 | Reset3 |
+| integer1..5 | Set | Set |
+| invalid rating | Reject | Reject |
+| Omitted topics | [] | Preserve |
+| topics [] | [] | Clear |
+| Omitted creationMode | UNKNOWN | Preserve |
+| creationMode UNKNOWN | UNKNOWN | Reset UNKNOWN |
+| creationMode null | Reject | Reject |
 
-## MCP proposal T-07
+Retain existing API creation-mode input rules except approved naming/default changes;
+Markdown's approved empty/null reset is format-specific. Metadata object updates are
+presence-aware: omitted members preserve, cardType question explicitly sets question,
+provenance null clears, answerReferences [] clears. metadata null resets to type-only
+question. Task validates every final retained language for nonblank questionDetails.
+Default/implicit type on creation is persisted, not only inferred at read time.
+Normalize topics then enforce10 unique/max200 UTF-16 units each, atomic rejection.
+Existing request caps protect raw payload; new concrete bounds require approval.
 
-DEC-023 requires eventual read/create/edit support but does not silently enlarge the
-answer-only update tool. Proposed create_card optional fields: topics, priority,
-likelihood, origin, metadata, questionDetails. Existing question/answer/language/deck
-defaults remain; task details required. Request fingerprint includes all supplied
-fields and their presence; preserve receipt/replay/current-access checks.
+Responses have numeric non-null universal ratings, creationMode, topics, metadata and
+revision; preserve legacy raw rating distinctly. JSON Export v3 names it interviewPriority;
+Management existing interview_priority read field stays explicitly legacy, not universal.
+Old mutable interview_priority compatibility cannot reinterpret priority; preserve raw
+values and valid existing legacy requests until separately approved FI-001 transition.
+No evidence model extensions. Export keeps existing content/progress/history/access
+contract, provenance/references, difficulty; no active Study settings/filters/sort or restore.
 
-Propose NEW update_card_classification(card_id, expected_revision, optional topics,
-priority, likelihood, origin, metadata). Strict shared patch schema; at least one field
-required. Type task validates all retained specs; supply specs through existing content
-management first if absent. Existing update_card remains answer-only. Alternative:
-explicit approval to broaden update_card. Neither registered without separate capability
-approval. New tool annotations readOnlyHint false, destructiveHint false, idempotentHint
-true for value-setting patch; annotations never grant authority. Expected deck revision
-required; conflict -> CONFLICT, no blind retry. Need read get_card to expose revision.
+## Management
 
-get_card adds topics/priority/likelihood/origin/revision; metadata stays canonical.
-search_cards summaries unchanged; no global classification search. Define strict input
-and explicit documented output envelopes: read {item}, list {items,next_after}; create
-{card_id,status}; classification update {card_id,revision,topics,priority,likelihood,
-origin,metadata,status}. Preserve structuredContent+JSON text, existing request/result
-byte caps and bounded errors INVALID_ARGUMENTS/CONFLICT/UNAVAILABLE.
+Existing /api/decks/{id}/cards GET/list/POST/PATCH paths. No global search parameters.
+Retain POST idempotency/exact-body fingerprint and PATCH deck If-Match (428 missing,
+412 stale); 409 conflicting receipt, 400 invalid fields. Omitted answer preserves,
+empty clears. Classification/membership/receipt/revision writes one guarded batch;
+failures rollback all. Current membership revalidated atomically, not only prior GET.
+Document incompatible metadata/type transition before release; legacy Markdown uses
+converter. Keep existing authentication/access and supported nonconflicting requests.
 
-Keep membership AND third_party_access checks at candidate read, materialization,
-replay and atomic mutation with freshly verified credentials. SHARED alone never
-grants MCP access. No Study controls or broader token permissions.
+## Existing MCP tool expansion T-07
 
-## Browser Study
+Owner approves extending get_card/create_card/existing update_card. Do not create a
+separate classification tool. search_cards schema/capabilities unchanged.
+get_card returns canonical five classifications and deck revision with existing content.
+create_card adds optional topics, priority, likelihood, creationMode, metadata and
+questionDetails for task creation, retaining existing question/answer/language/deck defaults.
+update_card supports answer and/or optional classifications; omitted fields preserve,
+null rating resets3. Classification-only update must not clear answer. Existing answer-
+only requests, including omission-preserve behavior, remain valid. Type change validates
+retained languages/specs; missing specs reject instead of fabricating content.
 
-GET /api/study and home include applied filters/sorting, available options,
-eligibleTotal, remainingInCycle, completionReason, limitState, version and current
-view fields. No bulk answer fetch for options.
+Concurrency: optional expected_revision for legacy answer-only compatibility; require it
+for classification-bearing updates. Compare deck revision in committing SQL; all paths
+retain existing internal revision/mutation guard. get_card supplies revision. Stale ->
+CONFLICT; no blind retry. Do not impose a new mandatory argument on old valid answer-only
+requests. Existing create idempotency optional; fingerprint includes presence and every
+new field; replay rechecks access and preserves current safeguards.
 
-Proposed POST /api/study/configure:
+Strict input/output contracts retain bounded structuredContent+JSON text and current
+byte/rate limits. get_card {item}; create {card_id,status} plus documented canonical
+fields if returned; update preserves existing card_id/language/answer/status for old
+answer requests, adds revision/classification fields for edits without removing old
+fields. Errors INVALID_ARGUMENTS/CONFLICT/UNAVAILABLE; annotations do not grant access.
+Validate membership AND third_party_access/credential purpose at discovery/materialization,
+replay and atomic write. SHARED alone insufficient. No Study or broader token permissions.
+
+## Browser Study Apply
+
+GET /api/study/home include applied settings, available options, eligibleTotal,
+remainingInCycle, version/current/status. No overflow-specific fields. COMPLETE never
+reopens: display settings/history and Restart. Q-02 settles whether configure may
+update completed settings for the next Restart without admitting work. Do not assume
+rejection or implement that extension before review.
+
+Proposed POST /api/study/configure (ACTIVE contract; COMPLETE editing is Q-02):
 
 ```json
-{"id":"s1","version":8,"filters":{"topics":["TRANSACTIONS"],"priorities":[1,null],"likelihoods":[],"origins":[],"cardTypes":["task"]},"sorting":{"field":"priority","direction":"asc"}}
+{"id":"s1","version":8,"filters":{"topics":{"values":["TRANSACTIONS"],"includeNoTopics":true},"priorities":[1,3],"likelihoods":[],"creationModes":[],"cardTypes":["task"]},"sorting":{"field":"priority","direction":"asc"}}
 ```
 
-Require all arrays and full sorting object; normalize/dedup topics, allow int1..5/null
-ratings, reject unknown fields/enums. One atomic Apply updates settings, projects queue
-once and increments version once; no global deck/user preferences. Preserve history,
-progress and Repeat. Stale ID/version -> 409 with no overwrite. Existing browser auth,
-same-Origin/JSON guards, no bearer session control. Response authoritative Study view.
+No Topics representation is separate boolean, never a topic string: empty values plus
+false unrestricted; true OR zero-membership cards with any selected names. Options expose
+available topic strings plus noTopicsAvailable boolean. Stale applied true/name stays
+restrictive even if no longer present; explicit Clear resets. Rating arrays integer1..5
+only; null invalid. Normalize names, dedup, require all filter categories/full sort;
+reject unknown fields. One atomic Apply projects once and increments version once;
+no global preference. Stale ID/version409, no silent overwrite; draft unaffected until
+Apply. Same-Origin/JSON/cookie guards, no bearer session control.
 
-Live reconcile at start/resume/Study reads/actions/Apply; no polling/push. Read-side
-persistence uses CAS if projection changes; retry bounded projection on source deck
-revision drift, never silently retry stale user actions. Return latest state or conflict.
-Commit validates current access/source revisions. Card changes do not eagerly rewrite
-every user session. Revocation must prevent new SHOWN/outcome writes for revoked cards.
-Cross-device reads restore last applied state, never another device's draft.
+## Restart and reconciliation
+
+Browser-only explicit Restart operation uses session ID/version; creates new ID with
+same decks/applied settings/Repeat, resets local navigation/passed state only. Normal
+start checks once; fail leaves prior COMPLETE intact. Return authoritative new view.
+No mutation reopens prior COMPLETE. Restart route/action shares current start guards;
+implementation should select narrow existing-route extension, no remote administration.
+ACTIVE reconcile at read/resume/action/Apply, no push/polling; COMPLETE reads only
+revalidate historical access. CAS persists active projection, bounded retry on source
+revision drift, never silently retry stale user input. Current access/source revisions
+checked inside commit; no SHOWN/outcome after revocation. Restore last applied state
+across devices, never draft. New cards/classification only affect ACTIVE sessions.

@@ -1,12 +1,12 @@
 # Study session lifecycle
 
-Proposed state machine for DEC-012–019. T-03–06/T-09 need review. Existing snapshot
+Approved planned state machine for DEC-012–019. T-03-T-06/T-09/T-16 are approved; not implemented. Existing snapshot
 lifecycle changes explicitly; reuse D1 JSON/versioning, no push or timer redesign.
 
 ## State
 
 ```json
-{"schemaVersion":2,"classification":{"filters":{"topics":[],"priorities":[],"likelihoods":[],"origins":[],"cardTypes":[]},"sorting":{"field":"default","direction":"asc"}},"live":{"originalOrder":["a","b"],"cycle":0,"passed":[],"admittedNew":[],"pending":["b"],"frontier":"a","completionReason":null},"history":["a"],"cursor":0}
+{"schemaVersion":2,"classification":{"filters":{"topics":{"values":[],"includeNoTopics":false},"priorities":[],"likelihoods":[],"creationModes":[],"cardTypes":[]},"sorting":{"field":"default","direction":"asc"}},"live":{"originalOrder":["a","b"],"cycle":0,"passed":[],"admittedNew":[],"pending":["b"],"frontier":"a","completionReason":null},"history":["a"],"cursor":0}
 ```
 
 Illustrative fragment; retain existing Repeat, language, reveal/answer overrides and
@@ -20,7 +20,8 @@ pass; session Repeat remains distinct.
 
 ## Fully Live reconciliation
 
-1. Query accessible scope IDs/classifications; validate selected deck access.
+0. COMPLETE resolves access for historical display only; no queue admission/reopening.
+1. ACTIVE queries accessible scope IDs/classifications; validate selected deck access.
 2. Detect additions/deletions/changed classification from current reads/revisions.
 Append stable ranks for new IDs in selected-deck/position/ID order. Known IDs keep rank.
 3. Options derive from all accessible scope cards before filters/Repeat/passed status.
@@ -28,8 +29,9 @@ Append stable ranks for new IDs in selected-deck/position/ID order. Known IDs ke
 include established Repeat members plus newly admitted cards (T-09).
 5. Preserve eligible frontier despite additions. Filter exclusion/deletion/revocation
 selects next work; no fabricated outcome event for excluded card.
-6. Apply reorders all pending once; ordinary discovery retains old pending order and
-appends new IDs (T-04). Never destroy passed/history/Repeat to filter.
+6. Apply reorders all pending once; live classification removes ineligible entries,
+appends eligible unpassed cards and retains still-eligible order even if sort keys
+change (T-04/T-16). Never destroy passed/history/Repeat to filter.
 7. Commit with session CAS and source revision/access guards. Bounded retry on source
 drift; stale user mutation remains conflict.
 
@@ -45,39 +47,51 @@ marked cards exist; reset per-cycle passed, increment cycle, snapshot eligible R
 Unmarked established repeat pending is skipped; newly marked historical card joins
 next cycle as today. No duplicate IDs per cycle queue.
 
-No eligible repeat work -> COMPLETE + FILTERED_EXHAUSTED (T-06), retaining filters,
-history/passed/Repeat. Keep Apply available. Broader filter or matching new cards on
-resume can reopen same ID without re-presenting passed cards. Exhaustion is not
-permanent closure; existing explicit Start new replaces old session under confirmation
-and version guard. No automatic filter clearing, no close endpoint added.
+No eligible repeat work -> COMPLETE. Communicate completion and offer Restart
+Session. Preserve applied filters/sort/history/passed/Repeat. COMPLETE is terminal:
+new cards, classification/filter changes, resume and ordinary reads never reopen it.
+History browses under T-05. Editing completed settings for a subsequent Restart is
+not specified by T-06; see Q-02. Either policy must leave COMPLETE terminal.
 
-New-card example T-09: cycle2 repeats A; new B joins once without Repeat mark.
-B passed -> later cycles require B marked. If filtered out before passing, retained
-admission lets filter expansion restore B. New cards discovered during exhausted
-state join retained cycle. Existing passed cards never reappear merely on filter clear.
-History wrap itself cannot cross cycles; only frontier consumption can. Intentional
-Repeat cycling while marks exist remains existing behavior, not circular-navigation loop.
+### Restart T-06
+
+Explicit Restart creates a new session ID, same selected decks/applied filters/sort
+and Repeat marks. Resolve current accessible scope/classifications; normal start checks.
+Preserve persistent progress/statistics/user event history and Repeat membership.
+Reinitialize local passed/admission/navigation history/cursor/frontier/cycle/pending
+and ordinary start answer/timer state. Initial pass includes all matching cards
+regardless Repeat. No RESET or destructive progress operation. If start checks fail,
+retain completed session untouched. Version guards protect concurrent restart.
+Completed navigation history remains available until successful replacement; persistent
+user event history survives replacement. No extra archival session service introduced.
+
+### New cards during active Repeat T-09
+
+Cycle2 repeats A; matching new B appends once regardless Repeat. If filtered out before
+passing, admission retained for reinclusion. Passed B never requeues in cycle2;
+subsequent Repeat cycles require mark. No admission into COMPLETE; use Restart.
+History wrap cannot advance cycles or generate presentations; only frontier learning
+advances. Existing intentional Repeat cycles with marked cards remain.
 
 ## Circular navigation T-05
 
-Previous wraps full accessible session history, not filtered subset. Separate repeated
-presentations remain separate positions. First -> last accessible; one position no-op;
-none disabled. Next in history moves toward tail, no wrap. At tail, if not viewing
-frontier, return to frontier without consuming it; subsequent Next consumes it. This
-prevents consuming unseen live work. Historical outside-filter view labeled History.
-Repeat toggle applies to viewed accessible card. Legacy learn records viewed card's
-outcome and returns toward frontier without consuming a different card. Deleted/revoked
-entries skipped; sorting never changes history order or historical presentation counts.
+Previous first accessible entry -> last; skip deleted/inaccessible; repeated history
+positions remain distinct. Single accessible entry browsing no-op; none disabled.
+History browsing never changes progress/Repeat/SHOWN; explicit Repeat action is separate.
+ACTIVE Next browsing advances toward frontier; Next on frontier learns normally.
+Single-entry browsing rule must not disable learning Next on an ACTIVE frontier.
+COMPLETE Next after last accessible entry wraps to first; never learns or starts cycles.
+Keep cursor/frontier distinct; reconcile removed frontier mapping before Next, never
+consume unseen work. Historical outside-filter view labeled History. Legacy learn is
+an explicit outcome, not browsing; never consume a different frontier.
 
-## Limits T-03
+## Start-only limits T-03
 
-Max30 selected decks and 5000 accessible scope cards, before filters, retain current
-start contract. Start over limit rejected. Fully Live growth above cap gives recoverable
-LIMIT_EXCEEDED; preserve state/applied settings; no silent subset or forward admission.
-History browsing/exit remain available. Filter narrowing does not reduce scope count.
-Recover when scope shrinks or explicitly start a smaller selected-deck session. No
-new in-session deck editor. Alternative owner-approved filtered-cap/higher cap requires
-separate performance evidence. Query count/IDs/classifications, never unbounded answers.
+At start/restart enforce max30 selected decks/max5000 accessible cards before filters.
+Do not check active growth or introduce special overflow state/block/truncation/subset.
+Fully Live may grow above5000 normally. Use ID/classification reads and platform-aware
+operations, not bulk answers. Performance checks cover growth without adding product
+limits. Restart is a fresh start and can fail limits, retaining completed history.
 
 ## Access loss
 
@@ -94,7 +108,7 @@ membership minus pending minus frontier; do not use entire multi-cycle history. 
 must fixture-test history cursor away from frontier and completed cycles; retain old
 state until validated. Existing later-cycle snapshot provides known members; new admission
 only on actual discovery. Empty applied filters/default sort; persist once under CAS.
-No forced restart of valid current sessions. Unsupported pre-v3/no-cycle state keeps
+COMPLETE remains terminal; explicit Restart only. No forced restart of valid ACTIVE sessions. Unsupported pre-v3/no-cycle state keeps
 documented historical handling. Ambiguous malformed state is explicit diagnostic, never
 silent reset. Conversion implementation must resolve frontier using old engine invariants,
 not assume the historical current view always equals live frontier.
