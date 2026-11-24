@@ -110,8 +110,9 @@ unpassed cards and retain position of still-eligible cards even if sort keys cha
 
 Study-only collapsible panel below toolbar; preserve sidebars and unrelated layout.
 After COMPLETE show applied settings/history and Restart Session / Започни отначало.
-No setting change can reopen COMPLETE. Whether completed settings can be edited
-for the next Restart remains Q-02; do not silently implement either policy.
+Q-02 RESOLVED: completed settings are read-only; no setting change reopens COMPLETE.
+Restart creates a new session with the same decks/applied filters/sorting, preserving
+persistent progress and Repeat. Settings become editable after the new session starts.
 Desktop compact grid, mobile stacked, TV
 large focus targets; no essential hover/drag interactions.
 

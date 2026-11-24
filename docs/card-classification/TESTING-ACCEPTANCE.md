@@ -43,7 +43,7 @@ expectations only with approved lifecycle evidence.
 ## Manual acceptance
 
 Desktop/mobile/light/dark/BG/EN: start before controls, five dropdowns only Study,
-no chips, full labels; Apply/Cancel/Clear/Default; active empty results editable; COMPLETE settings/history and Restart; editing policy follows Q-02, never reopens.
+no chips, full labels; Apply/Cancel/Clear/Default; active empty results editable; COMPLETE settings/history and Restart; Q-02 read-only settings; editable only after Restart starts new session, never reopens.
 Keyboard Tab/Space/arrows/Escape and global R isolation; popup focus restore and screen
 reader checkbox names/count announcement. TV physical remote Back/OK/directional focus,
 no hover-only controls. Shared deck two users independently Apply; two devices same user
@@ -91,7 +91,10 @@ persisted type-only metadata, max10/200 normalization, non-destructive Restart, 
 completed Next, No Topics collision resistance and FI-001 deferral. Historical notes
 must be clearly superseded, not normative. No migration/catalog conversion during docs.
 
-Q-01 acceptance: never silently lose a raw legacy rating in new-card conversion;
-approved transfer contract or explicit diagnostic before affected import-ready output.
-Q-02 acceptance: test chosen completed-setting editing policy without reopening,
-and Restart uses the authoritative applied settings under session version guard.
+Q-01 RESOLVED acceptance: no legacy interviewPriority in v5 output/grammar; unattested
+priority3; omitted raw values recorded by card key in conversion report; conversion not
+blocked by that approved omission. DB migration retains raw values until FI-001.
+Q-02 RESOLVED acceptance: completed settings read-only; configure cannot mutate them;
+Restart new ID/same decks/filters/sort, persistent progress and Repeat unchanged;
+new-session settings editable only after successful start. Failed restart retains old
+session/settings; stale restart rejected; no completed-session reopening.

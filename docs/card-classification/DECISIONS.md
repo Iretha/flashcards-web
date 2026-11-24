@@ -61,23 +61,25 @@ reopening and separate MCP classification tool were proposals. All superseded.
 No compatibility aliases for unimplemented former fields. Updated DEC rows above
 record effective requirements; owner technical decisions take precedence.
 
-## Remaining owner question Q-01
+## Q-01 - RESOLVED: legacy interviewPriority conversion
 
-Approved v5 grammar has no authored legacy interviewPriority field. For NEW-card
-conversion of legacy Markdown with non-null raw rating, universal priority3 is settled,
-but lossless transfer of raw legacy value needs a specified mechanism. Recommend
-preserve raw in diagnostics and pause import-ready output for affected cards; alternative
-approve narrow legacy conversion field. Never discard raw data or invent syntax.
-Existing-card conversion and database preservation are independent. This gates that
-conversion case, not the documentation update.
+Owner-approved: do not carry legacy interviewPriority into Markdown v5 and do not
+add a legacy v5 field. Use priority: 3 without reliable new priority. Record omitted
+legacy values in the conversion report, with card key/value for traceability; this
+intentional omission does not block import-ready output. Preserve existing raw
+interview_priority in database migration until separately approved FI-001 removal.
+Normal reimport never overwrites the matched card's retained raw legacy value.
 
-## Remaining owner question Q-02
+## Q-02 - RESOLVED: completed settings
 
-T-06 settles terminal completion and Restart with applied settings, but not whether
-settings may be edited while COMPLETE for a subsequent Restart. Either read-only
-settings or settings-only Apply could satisfy no reopening. Recommend clarify before
-completion UI/API implementation; no automatic workflow choice. Completed history and
-Restart stay required under either answer. This gates IMP-009/010 only.
+Completed settings are read-only. Restart creates a NEW session with the same selected
+decks, applied filters and sorting; settings become editable only after the new session
+starts. Preserve persistent user progress and Repeat statuses. Never reopen COMPLETE.
+Version guards and ordinary start checks remain; failed Restart leaves old session intact.
+
+No unresolved owner product/technical decisions remain for the current specification.
+Separate implementation/release authorization is still required; deferred FI-001 and
+hypothetical future scope approvals are not unresolved current requirements.
 
 ## Execution gates and deferred work
 

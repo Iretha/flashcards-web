@@ -69,3 +69,11 @@ proposal text when promoting it. Catalogs retain independent numbering from 1.
 Pure conversion never adds, deletes or rewords questions or reassesses ratings.
 
 The sole deferred item is [FI-001](../FUTURE-IMPROVEMENTS.md). No legacy field removal in current scope.
+
+## Final owner resolutions
+
+Q-01/Q-02 are resolved in the decision register and all dependent contracts. v5 omits
+legacy interviewPriority with conversion-report diagnostics; database raw values remain.
+COMPLETE settings are read-only; Restart new session preserves applied settings,
+persistent progress and Repeat, then permits editing. No unresolved owner decisions
+remain. This documentation update is not implementation authorization.

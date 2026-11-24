@@ -50,8 +50,9 @@ next cycle as today. No duplicate IDs per cycle queue.
 No eligible repeat work -> COMPLETE. Communicate completion and offer Restart
 Session. Preserve applied filters/sort/history/passed/Repeat. COMPLETE is terminal:
 new cards, classification/filter changes, resume and ordinary reads never reopen it.
-History browses under T-05. Editing completed settings for a subsequent Restart is
-not specified by T-06; see Q-02. Either policy must leave COMPLETE terminal.
+History browses under T-05. Q-02 RESOLVED: completed settings are read-only.
+Restart starts a new session with the same selected decks/applied filters/sorting;
+settings become editable only after it starts. COMPLETE never reopens.
 
 ### Restart T-06
 

@@ -81,11 +81,11 @@ replay and atomic write. SHARED alone insufficient. No Study or broader token pe
 
 GET /api/study/home include applied settings, available options, eligibleTotal,
 remainingInCycle, version/current/status. No overflow-specific fields. COMPLETE never
-reopens: display settings/history and Restart. Q-02 settles whether configure may
-update completed settings for the next Restart without admitting work. Do not assume
-rejection or implement that extension before review.
+reopens: display read-only settings/history and Restart. Q-02 RESOLVED: configure
+on COMPLETE is rejected without changing applied settings, queue or version.
+Settings can be edited only on the newly started session after successful Restart.
 
-Proposed POST /api/study/configure (ACTIVE contract; COMPLETE editing is Q-02):
+Proposed POST /api/study/configure (ACTIVE only; Q-02 resolved):
 
 ```json
 {"id":"s1","version":8,"filters":{"topics":{"values":["TRANSACTIONS"],"includeNoTopics":true},"priorities":[1,3],"likelihoods":[],"creationModes":[],"cardTypes":["task"]},"sorting":{"field":"priority","direction":"asc"}}

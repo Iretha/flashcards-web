@@ -8,7 +8,7 @@ change unrelated behavior. No new tests in this documentation phase.
 
 ## IMP-001 — Record approved contracts and implementation gates
 
-- Objective/scope: record approved T-01-T-16, revised DEC traceability and Q-01/Q-02 for affected conversion/completion controls.
+- Objective/scope: record approved T-01-T-16, revised DEC traceability and resolved Q-01/Q-02 contracts for conversion/completion controls.
 - Out of scope: implementation, source snapshot capture without separate authorization.
 - Dependencies: approved owner decision source and review of this synchronized package.
 - Components: this specification package; authoritative-document transition inventory.
@@ -16,7 +16,7 @@ change unrelated behavior. No new tests in this documentation phase.
 - Automated tests: reference/link/coverage checks.
 - Manual acceptance: walk priority ambiguity, normalization backfill, new card in Repeat,
   history wrap, completed Restart, start-only checks and approved MCP expansion examples.
-- Required owner decisions: T-01-T-16 approved; Q-01 for affected conversion, Q-02 for completed-setting editing; implementation authorization separate.
+- Required owner decisions: T-01-T-16 approved; Q-01/Q-02 resolved; implementation authorization separate.
 - Completion: no contradictory unresolved contract for downstream task being authorized.
 
 ## IMP-002 — Shared classification domain and validation
@@ -75,7 +75,7 @@ change unrelated behavior. No new tests in this documentation phase.
 - Objective/scope: v3/v4 conversion-only parser path, diagnostics, one-time attested
   likelihood inversion and rubric/template/guideline updates.
 - Out of scope: v1/v2 parser invention, source verification, content additions/deletions.
-- Dependencies: IMP-004; T-01 default3; Q-01 raw legacy rating transfer for new-card conversion.
+- Dependencies: IMP-004; T-01 default3; resolved Q-01: omit raw legacy field from v5 and report omissions.
 - Components: existing parser modules/conversion entry point to be reviewed; docs/samples,
   templates, generator skill references; conversion fixtures.
 - Database impact: none; not a deployment maintenance runner.
@@ -86,7 +86,7 @@ change unrelated behavior. No new tests in this documentation phase.
   no double inversion and unchanged question texts/local IDs.
 - Manual acceptance: per-file old rubric confirmation and before/after rating meaning.
 - Required decisions: parser removal only after dependency audit; conversion interface
-  and Q-01 compatibility mechanism; default3 already approved.
+  and resolved Q-01 omission/reporting; no legacy v5 field; default3 approved.
 - Completion: conversion diagnostics exhaustive; old parsers conversion-only or removal
   explicitly approved; sample IDs start independently at 1.
 
@@ -151,12 +151,12 @@ change unrelated behavior. No new tests in this documentation phase.
 - Migration impact: session adapter stays backward compatible.
 - Automated tests: full lifecycle/Apply/cross-device/event-count/timer regression matrix.
 - Manual acceptance: active history->frontier learning; COMPLETE Next wraps; Restart new ID retains settings/Repeat and persistent progress.
-- Required decisions: T-05/T-06 approved; Q-02 settings editing remains; timer conflict escalation only if evidenced.
+- Required decisions: T-05/T-06 approved; Q-02 read-only completed settings approved; timer conflict escalation only if evidenced.
 - Completion: deterministic pending, finite history navigation, no silent overwrites.
 
 ## IMP-010 — Study controls and management compatibility
 
-- Objective/scope: five dropdowns including No Topics, draft Apply/Cancel/Clear/Default, completed settings/Restart (Q-02 editing policy),
+- Objective/scope: five dropdowns including No Topics, draft Apply/Cancel/Clear/Default, read-only completed settings/Restart (Q-02 resolved),
   labels/accessibility; adapt existing Deck Details topic/type controls.
 - Out of scope: unrelated sidebar redesign/new Library filters.
 - Dependencies: IMP-006/009.
@@ -176,7 +176,7 @@ change unrelated behavior. No new tests in this documentation phase.
 - Objective/scope: representative datasets/query plans, complete regression and authoritative
   docs promotion; incompatible migration/deployment recovery rehearsal.
 - Out of scope: actual production deployment/commit/push or global search endpoints.
-- Dependencies: IMP-003–010 accepted; Q-01 resolved for affected conversion, Q-02 for completion UI/API, all implementation reviews accepted.
+- Dependencies: IMP-003–010 accepted; resolved Q-01/Q-02 contracts verified, all implementation reviews accepted.
 - Components: relevant tests/E2E, local fixtures, docs inventory in package README.
 - Database impact: local verification only; no production operations.
 - API/security impact: end-to-end contracts and revocation/permission evidence.
@@ -203,8 +203,18 @@ IMP-008 accepts active growth without special policy; ordinary classification ch
 retain still-eligible positions/remove ineligible/append new unpassed. IMP-009 adds
 terminal COMPLETE and Restart new ID, retained Repeat/persistent progress/statistics/
 event history; completed browsing Next wraps, no reopening. IMP-010 localizes Creation
-Mode and No Topics, removes missing-rating UI, follows Q-02 for completed settings
-editing without reopening, and offers Restart. IMP-011 verifies these contracts, new-card Repeat admission, start-only limits,
+Mode and No Topics, removes missing-rating UI, enforces Q-02 read-only completed settings
+and offers Restart; only new session settings become editable. IMP-011 verifies these contracts, new-card Repeat admission, start-only limits,
 non-destructive restart, topic bounds and unchanged timer/Difficulty/search behavior.
 All task database/API/security/migration/test/completion bullets inherit these binding
 updates; no superseded nullable-rating/overflow/reopen contract remains effective.
+
+## Resolved-question acceptance
+
+Q-01: IMP-005 emits no legacy interviewPriority field in v5, defaults unattested
+priority to3 and reports omitted raw values. No legacy-transfer approval gate remains.
+IMP-003 preserves DB raw values until deferred FI-001. Q-02: IMP-009 rejects completed
+configure with no mutation; Restart creates new ID with same settings, persistent
+progress and Repeat preserved. IMP-010 completed settings read-only; edit controls
+available again after successful new-session start. IMP-011 verifies both resolutions.
+No unresolved owner decisions remain; implementation authorization is separate.

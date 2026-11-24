@@ -115,12 +115,12 @@ Historical generated+occurrence contradictions require review; do not silently s
 evidence or relax existing new-input validation. DB preservation and authored validation
 are different responsibilities.
 
-Unattested legacy interviewPriority initializes universal priority to3, never maps
-implicitly; retain raw value in conversion diagnostics. Never overwrite matched-card
-legacy value. New-card lossless transfer of a non-null raw legacy rating is not
-specified by the approved v5 authoring grammar: escalate before emitting import-ready
-output for those cards; do not discard it or invent a field. See DECISIONS.md.
-Conversion of unaffected cards and database migration are independent.
+Q-01 RESOLVED: do not carry legacy interviewPriority into v5 and do not add a legacy
+v5 field. Use priority: 3 when no reliable new priority can be established. Record every
+omitted legacy value by card key in the conversion report. This approved omission is
+not a conversion blocker; do not gate import-ready output on a legacy transfer mechanism.
+Database migration retains existing raw interview_priority until FI-001; normal reimport
+preserves the matched card's retained legacy field. No implicit scale copy/inversion.
 Legacy unit-metadata replacement converts to explicit full supplied headings; omission
 semantics from original source must be preserved for patch/reimport intent.
 
