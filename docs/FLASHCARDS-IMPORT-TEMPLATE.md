@@ -5,6 +5,8 @@ description: Senior Java interview preparation — bilingual, structured flashca
 formatVersion: 4
 primaryLanguage: en
 supportedLanguages: [en, bg]
+# For planned v5 drafts see FLASHCARDS-V5-IMPORT-TEMPLATE.md and FLASHCARDS-V5-SPECIFICATION.md.
+# Retain this v4 template until confirmed v5 cutover.
 # Markdown v4 — supported by parser, validation, persistence, API and Study UI.
 # One stable card key connects BG and EN variants. One file represents one deck.
 # Required per card: provenance and at least one language with a question. Answers may be omitted or empty.
