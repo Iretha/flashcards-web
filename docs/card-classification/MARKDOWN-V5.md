@@ -2,8 +2,9 @@
 
 Approved grammar revised by T-11/T-13/T-14. IMP-004 implements v5-only standard
 import locally, with presence-aware preview/apply and final merged-card validation.
-Legacy conversion remains IMP-005 work; direct v3/v4 import is rejected with conversion
-guidance. Database migration and production cutover authorization are separate.
+IMP-005 provides local reviewed conversion; direct v3/v4 import remains rejected.
+Use the Import screen’s separate conversion panel, review/download the v5 document
+and report, then select the v5 file for normal preview and explicit import. Database migration and production cutover authorization are separate.
 
 ## Grammar
 
@@ -148,3 +149,33 @@ No new evidence schema: qualifiers can remain existing sourceName text when loss
 otherwise report limitation for review. Answer-scope notes remain catalog information.
 Catalogs are not full import decks: missing answers/task specs need separately approved
 content preparation, never invented by a format converter.
+
+### Implemented conversion review
+
+`src/lib/legacy-conversion.ts` reuses the retained v3/v4 parser. Authored legacy
+metadata is retained before normalization so provenance properties and difficulty
+presence survive. Legacy required type/topic/provenance are emitted explicitly;
+absent answerReferences emits [] to preserve old unit-replacement clearing.
+Absent difficulty, answers, details and translations remain omitted. Priority is
+explicitly 3 with every raw interviewPriority omission reported. Likelihood and
+creationMode remain omitted: create defaults are 3/UNKNOWN, update omissions preserve.
+Every supplied translation and authored metadata property is compared after v5
+serialization/validation, including empty versus absent fields. Historical generated
+occurrence contradictions block output with card/field review diagnostics. Unknown
+frontmatter and pre-card content block conversion rather than disappearing.
+No parser was removed; legacy parsing remains a conversion/test dependency and both
+standard preview and apply retain their v5-only guard.
+
+Each of the four catalog legends explicitly attested the old 5-highest rubric.
+The [per-file manifest](conversion/catalog-manifest.json) pins those exact original
+SHA-256 hashes, rubric and conversion version. The [conversion report](conversion/catalog-report.json)
+records target hashes and every original rating by local ID (array index + 1).
+`node scripts/convert-catalog.mjs` requires this manifest and refuses target-marked
+input, changed/unreviewed originals and overwriting an existing output file.
+Tests reconstruct each exact original hash from the target, checking unchanged
+question text, IDs, topics, priorities, evidence and all remaining document bytes.
+Ratings preserve meaning: old 5 core -> new 1 Very High; old 4 likely -> new 2 High;
+3 stays Medium; old 2 uncommon -> new 4 Low; old 1 specialist -> new 5 Very Low.
+The JDBC distribution uses the same inversion. Historical rating ranges in evidence
+notes remain explicitly labeled as old scale; evidence/answer-scope text is retained.
+The catalogs remain catalogs and are never silently promoted to import decks.

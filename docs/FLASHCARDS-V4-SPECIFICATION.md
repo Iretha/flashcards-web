@@ -12,6 +12,11 @@ They are not authored card text. Existing authorization remains unchanged.
 
 ## Import
 
+This section describes the historical v3/v4 conversion contract. Standard import
+now requires v5; use the separate legacy conversion panel, review its report and
+output, then preview and explicitly import the v5 file. Legacy parsers/templates
+are retained as conversion dependencies.
+
 An explicit formatVersion of 3 or 4 is required; all other versions are rejected.
 Both formats normalize into one import DTO with optional answer presence, then into
 the canonical persisted Translation. v4 uses the existing card/language heading

@@ -1,3 +1,4 @@
+import { convertLegacyMarkdown } from '../lib/legacy-conversion';
 import { parseMarkdown } from '../lib/markdown';
 import { MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR } from '../lib/import-limits';
 import CardSources from './CardSources';
@@ -12,6 +13,8 @@ type FileDraft = {
 type Run = (work: () => Promise<void>) => Promise<void>;
 
 export default function Import({ decks, busy, run, reload }: { decks: Deck[]; busy: boolean; run: Run; reload: () => Promise<unknown> }) {
+  const [conversion, setConversion] = useState<ReturnType<typeof convertLegacyMarkdown>>();
+  const [legacySource, setLegacySource] = useState('');
   const [files, setFiles] = useState<FileDraft[]>([]);
   function patch(key: string, fields: Partial<FileDraft>) {
     setFiles(current => current.map(file => file.key === key ? { ...file, ...fields } : file));
@@ -19,6 +22,31 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
 
   return <section className="panel stack">
     <h1>Import Markdown</h1>
+    <details className="stack"><summary>Convert legacy v3/v4 to v5</summary>
+      <p>Conversion runs locally. Review the output and report, then download and select the v5 file below for normal preview and explicit import. Unsupported formats and evidence contradictions require source review.</p>
+      <label>Legacy Markdown file<input type="file" accept=".md,.markdown,text/markdown" disabled={busy} onChange={event => {
+        const file = event.currentTarget.files?.[0];
+        setConversion(undefined); setLegacySource('');
+        if (file) void run(async () => {
+          if (file.size > MAX_MARKDOWN_BYTES) throw new Error(MARKDOWN_SIZE_ERROR);
+          setLegacySource(await file.text());
+        });
+      }} /></label>
+      <button disabled={busy || !legacySource} onClick={() => void run(async () => { setConversion(undefined); setConversion(convertLegacyMarkdown(legacySource)); })}>Convert to v5</button>
+      {conversion && <>
+        <p role="status">Conversion validated. Review all diagnostics and the complete v5 document before previewing import.</p>
+        <ul>{conversion.diagnostics.map((message, index) => <li key={index}>{message}</li>)}</ul>
+        <label>Converted v5 Markdown<textarea aria-label="Converted v5 Markdown" readOnly rows={16} value={conversion.markdown} /></label>
+        <button disabled={busy} onClick={() => {
+          const url = URL.createObjectURL(new Blob([conversion.markdown], { type: 'text/markdown;charset=utf-8' }));
+          const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'converted-v5.md'; anchor.click(); URL.revokeObjectURL(url);
+        }}>Download converted v5</button>
+        <button disabled={busy} onClick={() => {
+          const url = URL.createObjectURL(new Blob([conversion.diagnostics.join('\n')], { type: 'text/plain;charset=utf-8' }));
+          const anchor = document.createElement('a'); anchor.href = url; anchor.download = 'conversion-report.txt'; anchor.click(); URL.revokeObjectURL(url);
+        }}>Download conversion report</button>
+      </>}
+    </details>
     <label>Markdown files<input type="file" accept=".md,.markdown,text/markdown" multiple disabled={busy} onChange={event => {
       const selected = Array.from(event.currentTarget.files ?? []);
       void run(async () => {

@@ -1,0 +1,19 @@
+{
+  "conversionVersion": "IMP-005/1",
+  "rubric": "5 = typical/core interview question; 4 = highly relevant and likely; 3 = plausible but less common; 2 = uncommon or stack/project-specific; 1 = very unlikely outside academic, DBA or specialist interviews.",
+  "attestation": "IMP-005: each original file legend explicitly states 5 typical/core through 1 very unlikely. Confirmed from local source, without source verification or question reassessment.",
+  "files": {
+    "database-interview-questions.md": {
+      "sourceSha256": "7d0c8d86625492c32de0e0c657fd95fec80463fef542b973cc83369710afc214"
+    },
+    "sql-interview-questions.md": {
+      "sourceSha256": "c4cbf476d531c8ba1f441a628b478ca03457557224a793dad8f63caacdfe65e6"
+    },
+    "nosql-interview-questions.md": {
+      "sourceSha256": "0e044a663a68daa670017c42dcf4ecebd73bb48df6296ddf240b82a7903fff42"
+    },
+    "jdbc-interview-questions.md": {
+      "sourceSha256": "9cb25a1f94a2b662760e6dc8627f9dd2d93dab8ac6d97663baf1ab10305c8eda"
+    }
+  }
+}

@@ -3,6 +3,8 @@ import type { CardMetadata } from './metadata';
 import type { Language, Translation } from './translations';
 
 export interface ImportDraft {
+  /** Authored legacy headings, before defaults/derived values; conversion only. */
+  legacyMetadata?: Record<string, unknown>;
   canonical?: { topics?: string[]; priority?: import('./classification').Rating | null; likelihood?: import('./classification').Rating | null; creationMode?: import('./classification').CreationMode | null; difficulty?: number | null; metadata?: Record<string, unknown> };
   key: string;
   metadata?: CardMetadata;

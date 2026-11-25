@@ -105,6 +105,13 @@ validation and guarded replacement. No deployment or IMP-005 work is included.
 
 ## IMP-005 — Legacy conversion and catalog documentation
 
+Status: IMPLEMENTED LOCALLY. Separate browser conversion/review/download feeds the
+unchanged v5 preview and explicit apply. Semantic/presence regression checks cover
+translations, empty/omitted fields, full legacy unit metadata, retained raw ratings,
+evidence contradictions and unsupported content. Four attested catalogs use the
+target likelihood scale with per-file SHA-256/version guards and raw-value reports;
+question text/local IDs/evidence remain unchanged. No deployment or IMP-006 work.
+
 - Objective/scope: v3/v4 conversion-only parser path, diagnostics, one-time attested
   likelihood inversion and rubric/template/guideline updates.
 - Out of scope: v1/v2 parser invention, source verification, content additions/deletions.
