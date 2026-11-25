@@ -1,3 +1,4 @@
+import { decodeCard } from './decks';
 import { z } from 'zod';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { thirdPartyAccessSql } from './third-party-access';
@@ -84,7 +85,7 @@ export async function readMcp(db: D1Database, user: string, tool: ToolName, raw:
       matches.push({ item: {}, boundary });
       break;
     }
-    const columns = decks ? 'd.id,d.title,d.description,d.primaryLanguage,d.supportedLanguages,d.third_party_access,d.revision,(SELECT count(*) FROM cards WHERE deck_id=d.id) AS card_count' : 'c.id,c.deck_id,c.position,c.primary_language,c.translations,c.metadata,c.interview_priority,c.difficulty' + (single ? ',c.priority,c.likelihood,c.creation_mode,d.revision,(SELECT json_group_array(topic_name) FROM card_topics WHERE card_id=c.id) AS topics_json' : '');
+    const columns = decks ? 'd.id,d.title,d.description,d.primaryLanguage,d.supportedLanguages,d.third_party_access,d.revision,(SELECT count(*) FROM cards WHERE deck_id=d.id) AS card_count' : 'c.id,c.deck_id,c.position,c.primary_language,c.translations,c.metadata,c.interview_priority,c.difficulty' + (single ? ',c.priority,c.likelihood,c.creation_mode,d.revision,(SELECT json_group_array(topic_name) FROM (SELECT topic_name FROM card_topics WHERE card_id=c.id ORDER BY topic_name)) AS topics_json' : '');
     const row = await db.prepare(`SELECT ${columns} FROM ${decks ? 'decks d' : 'cards c JOIN decks d ON d.id=c.deck_id'}
       WHERE ${thirdPartyAccessSql(1, 'read', 'd')} AND ${alias}.id = ?2`).bind(user,candidate.id).first<Record<string, unknown>>();
     // Concurrent deletion/revocation fails the page rather than returning a partial success.
@@ -100,7 +101,8 @@ export async function readMcp(db: D1Database, user: string, tool: ToolName, raw:
       if (!all && !translations[resolved]) throw new McpReadError('UNAVAILABLE');
       item = { deck_id: row.deck_id, card_id: row.id, resolved_language: all ? null : resolved, fallback_used: all ? false : resolved !== preferred };
       const project = (t: Record<string, string>) => Object.fromEntries(['question','answer','questionDetails'].filter(k => typeof t[k] === 'string').map(k => [k,t[k]]));
-      if (single) Object.assign(item, all ? { translations: Object.fromEntries(Object.entries(translations).map(([l,t]) => [l,project(t)])) } : project(translations[resolved]), { metadata: row.metadata ? JSON.parse(String(row.metadata)) : { cardType: 'question' }, topics: JSON.parse(String(row.topics_json)), priority: row.priority, likelihood: row.likelihood, creationMode: row.creation_mode, revision: row.revision, interview_priority: row.interview_priority, difficulty: row.difficulty });
+      const canonical = single ? decodeCard(row as unknown as Parameters<typeof decodeCard>[0]).canonical! : null;
+      if (single) Object.assign(item, all ? { translations: Object.fromEntries(Object.entries(translations).map(([l,t]) => [l,project(t)])) } : project(translations[resolved]), { metadata: canonical!.metadata, topics: canonical!.topics, priority: canonical!.priority, likelihood: canonical!.likelihood, creationMode: canonical!.creation_mode, revision: row.revision, interview_priority: row.interview_priority, difficulty: row.difficulty });
       else Object.assign(item, all ? { questions: Object.fromEntries(Object.entries(translations).map(([l,t]) => [l,t.question])) } : { question: translations[resolved].question });
     }
     if (matches.length < maximum) toolResult(single ? { item } : { items: [...matches.map(m => m.item), item], next_after: null });

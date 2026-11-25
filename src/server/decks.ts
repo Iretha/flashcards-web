@@ -60,11 +60,11 @@ type CardRow = Omit<Card, 'translations' | 'metadata'> & {
   translations: string; metadata: string | null; topics_json?: string;
 };
 
-function decodeCard(card: CardRow): Card {
+export function decodeCard(card: CardRow): Card {
   const { topics_json, priority, likelihood, creation_mode, ...stored } = card as CardRow & {
     priority: Rating; likelihood: Rating; creation_mode: CreationMode;
   };
-  const canonical = stored.metadata ? JSON.parse(stored.metadata) as CanonicalCardMetadata : validateCanonicalMetadata({ cardType: 'question' });
+  const canonical = derivedMetadata(stored.metadata ? JSON.parse(stored.metadata) as CanonicalCardMetadata : validateCanonicalMetadata({ cardType: 'question' }))!;
   const topics = topics_json ? JSON.parse(topics_json) as string[] : [];
   // Compatibility projection for existing management/Study consumers; v5 imports
   // read canonical state directly and never round-trip through this projection.
@@ -210,7 +210,7 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       try { cardMetadata = validateMetadata(input.metadata); }
       catch (error) { throw new HttpError(400, `Card ${current?.import_key ?? id}: ${error instanceof Error ? error.message : 'invalid metadata'}`); }
     }
-    if (cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
+    if (!thirdParty && cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
     const next = { metadata: cardMetadata, canonical: current?.canonical, id, primary_language: primary, import_key: current?.import_key ?? null, translations,
       interview_priority: current?.interview_priority ?? null, difficulty: current?.difficulty ?? null };
     if (thirdParty) {

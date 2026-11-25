@@ -21,6 +21,8 @@ export async function createMcpCard(db: D1Database, user: string, raw: unknown) 
   const { deck_id, question, answer, language, idempotency_key } = parsed.data;
   // Canonical validated request: omitted language remains distinct from an explicit language.
   const payload = JSON.stringify(parsed.data);
+  const legacyPayload = JSON.stringify([deck_id, question, answer ?? '', language ?? null]);
+  const legacyCompatible = ![...Object.keys(classifications), 'questionDetails'].some(key => Object.hasOwn(parsed.data, key));
   async function replay() {
     if (!idempotency_key) return null;
     const allowed = await db.prepare(`SELECT id FROM decks WHERE id = ?1 AND ${thirdPartyAccessSql(2, 'write')}`).bind(deck_id, user).first();
@@ -28,7 +30,7 @@ export async function createMcpCard(db: D1Database, user: string, raw: unknown) 
     const row = await db.prepare("SELECT payload, card_id FROM mcp_card_idempotency WHERE principal=? AND operation='create_card' AND key=?")
       .bind(user, idempotency_key).first<{ payload: string; card_id: string }>();
     if (!row) return null;
-    if (row.payload !== payload) throw new Error('CONFLICT');
+    if (row.payload !== payload && !(legacyCompatible && row.payload === legacyPayload)) throw new Error('CONFLICT');
     return { card_id: row.card_id, status: 'created' };
   }
   const previous = await replay();

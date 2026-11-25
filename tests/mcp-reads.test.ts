@@ -261,3 +261,38 @@ it('patches classifications atomically with revision checks and preserves answer
  await expect(updateMcpCard(db,'owner',{card_id,expected_revision:revision+1,metadata:{cardType:'task'}})).rejects.toThrow('INVALID_ARGUMENTS');
  expect((await read()).item!.revision).toBe(revision+1);
 });
+
+it('replays legacy receipts only for requests without new fields and rechecks access', async () => {
+ const args={deck_id:'write-test',question:'legacy replay',idempotency_key:'legacy-receipt'};
+ const created=await createMcpCard(db,'owner',args);
+ await db.prepare('UPDATE mcp_card_idempotency SET payload=? WHERE key=?').bind(JSON.stringify([args.deck_id,args.question,'',null]),args.idempotency_key).run();
+ expect(await createMcpCard(db,'owner',args)).toEqual(created);
+ expect(await createMcpCard(db,'owner',{...args,answer:''})).toEqual(created);
+ for (const patch of [{topics:[]},{priority:3},{likelihood:null},{creationMode:'UNKNOWN'},{metadata:null},{questionDetails:''}])
+  await expect(createMcpCard(db,'owner',{...args,...patch})).rejects.toThrow('CONFLICT');
+ await db.prepare("UPDATE decks SET third_party_access='READ' WHERE id='write-test'").run();
+ await expect(createMcpCard(db,'owner',args)).rejects.toThrow('UNAVAILABLE');
+ await db.prepare("UPDATE decks SET third_party_access='READ_WRITE' WHERE id='write-test'").run();
+});
+it('validates final task state after metadata reset or type change', async () => {
+ const {card_id,deck}=await answerFixture();
+ await db.prepare('UPDATE cards SET metadata=?,translations=? WHERE id=?').bind(JSON.stringify({cardType:'task',provenance:{type:'generated',sources:[]}}),JSON.stringify({en:{question:'repair task',answer:'retain'},bg:{question:'repair secondary',answer:'secondary'}}),card_id).run();
+ const revision=(await db.prepare('SELECT revision FROM decks WHERE id=?').bind(deck).first<{revision:number}>())!.revision;
+ await expect(updateMcpCard(db,'owner',{card_id,expected_revision:revision,priority:4})).rejects.toThrow('INVALID_ARGUMENTS');
+ await updateMcpCard(db,'owner',{card_id,expected_revision:revision,metadata:{cardType:'question'}});
+ expect((await read('owner','get_card',{card_id})).item).toMatchObject({answer:'retain',metadata:{cardType:'question',occurrenceCount:0}});
+ await db.prepare('UPDATE cards SET metadata=? WHERE id=?').bind(JSON.stringify({cardType:'task',provenance:{type:'generated',sources:[]}}),card_id).run();
+ await updateMcpCard(db,'owner',{card_id,expected_revision:revision+1,metadata:null});
+ expect((await read('owner','get_card',{card_id})).item).toMatchObject({metadata:{cardType:'question',occurrenceCount:0}});
+});
+it('projects sorted canonical topics and derived metadata for get_card', async () => {
+ const {card_id}=await createMcpCard(db,'owner',{deck_id:'write-test',question:'canonical projection',topics:['z','a'],metadata:{cardType:'question',provenance:{type:'generated',sources:[]}}});
+ await db.prepare('DELETE FROM card_topics WHERE card_id=?').bind(card_id).run();
+ for (const topic of ['Z','A']) await db.prepare('INSERT INTO card_topics(card_id,topic_name) VALUES (?,?)').bind(card_id,topic).run();
+ expect((await read('owner','get_card',{card_id})).item).toMatchObject({topics:['A','Z'],metadata:{cardType:'question',occurrenceCount:0}});
+ expect((await read('owner','get_card',{card_id,language:'all'})).item).toMatchObject({topics:['A','Z'],metadata:{occurrenceCount:0}});
+ const source={sourceName:'Interview',sourceUrl:'https://example.com/interview',occurrenceId:'same'};
+ await db.prepare('UPDATE cards SET metadata=? WHERE id=?').bind(JSON.stringify({cardType:'question',occurrenceCount:99,provenance:{type:'sourced',sources:[source,source]}}),card_id).run();
+ expect((await read('owner','get_card',{card_id})).item).toMatchObject({metadata:{occurrenceCount:1}});
+
+});
