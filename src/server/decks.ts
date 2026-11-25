@@ -350,6 +350,7 @@ export function writeCards(
   cards: ImportTarget[], insertOnly = false, replaceTopics = true,
 ) {
   const canonical = cards.map(card => {
+    const { legacyMetadataProvided, ...target } = card;
     const legacy = card.metadata;
     const stored = card.canonical;
     const metadata = legacy ? {
@@ -359,9 +360,9 @@ export function writeCards(
       occurrenceCount: legacy.occurrenceCount,
     } : stored?.metadata ?? { cardType: 'question' as const, occurrenceCount: 0 };
     return {
-      ...card, metadata, priority: stored?.priority ?? DEFAULT_RATING, likelihood: stored?.likelihood ?? DEFAULT_RATING,
+      ...target, metadata, priority: stored?.priority ?? DEFAULT_RATING, likelihood: stored?.likelihood ?? DEFAULT_RATING,
       creation_mode: stored?.creation_mode ?? DEFAULT_CREATION_MODE,
-      ...(replaceTopics ? { topics: legacy ? normalizeTopics([legacy.topic]) : [] } : {}),
+      ...(replaceTopics && legacyMetadataProvided !== false ? { topics: legacy ? normalizeTopics([legacy.topic]) : [] } : {}),
     } satisfies CanonicalWriteTarget;
   });
   return writeCanonicalCards(db, deck, mutation, now, canonical, insertOnly, false);

@@ -26,6 +26,8 @@ export interface ImportTarget {
   difficulty: number | null;
   /** Non-enumerable on read DTOs; preserves canonical state through legacy write adapters. */
   canonical?: CanonicalStoredState;
+  /** Internal import signal: omitted legacy metadata must not replace canonical memberships. */
+  legacyMetadataProvided?: boolean;
 }
 interface PreviewRow {
   index: string;
@@ -105,6 +107,7 @@ export function planImport(
       interview_priority: draft.interviewPriority ?? target?.interview_priority ?? null,
       difficulty: draft.difficulty ?? target?.difficulty ?? null,
       canonical: target?.canonical,
+      legacyMetadataProvided: draft.metadata !== undefined,
     };
     claimed.add(id);
     let dirty = isNew || next.import_key !== target?.import_key;

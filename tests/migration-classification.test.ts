@@ -4,6 +4,8 @@ import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { splitSql } from './sql';
 import { listCards, writeCanonicalCards, writeCards } from '../src/server/decks';
 import { validateCanonicalMetadata } from '../src/lib/metadata';
+import { parseMarkdown } from '../src/lib/markdown';
+import { planImport } from '../src/server/import-plan';
 
 let runtime: Miniflare | undefined;
 afterEach(async () => { await runtime?.dispose(); runtime = undefined; });
@@ -163,6 +165,34 @@ it('preserves type-only and multi-topic canonical state through an answer-only l
   const stored = await db.prepare("SELECT metadata,priority,likelihood,creation_mode FROM cards WHERE id='preserved'").first();
   expect(stored).toEqual({ metadata: JSON.stringify({ cardType: 'task' }), priority: 1, likelihood: 5, creation_mode: 'AI' });
   expect((await db.prepare("SELECT topic_name FROM card_topics WHERE card_id='preserved' ORDER BY topic_name").all()).results).toEqual([{ topic_name: 'ONE' }, { topic_name: 'TWO' }]);
+});
+
+it('preserves topics for omitted import metadata and replaces them when metadata is explicit', async () => {
+  const db = await database();
+  await db.batch(statements('0021_card_classification.sql').map(sql => db.prepare(sql)));
+  const canonical = {
+    id: 'imported', import_key: 'one', primary_language: 'en' as const,
+    translations: { en: { question: 'Imported?', answer: 'Original' } },
+    interview_priority: null, difficulty: null, metadata: validateCanonicalMetadata({ cardType: 'question' }),
+    priority: 3 as const, likelihood: 3 as const, creation_mode: 'UNKNOWN' as const, topics: ['ONE', 'TWO'],
+  };
+  await db.batch(writeCanonicalCards(db, 'deck', 'write', 1, [canonical]));
+  const markdown = (topic: string, answer: string) => `---\nformatVersion: 4\nprimaryLanguage: en\n---\n## card: one\n### cardType: question\n### topic: ${topic}\n### provenance\ntype: generated\nsources: []\n### en\n#### question\nImported?\n#### answer\n${answer}`;
+
+  const omitted = parseMarkdown(markdown('IGNORED', 'Without metadata'));
+  delete omitted.cards[0].metadata;
+  const current = (await listCards(db, 'owner', 'deck')).find(card => card.id === 'imported')!;
+  const omittedPlan = planImport(omitted, [current], {}, { '0:en': 'update' });
+  await db.batch(writeCards(db, 'deck', 'write', 2, omittedPlan.changed));
+  expect((await db.prepare("SELECT topic_name FROM card_topics WHERE card_id='imported' ORDER BY topic_name").all()).results)
+    .toEqual([{ topic_name: 'ONE' }, { topic_name: 'TWO' }]);
+
+  const explicit = parseMarkdown(markdown('Replacement', 'With metadata'));
+  const refreshed = (await listCards(db, 'owner', 'deck')).find(card => card.id === 'imported')!;
+  const explicitPlan = planImport(explicit, [refreshed], {}, { '0:en': 'update' });
+  await db.batch(writeCards(db, 'deck', 'write', 3, explicitPlan.changed));
+  expect((await db.prepare("SELECT topic_name FROM card_topics WHERE card_id='imported'").all()).results)
+    .toEqual([{ topic_name: 'REPLACEMENT' }]);
 });
 
 it('removes legacy invalidation behavior while retaining cascade and search consistency', async () => {
