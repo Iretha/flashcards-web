@@ -41,3 +41,8 @@ requests still require complete answers and every-card A/B/C review.
 See the [current contract](../../docs/FLASHCARDS-V4-SPECIFICATION.md) for importer
 semantics and the template for serialization. v3 is compatibility input; author v4.
 Do not author occurrenceCount.
+
+
+## Markdown v5 transition
+
+For v5 drafts, use [v5 template](../../docs/FLASHCARDS-V5-IMPORT-TEMPLATE.md), [v5 specification](../../docs/FLASHCARDS-V5-SPECIFICATION.md) and mandatory [G-01–G-07 classification guidelines](CLASSIFICATION-GUIDELINES.md). These override v4-specific serialization instructions above for v5 only. Explicitly supply all five classification fields for new cards; preserve existing classification unless explicitly requested. Provenance and A/B/C quality rules remain unchanged. Do not claim import readiness until the actual v5 parser has validated the artifact. Until confirmed cutover, retain the v4 template for v4 imports.
