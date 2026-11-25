@@ -397,7 +397,7 @@ describe('Workers API with real local D1', () => {
     const guestSession = await guest.ok<Session>('study/start', { decks: [first], settings: defaults, version: 0 });
     await guest.action(guestSession, 'learn');
     await owner.ok('deck', { ...header, visibility: 'PRIVATE' });
-    expect((await guest.study()).status).toBe('INVALIDATED');
+    expect(await guest.study()).toMatchObject({ status: 'ACTIVE', card: null, remainingInCycle: 0 });
     expect((await guest.request('cards?deck=' + first)).response.status).toBe(404);
     const backup = await guest.request<{ decks: Deck[]; cards: unknown[]; history: { kind: string }[] }>('export');
     expect(backup.response.headers.get('content-disposition')).toContain('flashcards-backup.json');
@@ -465,7 +465,7 @@ describe('Workers API with real local D1', () => {
     expect((await browser.cards(deck))[0]).toMatchObject({ id: second.id, translations: {en: {question: 'Edited'}}, status: 'LEARNED', times_learned: 1 });
     await browser.ok('card', { deck, method: 'delete', id: first.id });
     expect(await browser.cards(deck)).toHaveLength(1);
-    expect((await browser.study()).status).toBe('INVALIDATED');
+    expect(await browser.study()).toMatchObject({ status: 'ACTIVE', card: null, remainingInCycle: 0 });
     await browser.ok('deck/delete', { deck });
     expect((await browser.home()).decks).toEqual([]);
   });
@@ -633,14 +633,15 @@ it('recreates legacy cards atomically, reports shared progress loss and preserve
     await db.prepare('DROP TRIGGER fail_recreation').run();
   }
   await owner.ok('import/apply', request);
-  expect((await owner.study()).status).toBe('INVALIDATED');
-  expect((await guest.study()).status).toBe('INVALIDATED');
-  expect((await owner.cards(id)).every(card => card.metadata && card.times_shown === 0)).toBe(true);
+  expect((await owner.study()).status).toBe('ACTIVE');
+  expect((await guest.study()).status).toBe('ACTIVE');
+  expect((await owner.cards(id)).every(card => card.metadata)).toBe(true);
+  expect((await owner.cards(id)).reduce((total, card) => total + card.times_shown, 0)).toBe(1);
   expect(await owner.cards(unrelated)).toEqual(untouched);
   expect((await owner.home()).username).toBe('Recreation owner');
   expect((await guest.home()).username).toBe('Recreation guest');
   const impact = await owner.ok<Preview>('import/preview', { source: v5Fixture, target: id });
-  expect(impact.impact).toMatchObject({ cards: 2, progressRecords: 0, activeSessions: 2, retainedHistoricalEvents: 2 });
+  expect(impact.impact).toMatchObject({ cards: 2, progressRecords: 2, activeSessions: 2, retainedHistoricalEvents: 4 });
 });
 
 it('imports a large v5 deck with optional fields omitted', async () => {
@@ -1234,4 +1235,94 @@ it.each([3, 4])('rejects direct legacy v%s preview and apply with conversion gui
     expect(result.response.status).toBe(400); expect(result.data.error).toMatch(/requires formatVersion: 5.*Convert legacy/);
   }
   expect((await browser.home()).decks).toEqual(before);
+});
+
+it('restores an ambiguous legacy Repeat cycle with history browsing and preserves persisted progress', async () => {
+  const browser = new Browser(); await browser.login('IMP008 restoration');
+  const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Restoration', visibility: 'PRIVATE' });
+  for (const question of ['A', 'B', 'C']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  const cards = await browser.cards(deck); const [a, b, c] = cards.map(card => card.id);
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: { ...defaults, timer: true }, version: 0 });
+  const row = await db.prepare('SELECT user_id, session_state FROM study_sessions WHERE id=?').bind(session.id).first<{ user_id: string; session_state: string }>();
+  const legacy = JSON.parse(row!.session_state);
+  delete legacy.schemaVersion; delete legacy.classification;
+  legacy.cycles = { cards: [c, a, b], pending: [a], repeat: [a, b], history: [c, a, b, c, a, b], cursor: 1, cycle: 2, complete: false };
+  Object.assign(legacy, { queue: [c, a, b].map(id => ({ id })), current: a, history: legacy.cycles.history,
+    cursor: 1, revealed: true, historyRevealed: true, deadline: 12345, remainingMs: 234, answerOverrides: { [a]: true } });
+  await db.prepare('UPDATE study_sessions SET session_state=?,current_card_id=? WHERE id=?').bind(JSON.stringify(legacy), a, session.id).run();
+  const progress = await db.prepare('SELECT * FROM card_progress WHERE user_id=? ORDER BY card_id').bind(row!.user_id).all();
+  const restored = await browser.study();
+  expect(restored).toMatchObject({ status: 'ACTIVE', version: session.version + 1, card: { id: a }, historical: true, deadline: 12345, paused: true });
+  const persisted = JSON.parse((await db.prepare('SELECT session_state FROM study_sessions WHERE id=?').bind(session.id).first<{session_state: string}>())!.session_state);
+  expect(persisted.cycles.live.passed).toEqual([]);
+  expect(persisted.cycles.live.frontier).toBe(b);
+  delete persisted.schemaVersion; delete persisted.classification; delete persisted.cycles.live;
+  expect(persisted).toEqual(legacy);
+  expect((await browser.study()).version).toBe(restored.version);
+  expect((await db.prepare('SELECT * FROM card_progress WHERE user_id=? ORDER BY card_id').bind(row!.user_id).all()).results).toEqual(progress.results);
+  expect((await browser.request('study/action', { id: session.id, version: session.version, action: 'next' })).response.status).toBe(409);
+});
+
+it('projects live additions, No Topics options, access loss and restoration without losing the other deck', async () => {
+  const owner = new Browser(); await owner.login('IMP008 live owner');
+  const guest = new Browser(); await guest.login('IMP008 live guest');
+  const { id: shared } = await owner.ok<{id: string}>('deck', { title: 'Shared scope', visibility: 'SHARED' });
+  const { id: own } = await guest.ok<{id: string}>('deck', { title: 'Own scope', visibility: 'PRIVATE' });
+  await owner.ok('card', { deck: shared, method: 'save', question: 'A', answer: 'A', metadata: { cardType: 'question', topic: 'Only shared', provenance: { type: 'generated', sources: [] } } });
+  await guest.ok('card', { deck: own, method: 'save', question: 'B', answer: 'B' });
+  const initial = await guest.ok<Session>('study/start', { decks: [shared, own], settings: defaults, version: 0 });
+  expect(initial.availableOptions).toMatchObject({ topics: ['ONLY SHARED'], noTopicsAvailable: true });
+  await owner.ok('card', { deck: shared, method: 'save', question: 'C', answer: 'C' });
+  const grown = await guest.study();
+  expect(grown).toMatchObject({ card: { id: initial.card!.id }, remainingInCycle: 3, eligibleTotal: 3 });
+  expect((await guest.study()).version).toBe(grown.version);
+  await owner.ok('deck', { id: shared, title: 'Shared scope', visibility: 'PRIVATE' });
+  const restricted = await guest.study();
+  expect(restricted).toMatchObject({ status: 'ACTIVE', card: { deck_id: own }, eligibleTotal: 1, remainingInCycle: 1 });
+  expect(restricted.availableOptions.topics).toEqual([]);
+  await owner.ok('deck', { id: shared, title: 'Shared scope', visibility: 'SHARED' });
+  const restored = await guest.study();
+  expect(restored).toMatchObject({ card: { deck_id: own }, remainingInCycle: 3 });
+  const learned = await guest.action(restored, 'next');
+  expect(learned.card!.id).toBe(initial.card!.id);
+});
+
+it('guards live reconciliation against source drift without consuming an unseen replacement frontier', async () => {
+  const { studyView, act } = await import('../src/server/sessions');
+  const browser = new Browser(); await browser.login('IMP008 source race');
+  const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Race', visibility: 'PRIVATE' });
+  for (const question of ['A', 'B', 'C']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  const row = (await db.prepare('SELECT user_id FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string}>())!;
+  const cards = await browser.cards(deck);
+  let attempts = 0;
+  const racingDb = {
+    prepare: db.prepare.bind(db),
+    batch: async (statements: D1PreparedStatement[]) => {
+      if (++attempts === 1) await db.prepare('DELETE FROM cards WHERE id=?').bind(cards[0].id).run();
+      return db.batch(statements);
+    },
+  } as D1Database;
+  const result = await act(racingDb, { id: row.user_id, username: 'Race', settings: '{}' }, { id: session.id, version: session.version, action: 'learn' });
+  expect(attempts).toBe(2);
+  expect(result).toMatchObject({ status: 'ACTIVE', card: { id: cards[1].id }, remainingInCycle: 2 });
+  expect((await db.prepare("SELECT count(*) n FROM study_events WHERE user_id=? AND kind='LEARNED'").bind(row.user_id).first<{n: number}>())!.n).toBe(0);
+  expect((await db.prepare("SELECT count(*) n FROM study_events WHERE user_id=? AND card_id=? AND kind='SHOWN'").bind(row.user_id, cards[1].id).first<{n: number}>())!.n).toBe(1);
+  expect((await studyView(db, row.user_id))!.version).toBe(result!.version);
+});
+
+it('enforces start-only limits while allowing active growth beyond 5000 without truncation', async () => {
+  const browser = new Browser(); await browser.login('IMP008 growth');
+  const { id: deck } = await browser.ok<{id: string}>('deck', { title: 'Growth', visibility: 'PRIVATE' });
+  await browser.ok('card', { deck, method: 'save', question: 'Seed', answer: 'Seed' });
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  await db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<5001)
+    INSERT INTO cards(id,deck_id,stable_key,import_key,question_key,position,created_at,updated_at,primary_language,translations,metadata)
+    SELECT ? || i, ?, 'growth-' || i, NULL, 'growth-' || i, i, 0, 0, 'en', json_object('en',json_object('question','Q' || i,'answer','A')), '{"cardType":"question"}' FROM n`)
+    .bind(deck + '-', deck).run();
+  const grown = await browser.study();
+  expect(grown).toMatchObject({ status: 'ACTIVE', card: { id: session.card!.id }, remainingInCycle: 5002, eligibleTotal: 5002 });
+  expect((await browser.request('study/start', { decks: [deck], settings: defaults, version: grown.version })).response.status).toBe(400);
+  expect((await browser.study()).id).toBe(session.id);
+  expect((await browser.study()).remainingInCycle).toBe(5002);
 });

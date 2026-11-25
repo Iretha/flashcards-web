@@ -1,3 +1,5 @@
+import { adaptStudyState } from './study-projection';
+import type { ClassificationFilters, ClassificationSort } from './classification';
 import { startCycles, toggleRepeat, nextCycleCard, previousCycleCard } from './study-cycles';
 import type { CycleState } from './study-cycles';
 import type { Language } from './translations';
@@ -7,6 +9,8 @@ export interface Settings { order: Ordering; timer: boolean; seconds: number; on
 export const defaults: Settings = { order: 'SEQUENTIAL', timer: false, seconds: 30, onlyUnlearned: false, language: 'en', answersOpen: false };
 export interface QueueCard { id: string }
 export interface StudyState {
+  schemaVersion?: 2;
+  classification?: { filters: ClassificationFilters; sorting: ClassificationSort };
   cycles?: CycleState;
   queue: QueueCard[];
   history: string[];
@@ -38,7 +42,7 @@ export function startStudy(queue: QueueCard[], settings: Settings, now: number, 
   state.history = state.cycles.history;
   state.cursor = 0;
   state.deadline = state.current && settings.timer && !state.revealed ? now + settings.seconds * 1000 : null;
-  return state;
+  return adaptStudyState(state, false);
 }
 
 export function advance(original: StudyState, settings: Settings, action: StudyAction, now: number, _random = Math.random) {
@@ -90,5 +94,5 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
 /** Drop retired extras while preserving valid cycle/history/progress state. */
 export function normalizeStudyState(value: StudyState & { explanation?: unknown }): StudyState {
   const { explanation: _retired, ...state } = value;
-  return { ...state, queue: state.queue.map(card => ({ id: card.id })) };
+  return adaptStudyState({ ...state, queue: state.queue.map(card => ({ id: card.id })) });
 }

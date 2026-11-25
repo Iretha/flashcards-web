@@ -168,6 +168,9 @@ Status: ACCEPTED. Existing tools extended using canonical validation and guarded
 
 ## IMP-008 — Session state adapter and Fully Live projection
 
+Status: IMPLEMENTED LOCALLY. Owner-approved unfiltered restoration amendment applied;
+shared engine and guarded read/action projection. No deployment or IMP-009 work.
+
 - Objective/scope: versioned state, original ranks, passed/admitted/frontier, live options
   and pending, access exclusion, start-only limits, No Topics; preserve existing sessions.
 - Out of scope: circular UI/timer refactor/push.
@@ -180,7 +183,7 @@ Status: ACCEPTED. Existing tools extended using canonical validation and guarded
 - Migration impact: lazy guarded adapter, no restart of valid sessions.
 - Automated tests: live addition/removal/reinclude/rank/start-limit, adapter random/history states.
 - Manual acceptance: mutate deck on second device and resume retained session.
-- Required decisions: T-03/T-04/T-09/T-16 approved; adapter ambiguity resolved with fixtures, no growth cap.
+- Required decisions: T-03/T-04/T-09/T-16 approved; unfiltered restoration amendment approved 2026-11-25, no historical inference or growth cap.
 - Completion: no duplicate cards or lost current/history/Repeat/timer/progress.
 
 ## IMP-009 — Lifecycle, navigation and atomic Apply API

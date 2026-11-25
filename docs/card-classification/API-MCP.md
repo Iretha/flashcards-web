@@ -1,6 +1,6 @@
 # API and MCP contracts
 
-Management and JSON Export v3 accepted (IMP-006); MCP implemented locally (IMP-007); Study contracts remain planned. Owner-approved contracts T-07/T-11-T-16. No broader access,
+Management and JSON Export v3 accepted (IMP-006); MCP accepted (IMP-007); Study read/action projection implemented locally (IMP-008); Apply/Restart remain planned. Owner-approved contracts T-07/T-11-T-16. No broader access,
 Study MCP tools or global classification search. Preserve existing credentials,
 origin/CSRF checks, grants, ownership/collaboration and atomic mutation guards.
 
@@ -83,7 +83,8 @@ replay and atomic write. SHARED alone insufficient. No Study or broader token pe
 
 ## Browser Study Apply
 
-GET /api/study and GET /api/home include applied settings, available options, eligibleTotal,
+GET /api/study and GET /api/home include `applied` (filters/sorting), `availableOptions`
+(topics/noTopicsAvailable/priorities/likelihoods/creationModes/cardTypes), eligibleTotal,
 remainingInCycle, version/current/status. No overflow-specific fields. COMPLETE never
 reopens: display read-only settings/history and Restart. Q-02 RESOLVED: configure
 on COMPLETE is rejected without changing applied settings, queue or version.

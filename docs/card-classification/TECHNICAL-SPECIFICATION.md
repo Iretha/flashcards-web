@@ -111,6 +111,16 @@ sorts the entire pending set. Current frontier remains if eligible. T-16 ordinar
 classification changes remove newly ineligible pending cards, append newly eligible
 unpassed cards and retain position of still-eligible cards even if sort keys change.
 
+## Existing Study restoration (owner-approved 2026-11-25)
+
+Restore existing cycle-aware sessions unfiltered with default sorting; preserve stored
+pending/current/history/cursor, shuffled order, cycle, Repeat, timer/answer/language state
+and persistent progress. No historical passed or cycle-boundary reconstruction. Stored
+remaining work initializes the cycle admission snapshot; consumption is tracked from
+restoration onward. The shared engine initializes subsequent cycles naturally, without
+forced reset, termination or permanent legacy engine. See the binding
+[adapter contract](STUDY-LIFECYCLE.md#existing-session-adapter).
+
 ## Study UI specification
 
 Study-only collapsible panel below toolbar; preserve sidebars and unrelated layout.
