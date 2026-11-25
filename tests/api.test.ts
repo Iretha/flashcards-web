@@ -90,7 +90,7 @@ describe('external management API', () => {
     expect(await apiData(await apiRequest(other, route))).toMatchObject({ owned: false, description: 'Rivers', revision: 1 });
     const cards = route + '/cards';
     expect((await apiRequest(other, cards, 'POST', {})).status).toBe(403);
-    const content = { import_key: 'xy', primary_language: 'bg', difficulty: 2, translations: {
+    const content = { topics: ['RIVERS'], priority: 1, likelihood: 5, creationMode: 'MANUAL', import_key: 'xy', primary_language: 'bg', difficulty: 2, translations: {
       bg: { question: 'Къде се влива Дунав?', answer: 'В Черно море.' },
       en: { question: 'Where does the Danube end?', answer: 'The Black Sea.', questionDetails: 'The Danube Delta.' },
     } };
@@ -99,7 +99,7 @@ describe('external management API', () => {
     expect(copies.map(r => r.status).sort()).toEqual([200, 201]);
     const card = await apiData(copies[0]);
     expect(await apiData(copies[1])).toEqual(card);
-    expect(card).toMatchObject({ ...content, metadata: null, revision: 2 });
+    expect(card).toMatchObject({ ...content, metadata: {cardType: 'question'}, revision: 2 });
     const item = cards + '/' + card.id;
     for (const suffix of ['', '?q=', '?q=' + encodeURIComponent(' \t ')]) {
       expect(await apiData(await apiRequest(owner, cards + suffix))).toEqual([card]);
@@ -128,7 +128,7 @@ describe('external management API', () => {
     const edits = await Promise.all([edit('It empties into the Black Sea.'), edit('It flows into the Black Sea.')]);
     expect(edits.map(r => r.status).sort()).toEqual([200, 412]);
     const updated = await apiData(edits.find(r => r.status === 200)!);
-    expect(updated).toMatchObject({ revision: 3, translations: { bg: content.translations.bg, en: { questionDetails: content.translations.en.questionDetails } } });
+    expect(updated).toMatchObject({ topics: ['RIVERS'], priority: 1, likelihood: 5, creationMode: 'MANUAL', revision: 3, translations: { bg: content.translations.bg, en: { questionDetails: content.translations.en.questionDetails } } });
     const browser = new Browser();
     await browser.login('api-owner');
     const browserCards = await browser.ok<Card[]>('cards?deck=' + deck.id);
@@ -151,7 +151,7 @@ describe('external management API', () => {
     const token = await apiToken(user.id);
     const cards = 'decks/' + imported.id + '/cards';
     const original = (await apiData<ApiResource[]>(await apiRequest(token, cards)))[0];
-    expect(original.metadata.topic).toBeTruthy();
+    expect(original.topics.length).toBeGreaterThan(0);
     const patch = await apiRequest(token, cards + '/' + original.id, 'PATCH', { difficulty: 4 }, { 'If-Match': '"' + original.revision + '"' });
     expect(patch.status).toBe(200);
     expect(await apiData(patch)).toMatchObject({ id: original.id, metadata: original.metadata, translations: original.translations, difficulty: 4 });
@@ -159,7 +159,7 @@ describe('external management API', () => {
     for (const [body, field] of [
       [{ translations: { fr: {} } }, 'translations.fr.question'],
       [{ translations: { en: { question: 'x'.repeat(2001), answer: 'A' } } }, 'translations.en.question'],
-      [{ ...valid, metadata: { cardType: 'question' } }, 'metadata.topic'],
+      [{ ...valid, priority: 0 }, 'classification'],
       [{ ...valid, difficulty: 6 }, 'difficulty'],
       [{ ...valid, import_key: 'with spaces' }, 'import_key'],
     ] as const) {
@@ -170,7 +170,7 @@ describe('external management API', () => {
   });
 });
 
-type ApiResource = { id: string; revision: number; metadata: { topic: string }; translations: Card['translations'] };
+type ApiResource = { id: string; revision: number; topics: string[]; metadata: { topic: string }; translations: Card['translations'] };
 
 async function apiData<T = ApiResource>(response: Response) {
   expect(response.ok).toBe(true);
@@ -509,7 +509,7 @@ describe('Workers API with real local D1', () => {
     expect(revised.preview.rows.filter(row => row.kind === 'metadata')).toHaveLength(1);
     expect((await browser.cards(id))[0]).toMatchObject({ id: first.id, difficulty: 4 });
     const backup = await browser.ok<{ cards: Card[] }>('export');
-    expect(backup.cards.find(card => card.id === first.id)).toMatchObject({ difficulty: 4, interview_priority: null });
+    expect(backup.cards.find(card => card.id === first.id)).toMatchObject({ difficulty: 4, interviewPriority: null });
   });
 
   it('preserves the timer, revealed content, open section and preference across language switches and devices', async () => {
@@ -581,7 +581,7 @@ it('round-trips v5 through preview, D1, study, editing, export and guarded recre
   session = await owner.action(session, 'next'); expect(session.status).toBe('COMPLETE');
   await owner.ok('card', { deck: id, id: cards[0].id, method: 'save', translations: cards[0].translations });
   const backup = await owner.ok<{ cards: Card[] }>('export');
-  expect(backup.cards.find(card => card.id === cards[0].id)?.metadata).toEqual(cards[0].metadata);
+  expect(backup.cards.find(card => card.id === cards[0].id)?.metadata).toMatchObject({cardType:'task', provenance:cards[0].metadata!.provenance});
   const invalid = v5Fixture.replace('### cardType: task', '### priority: -1');
   const badPreview = await owner.ok<Preview>('import/preview', { source: invalid, target: id });
   expect(badPreview.rows[0].message).toContain('priority');
@@ -1153,7 +1153,11 @@ it('executes v5 missing/empty/replaced answers exactly as previewed and exports 
   const [card]=await browser.cards(id);expect(card.id).toBe(original.id);expect(card.translations.en.answer).toBe(expected);
   expect(card).not.toHaveProperty('question');expect(card).not.toHaveProperty('answer');expect(card).not.toHaveProperty('simple_opens');
  }
- const backup=await browser.ok<any>('export');expect(backup.version).toBe(2);
+ const backup=await browser.ok<any>('export');expect(backup.version).toBe(3);
+ const exported = backup.cards.find((c:any)=>c.id===original.id);
+ expect(exported).toMatchObject({priority:3,likelihood:3,creationMode:'UNKNOWN',topics:['TEST'],interviewPriority:null,metadata:{cardType:'question'}});
+ expect(exported).not.toHaveProperty('interview_priority');
+ expect(backup).not.toHaveProperty('settings');
  expect(backup.cards.find((c:any)=>c.id===original.id).translations.en).toEqual({question:'Canonical question',answer:'Replacement'});
 });
 

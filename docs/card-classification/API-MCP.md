@@ -1,6 +1,6 @@
 # API and MCP contracts
 
-Owner-approved planned contracts T-07/T-11-T-16, not implemented. No broader access,
+Management and JSON Export v3 implemented locally (IMP-006); MCP and Study contracts remain planned. Owner-approved contracts T-07/T-11-T-16. No broader access,
 Study MCP tools or global classification search. Preserve existing credentials,
 origin/CSRF checks, grants, ownership/collaboration and atomic mutation guards.
 

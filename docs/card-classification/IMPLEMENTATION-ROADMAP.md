@@ -105,7 +105,7 @@ validation and guarded replacement. No deployment or IMP-005 work is included.
 
 ## IMP-005 — Legacy conversion and catalog documentation
 
-Status: IMPLEMENTED LOCALLY. Separate browser conversion/review/download feeds the
+Status: ACCEPTED. Separate browser conversion/review/download feeds the
 unchanged v5 preview and explicit apply. Semantic/presence regression checks cover
 translations, empty/omitted fields, full legacy unit metadata, retained raw ratings,
 evidence contradictions and unsupported content. Four attested catalogs use the
@@ -131,6 +131,8 @@ question text/local IDs/evidence remain unchanged. No deployment or IMP-006 work
   explicitly approved; sample IDs start independently at 1.
 
 ## IMP-006 — Management API and JSON export
+
+Status: IMPLEMENTED LOCALLY. Management uses canonical classification validation and guarded writes; JSON Export v3 preserves raw legacy ratings separately. No deployment or IMP-007 work.
 
 - Objective/scope: read/create/PATCH classifications, metadata patch, export version.
 - Out of scope: global search and session endpoints for bearer clients.
