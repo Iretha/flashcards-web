@@ -84,7 +84,7 @@ separately authorized.
 
 ## IMP-004 — Markdown v5 parser, preview and apply
 
-Status: IMPLEMENTED LOCALLY. Standard import is v5-only; legacy parsers remain
+Status: ACCEPTED. Standard import is v5-only; legacy parsers remain
 available as conversion dependencies. Parser/domain, local D1 API and browser import
 regressions cover presence, clears, retained identity/progress/languages, final task
 validation and guarded replacement. No deployment or IMP-005 work is included.
