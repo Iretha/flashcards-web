@@ -122,3 +122,8 @@ Yes. Assignment permits widening primitive conversion from `int` to `long`. It p
 е answer reference. Неизвестен произход на съществуваща карта се отбелязва за преглед.
 Никога не измисляй URL, цитат или твърдение за реално интервю. Проверявай URL и
 подкрепящия пасаж, преди да отбележиш verified.
+
+
+## Markdown v5 transition
+
+For v5 drafts follow the [v5 format](../../../docs/FLASHCARDS-V5-SPECIFICATION.md), [v5 template](../../../docs/FLASHCARDS-V5-IMPORT-TEMPLATE.md) and [G-01–G-07](../../../skills/flashcards-deck-generator/CLASSIFICATION-GUIDELINES.md). These supersede v4-specific serialization requirements for v5 only (topics list, task instead of coding_task, optional provenance on input, explicit new-card classification). All technical quality, evidence and A/B/C review rules remain unchanged. Preserve existing classification unless explicitly requested. Verify actual parser support before claiming import readiness.
