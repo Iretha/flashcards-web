@@ -57,8 +57,8 @@ Browser, Management API, MCP and exports expose canonical translations without r
 mirrors or explanation statistics. New metadata inputs exclude occurrenceCount;
 responses derive it. All write interfaces allow empty answers; omission preserves
 existing answers. Management/MCP text search covers question, questionDetails and answer.
-External AI requests include the resolved question and matching questionDetails,
-never the stored answer, and request the user's selected output language. Authored
+External AI requests include the resolved question and effective answer-generation instructions,
+never questionDetails or the stored answer, and request the user's selected output language. Authored
 content is delimited untrusted data, not application instructions.
 Export behavior is defined below.
 
@@ -151,3 +151,5 @@ service plans. Offline caching must not compromise D1 progress correctness; no
 offline synchronization contract or calendar spaced-repetition system is promised.
 See [local verification](LOCAL-DEVELOPMENT.md), [external AI links](../EXTERNAL-AI-INTEGRATION.md)
 and [content generation](../skills/flashcards-deck-generator/README.md).
+
+External AI card content uses `<card-content>` containing only `<question>`. Delimiter collisions in the question are handled for both tags. Question details remain stored and displayed but are never included in generated prompts.

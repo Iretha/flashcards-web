@@ -505,7 +505,7 @@ export default function App() {
           </div>
           {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <details className="answer-panel" open={answerVisible}>
-            <summary aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) toggleStudyAnswer(); }}>Answer <AskChatGpt question={selectedLanguage.translation?.question ?? ''} questionDetails={selectedLanguage.translation?.questionDetails} language={session.language} instructions={effectiveInstructions(home.decks.find(deck => deck.id === activeCard.deck_id) ?? {}, session.language)} /></summary>
+            <summary aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) toggleStudyAnswer(); }}>Answer <AskChatGpt question={selectedLanguage.translation?.question ?? ''} language={session.language} instructions={effectiveInstructions(home.decks.find(deck => deck.id === activeCard.deck_id) ?? {}, session.language)} /></summary>
             <div id="study-answer" className="answer markdown" lang={selectedLanguage.language}>{selectedLanguage.translation && !selectedLanguage.translation.answer.trim() ? <span>—</span> : <MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>}
               {activeCard.metadata?.answerReferences?.length ? <details><summary>Answer references</summary>{activeCard.metadata.answerReferences.map((reference, index) => <p key={index}><a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a></p>)}</details> : null}
             </div>
