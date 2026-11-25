@@ -14,3 +14,11 @@ it('accepts explicit and omitted languages', () => {
 });
 
 it.each([undefined,'',' '])('accepts answer omission/empty %s',answer=>{expect(updateCardSchema.safeParse({card_id:'a',...(answer===undefined?{}:{answer})}).success).toBe(true)});
+
+it('requires a revision for classification updates before database access', async () => {
+ await expect(updateMcpCard({} as D1Database, 'owner', {card_id:'a',topics:[]})).rejects.toThrow('INVALID_ARGUMENTS');
+});
+it('accepts canonical patches with a revision and rejects invalid ratings', () => {
+ expect(updateCardSchema.safeParse({card_id:'a',expected_revision:1,priority:null,topics:[],metadata:null,creationMode:'UNKNOWN'}).success).toBe(true);
+ expect(updateCardSchema.safeParse({card_id:'a',expected_revision:1,priority:6}).success).toBe(false);
+});

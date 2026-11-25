@@ -125,7 +125,7 @@ it('covers pagination boundaries, all card content and explicit oversized errors
  }
  const card=await read('owner','get_card',{card_id:'boundary1-0',language:'all'});
  expect(card.item).toMatchObject({translations:{en:{question:'question',answer:'answer',questionDetails:'statement'}},resolved_language:null,fallback_used:false});
- expect(card.item).not.toHaveProperty('revision');
+ expect(card.item).toMatchObject({revision:0,topics:[],priority:3,likelihood:3,creationMode:'UNKNOWN'});
  await db.prepare("UPDATE cards SET translations=? WHERE id='boundary1-0'").bind(JSON.stringify({en:{question:'q',answer:'я'.repeat(300000)}})).run();
  await expect(read('owner','get_card',{card_id:'boundary1-0'})).rejects.toThrow('RESULT_TOO_LARGE');
  // A short question preview remains valid even when its answer exceeds the result budget.
@@ -191,7 +191,7 @@ it.each([undefined,'en','bg'])('updates only the selected answer (%s), retaining
  const {card_id} = await answerFixture();
  const before = (await storedCard(card_id))!;
  expect(await updateMcpCard(db,'owner',{card_id,answer:'replacementuniqueterm',...(language ? {language}: {})}))
-  .toEqual({card_id,language:language??'en',answer:'replacementuniqueterm',status:'updated'});
+  .toEqual({card_id,language:language??'en',answer:'replacementuniqueterm',status:'updated',revision:3});
  const after = (await storedCard(card_id))!;
  const translations = JSON.parse(before.translations as string);
  translations[language??'en'].answer='replacementuniqueterm';
@@ -248,4 +248,16 @@ it('creates answerless cards and preserves or clears answers through MCP',async(
  await updateMcpCard(db,'owner',{card_id,answer:'Filled'});
  expect((await updateMcpCard(db,'owner',{card_id})).answer).toBe('Filled');
  expect((await updateMcpCard(db,'owner',{card_id,answer:''})).answer).toBe('');
+});
+
+it('patches classifications atomically with revision checks and preserves answers', async () => {
+ const {card_id}=await createMcpCard(db,'owner',{deck_id:'write-test',question:'classification unique',answer:'retained',topics:[' sql '],priority:5});
+ const read=()=>readMcp(db,'owner','get_card',{card_id});
+ const before=await read();
+ const revision=before.item!.revision as number;
+ await expect(updateMcpCard(db,'owner',{card_id,expected_revision:revision-1,topics:[]})).rejects.toThrow('CONFLICT');
+ await updateMcpCard(db,'owner',{card_id,expected_revision:revision,priority:null,topics:[]});
+ expect((await read()).item).toMatchObject({answer:'retained',priority:3,topics:[],revision:revision+1});
+ await expect(updateMcpCard(db,'owner',{card_id,expected_revision:revision+1,metadata:{cardType:'task'}})).rejects.toThrow('INVALID_ARGUMENTS');
+ expect((await read()).item!.revision).toBe(revision+1);
 });

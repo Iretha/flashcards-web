@@ -64,7 +64,7 @@ function deckValues(value: unknown, current?: Deck) {
     preset, optionalText('chatgpt_en', 10000), optionalText('chatgpt_bg', 10000)] as const;
 }
 
-function cardValues(value: unknown, id: string, current?: ImportTarget): ImportTarget {
+export function cardValues(value: unknown, id: string, current?: ImportTarget): ImportTarget {
   const input = fields(value, 'body', ['translations', 'primary_language', 'import_key', 'metadata', 'interview_priority', 'difficulty', 'topics', 'priority', 'likelihood', 'creationMode']);
   const translations: Translations = { ...current?.translations };
   if ('translations' in input) {

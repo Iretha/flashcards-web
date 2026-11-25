@@ -132,7 +132,7 @@ question text/local IDs/evidence remain unchanged. No deployment or IMP-006 work
 
 ## IMP-006 — Management API and JSON export
 
-Status: IMPLEMENTED LOCALLY. Management uses canonical classification validation and guarded writes; JSON Export v3 preserves raw legacy ratings separately. No deployment or IMP-007 work.
+Status: ACCEPTED. Management uses canonical classification validation and guarded writes; JSON Export v3 preserves raw legacy ratings separately. No deployment.
 
 - Objective/scope: read/create/PATCH classifications, metadata patch, export version.
 - Out of scope: global search and session endpoints for bearer clients.
@@ -149,10 +149,12 @@ Status: IMPLEMENTED LOCALLY. Management uses canonical classification validation
 
 ## IMP-007 — MCP classification capabilities
 
+Status: IMPLEMENTED LOCALLY. Existing tools extended using canonical validation and guarded writes. No deployment or IMP-008 work.
+
 - Objective/scope: get_card classifications/revision and approved create_card/update_card
   extensions for classification fields and answer patches; search_cards unchanged.
 - Out of scope: global search, Study controls, separate classification tool or broader access.
-- Dependencies: IMP-006; approved T-07 capability expansion, pending implementation authorization.
+- Dependencies: IMP-006; approved T-07 capability expansion, implementation authorized by owner.
 - Components: mcp-reads.ts, mcp-writes.ts, mcp.ts registration, schemas/tests/docs.
 - Database impact: reuse authorized canonical batches/receipts.
 - API impact: strict input/output additions and documented tool capability boundary.

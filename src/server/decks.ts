@@ -166,9 +166,10 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
   return { id };
 }
 
-export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>, thirdParty = false, idempotency?: { key: string; payload: string }): Promise<{ id?: string; answer?: string }> {
+export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>, thirdParty = false, idempotency?: { key: string; payload: string }): Promise<{ id?: string; answer?: string; revision?: number; classification?: Record<string, unknown> }> {
   const deck = await getDeck(db, user, deckId, true);
   if (thirdParty) check(deck.third_party_access === 'READ_WRITE', 'Card not available.', 404);
+  if (thirdParty && input.expected_revision !== undefined) check(input.expected_revision === deck.revision, 'Deck changed.', 409);
   const now = Date.now();
   const id = input.id ? string(input.id, 'card ID', 80) : crypto.randomUUID();
   const method = input.method;
@@ -198,21 +199,27 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       const answer = string(input.answer ?? current?.translations[deck.primaryLanguage ?? current.primary_language]?.answer ?? '', 'answer', 20000, true);
       const language = deck.primaryLanguage ?? current?.primary_language;
       check(language, 'Resolve the deck primary language before adding cards.');
-      translations = { ...current?.translations, [language]: { ...current?.translations[language], question, answer } };
+      translations = { ...current?.translations, [language]: { ...current?.translations[language], question, answer, ...(thirdParty && input.questionDetails !== undefined ? { questionDetails: string(input.questionDetails, 'questionDetails', 20000, true) } : {}) } };
     }
     const primary = deck.primaryLanguage ?? current?.primary_language;
     check(Object.keys(translations).every(code => deck.supportedLanguages.includes(code)), 'Unsupported deck language.');
     check(primary && translations[primary], 'Primary language content is required.');
     check(primary, 'Add at least one translation.');
     let cardMetadata = current?.metadata ?? null;
-    if (input.metadata !== undefined) {
+    if (!thirdParty && input.metadata !== undefined) {
       try { cardMetadata = validateMetadata(input.metadata); }
       catch (error) { throw new HttpError(400, `Card ${current?.import_key ?? id}: ${error instanceof Error ? error.message : 'invalid metadata'}`); }
     }
     if (cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
     const next = { metadata: cardMetadata, canonical: current?.canonical, id, primary_language: primary, import_key: current?.import_key ?? null, translations,
       interview_priority: current?.interview_priority ?? null, difficulty: current?.difficulty ?? null };
-    validateCardLanguages(next, deck);
+    if (thirdParty) {
+      const { cardValues } = await import('./management');
+      const patch = Object.fromEntries(['metadata', 'topics', 'priority', 'likelihood', 'creationMode'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
+      const validated = cardValues({ ...patch, translations, primary_language: primary }, id, current);
+      next.canonical = validated.canonical;
+    }
+    validateCardLanguages({ ...next, metadata: thirdParty ? next.canonical!.metadata : next.metadata }, deck);
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
@@ -221,9 +228,9 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       SELECT ?, 'create_card', ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
       .bind(user, idempotency.key, idempotency.payload, id, now, deckId, mutation)] : [];
     const replaceTopics = !current || input.metadata !== undefined;
-    const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next], false, replaceTopics), ...receipt]);
+    const [result] = await db.batch([header, ...(thirdParty ? writeCanonicalCards(db, deckId, mutation, now, [{ ...next, ...next.canonical!, topics: !current || Object.hasOwn(input, 'topics') ? next.canonical!.topics : undefined }]) : writeCards(db, deckId, mutation, now, [next], false, replaceTopics)), ...receipt]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
-    return { id, ...(method === 'answer' ? { answer: translations[String(input.language ?? current!.primary_language)].answer } : {}) };
+    return { id, revision: deck.revision + 1, ...(thirdParty ? { classification: { metadata: next.canonical!.metadata, topics: next.canonical!.topics, priority: next.canonical!.priority, likelihood: next.canonical!.likelihood, creationMode: next.canonical!.creation_mode } } : {}), ...(method === 'answer' ? { answer: translations[String(input.language ?? current!.primary_language)].answer } : {}) };
   }
   const mutation = crypto.randomUUID();
   const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ? WHERE id = ?
