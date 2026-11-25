@@ -135,7 +135,17 @@ handling. Malformed/unknown versioned state is diagnostic, never silently reset.
 Source guards reuse selected-deck revisions/current access and the existing card/topic
 epoch; no new signal, background work, index or per-user fanout. Retry source/CAS drift
 at most three attempts; stale user versions remain conflicts. Single-card materialization
-revalidates access and checks source again before returning content/options.
+revalidates access and checks source again before returning content/options. Unchanged
+read reconciliation checks session ID/version and source in the same SQL read; concurrent
+session changes retry within the same three-attempt bound. A session change during final
+materialization returns a conflict rather than a stale view.
+
+IMP-008 empty-frontier handling retains ACTIVE state and existing linear/clamped
+history navigation. Previous can reach accessible retained history even when no card is
+currently presented; Next through that history does not consume work or emit SHOWN.
+A missing presentation is not historical browsing: when eligible work returns, it can
+become the presented frontier. Circular navigation, Restart and the remaining terminal
+lifecycle/API changes remain IMP-009.
 
 ## Timer boundary
 

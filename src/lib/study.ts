@@ -50,7 +50,7 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
   const card = state.current;
   let outcome: Outcome | null = null;
   let shown: string | null = null;
-  if (!card) return { state, outcome, shown };
+  if (!card && (action !== 'previous' || state.cycles?.complete)) return { state, outcome, shown };
   if (state.cycles) {
     const cycles = state.cycles;
     if (action === 'repeat') state.cycles = toggleRepeat(cycles);
@@ -58,7 +58,7 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
     else if (action === 'next' || action === 'forward' || action === 'learn') {
       state.cycles = nextCycleCard(cycles);
       outcome = action === 'learn' ? 'LEARNED' : 'NEXT';
-    } else if (action === 'show') {
+    } else if (action === 'show' && card) {
       state.revealed = !state.revealed;
       (state.answerOverrides ??= {})[card] = state.revealed;
       state.deadline = null; state.remainingMs = null;
@@ -76,8 +76,8 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
     const moved = state.cycles.cursor !== cycles.cursor || state.cycles.complete !== cycles.complete;
     state.history = state.cycles.history;
     state.cursor = state.cycles.cursor;
-    state.current = state.cycles.complete ? null : state.history[state.cursor] ?? null;
     if (moved) {
+      state.current = state.cycles.complete ? null : state.history[state.cursor] ?? null;
       state.revealed = state.current ? state.answerOverrides?.[state.current] ?? state.answersOpen ?? false : false;
       state.historyRevealed = state.revealed;
       state.remainingMs = null;

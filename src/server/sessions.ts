@@ -40,6 +40,11 @@ const sourceSql = `SELECT json_object('epoch', (SELECT epoch FROM card_search_st
     (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id=d.id AND dc.user_id=?))`;
 const sourceBindings = (row: Pick<SessionRow, 'selected_deck_ids' | 'user_id'>) => [row.selected_deck_ids, row.user_id, row.user_id];
 const sourceToken = async (db: D1Database, row: Pick<SessionRow, 'selected_deck_ids' | 'user_id'>) => (await db.prepare(`SELECT (${sourceSql}) AS token`).bind(...sourceBindings(row)).first<{ token: string }>())!.token;
+// Validate the session and its source in a single read, including the no-write path.
+const sessionSourceToken = async (db: D1Database, row: SessionRow) =>
+  (await db.prepare(`SELECT (${sourceSql}) AS token FROM study_sessions
+    WHERE user_id=? AND id=? AND version=?`).bind(...sourceBindings(row), row.user_id, row.id, row.version)
+    .first<{ token: string }>())?.token;
 const sessionSettings = (row: SessionRow): Settings => ({ ...defaults, order: row.ordering_mode,
   timer: Boolean(row.timer_enabled), seconds: row.timer_seconds });
 
@@ -71,7 +76,7 @@ async function reconcileRead(db: D1Database, user: string) {
     const state = row.status === 'ACTIVE' ? projectStudy(original, scope.cards, sessionSettings(row), Date.now()) : original;
     const encoded = JSON.stringify(state);
     if (encoded === row.session_state) {
-      const token = await sourceToken(db, row);
+      const token = await sessionSourceToken(db, row);
       if (token === scope.token) return { row, state, cards: scope.cards, token: scope.token };
       continue;
     }
@@ -111,13 +116,13 @@ export async function studyView(db: D1Database, user: string) {
   const availableLanguages = await sessionLanguages(db, user, deckIds);
   const language = reconcileLanguage(state.language ?? defaults.language, availableLanguages);
   const status = row.status === 'ACTIVE' && !state.cycles ? 'INVALIDATED' as const : row.status;
-  check(await sourceToken(db, row) === token, 'The deck changed. Reload and try again.', 409);
+  check(await sessionSourceToken(db, row) === token, 'The deck or session changed. Reload and try again.', 409);
   if (status !== 'ACTIVE') return { ...projection, id: row.id, version: row.version, status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds, language, availableLanguages, repeat: false };
   const accessibleIds = new Set(cards.map(card => card.id));
-  const historical = state.cursor < state.history.length - 1;
+  const historical = state.current !== null && (state.cycles?.live?.frontier === null || state.cursor < state.history.length - 1);
   const id = state.history[state.cursor];
   const card = state.current ? await studyCard(db, user, id) : null;
-  check(await sourceToken(db, row) === token, 'The deck changed. Reload and try again.', 409);
+  check(await sessionSourceToken(db, row) === token, 'The deck or session changed. Reload and try again.', 409);
   return {
     ...projection, id: row.id, version: row.version, status: row.status, card,
     repeat: state.cycles?.repeat.includes(id) ?? false,

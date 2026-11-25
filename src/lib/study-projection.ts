@@ -65,7 +65,7 @@ export function projectStudy(original: StudyState, cards: ProjectionCard[], sett
     c.pending.push(id); queued.add(id);
   }
   if (!live.frontier) live.frontier = c.pending.shift() ?? null;
-  const browsing = c.cursor < c.history.length - 1 && accessible.has(c.history[c.cursor]);
+  const browsing = state.current !== null && c.cursor < c.history.length - 1 && accessible.has(c.history[c.cursor]);
   if (live.frontier !== oldFrontier) {
     if (live.frontier) c.history.push(live.frontier);
     if (!browsing) {

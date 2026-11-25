@@ -102,3 +102,45 @@ it('matches unfiltered legacy transitions across natural cycles and historical R
     expect(strip(restored)).toEqual(old);
   }
 });
+
+it('browses retained accessible history from an empty frontier without consuming work', () => {
+  let state = startStudy([card('a'), card('b')], defaults, 0);
+  state = advance(state, defaults, 'next', 1).state;
+  state.classification!.filters.topics.values = ['MISSING'];
+  state = projectStudy(state, [card('a'), card('b')], defaults, 2);
+  expect(state.current).toBeNull();
+  expect(state.cycles!.live!.frontier).toBeNull();
+  const live = structuredClone(state.cycles!.live);
+  const result = advance(state, defaults, 'previous', 3);
+  expect(result).toMatchObject({ shown: null, outcome: null, state: { current: 'a', cursor: 0 } });
+  expect(result.state.cycles!.live).toEqual(live);
+  expect(result.state.cycles!.complete).toBe(false);
+});
+
+it('recovers an empty presentation when access returns to a retained unpassed frontier', () => {
+  let state = startStudy([card('a'), card('b')], { ...defaults, timer: true }, 0);
+  state = advance(state, defaults, 'next', 1).state;
+  state = advance(state, defaults, 'previous', 2).state;
+  state.classification!.filters.topics.values = ['MISSING'];
+  state = projectStudy(state, [card('a'), card('b')], defaults, 3);
+  state = projectStudy(state, [], defaults, 4);
+  expect(state.current).toBeNull();
+  expect(state.deadline).toBeNull();
+  expect(state.cycles!.complete).toBe(false);
+  state.classification!.filters.topics.values = [];
+  const recovered = projectStudy(state, [card('a'), card('b')], { ...defaults, timer: true }, 100);
+  expect(recovered).toMatchObject({ current: 'b', deadline: 30100 });
+  expect(recovered.cycles!.live).toMatchObject({ frontier: 'b', passed: ['a'] });
+  expect(recovered.cycles!.pending).toEqual([]);
+});
+
+it('keeps empty-frontier no-op navigation empty and never consumes retained history', () => {
+  let state = startStudy([card('a')], defaults, 0);
+  state.classification!.filters.topics.values = ['MISSING'];
+  state = projectStudy(state, [card('a')], defaults, 1);
+  for (const action of ['previous', 'next', 'forward', 'learn'] as const) {
+    const result = advance(state, defaults, action, 2);
+    expect(result).toMatchObject({ state: { current: null }, outcome: null, shown: null });
+    expect(result.state.cycles).toEqual(state.cycles);
+  }
+});

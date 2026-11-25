@@ -1326,3 +1326,124 @@ it('enforces start-only limits while allowing active growth beyond 5000 without 
   expect((await browser.study()).id).toBe(session.id);
   expect((await browser.study()).remainingInCycle).toBe(5002);
 });
+
+it.each(['next', 'replace'] as const)('retries unchanged read reconciliation after a concurrent session %s', async mutation => {
+  const { studyView } = await import('../src/server/sessions');
+  const browser = new Browser(); await browser.login('IMP008 unchanged ' + mutation);
+  const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Unchanged read', visibility: 'PRIVATE' });
+  for (const question of ['A', 'B']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  const row = (await db.prepare('SELECT user_id FROM study_sessions WHERE id=?').bind(session.id).first<{ user_id: string }>())!;
+  let concurrent: Session | undefined;
+  let injected = false;
+  const racingDb = {
+    prepare(sql: string) {
+      const statement = db.prepare(sql);
+      if (!sql.includes('ORDER BY selection.key, c.position, c.id')) return statement;
+      return {
+        bind(...values: unknown[]) {
+          const bound = statement.bind(...values);
+          return {
+            async all() {
+              const result = await bound.all();
+              if (!injected) {
+                injected = true;
+                concurrent = mutation === 'next'
+                  ? await browser.action(session, 'next')
+                  : await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: session.version });
+              }
+              return result;
+            },
+          };
+        },
+      };
+    },
+    batch: db.batch.bind(db),
+  } as D1Database;
+  const result = await studyView(racingDb, row.user_id);
+  expect(injected).toBe(true);
+  expect(result).toEqual(concurrent);
+  expect((await browser.study()).version).toBe(concurrent!.version);
+});
+
+it('navigates accessible history with an empty frontier and recovers work without phantom learning', async () => {
+  const browser = new Browser(); await browser.login('IMP008 empty navigation');
+  const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Empty navigation', visibility: 'PRIVATE' });
+  for (const question of ['A', 'B']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  let session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  session = await browser.action(session, 'next');
+  const row = (await db.prepare('SELECT user_id,session_state FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string; session_state: string}>())!;
+  const state = JSON.parse(row.session_state);
+  state.classification.filters.topics.values = ['MISSING'];
+  await db.prepare('UPDATE study_sessions SET session_state=? WHERE id=?').bind(JSON.stringify(state), session.id).run();
+  session = await browser.study();
+  expect(session).toMatchObject({ status: 'ACTIVE', card: null, hasPrevious: true, remainingInCycle: 0 });
+  const eventsBefore = (await db.prepare('SELECT count(*) n FROM study_events WHERE user_id=?').bind(row.user_id).first<{n: number}>())!.n;
+  session = await browser.action(session, 'previous');
+  expect(session).toMatchObject({ historical: true, card: { translations: { en: { question: 'A' } } }, remainingInCycle: 0 });
+  session = await browser.action(session, 'next');
+  expect(session).toMatchObject({ historical: true, card: { translations: { en: { question: 'B' } } }, remainingInCycle: 0 });
+  session = await browser.action(session, 'next');
+  expect(session).toMatchObject({ status: 'ACTIVE', historical: true, remainingInCycle: 0 });
+  expect((await db.prepare('SELECT count(*) n FROM study_events WHERE user_id=?').bind(row.user_id).first<{n: number}>())!.n).toBe(eventsBefore);
+  // Ordinary classification restoration, without adding an Apply endpoint.
+  const frontier = state.cycles.live.frontier;
+  await db.prepare('INSERT INTO card_topics(card_id,topic_name) VALUES (?,?)').bind(frontier, 'MISSING').run();
+  session = await browser.study();
+  expect(session).toMatchObject({ status: 'ACTIVE', historical: false, card: { id: frontier }, remainingInCycle: 1 });
+});
+
+it('bounds retries when the session keeps changing during unchanged read reconciliation', async () => {
+  const { studyView } = await import('../src/server/sessions');
+  const browser = new Browser(); await browser.login('IMP008 read churn');
+  const { id: deck } = await browser.ok<{id: string}>('deck', { title: 'Read churn', visibility: 'PRIVATE' });
+  await browser.ok('card', { deck, method: 'save', question: 'A', answer: 'A' });
+  let session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  const row = (await db.prepare('SELECT user_id FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string}>())!;
+  let attempts = 0;
+  const racingDb = {
+    prepare(sql: string) {
+      const statement = db.prepare(sql);
+      if (!sql.includes('ORDER BY selection.key, c.position, c.id')) return statement;
+      return { bind(...values: unknown[]) {
+        const bound = statement.bind(...values);
+        return { async all() {
+          const result = await bound.all();
+          attempts++;
+          session = await browser.action(session, 'show');
+          return result;
+        } };
+      } };
+    }, batch: db.batch.bind(db),
+  } as D1Database;
+  await expect(studyView(racingDb, row.user_id)).rejects.toMatchObject({ status: 409 });
+  expect(attempts).toBe(3);
+  expect(await browser.study()).toEqual(session);
+});
+
+it('rejects a view if the session changes during final card materialization', async () => {
+  const { studyView } = await import('../src/server/sessions');
+  const browser = new Browser(); await browser.login('IMP008 final read guard');
+  const { id: deck } = await browser.ok<{id: string}>('deck', { title: 'Final read guard', visibility: 'PRIVATE' });
+  await browser.ok('card', { deck, method: 'save', question: 'A', answer: 'A' });
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  const row = (await db.prepare('SELECT user_id FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string}>())!;
+  let concurrent: Session | undefined;
+  const racingDb = {
+    prepare(sql: string) {
+      const statement = db.prepare(sql);
+      if (!sql.includes('WHERE c.id = ? AND (d.owner_id')) return statement;
+      return { bind(...values: unknown[]) {
+        const bound = statement.bind(...values);
+        return { async first() {
+          const result = await bound.first();
+          concurrent = await browser.action(session, 'show');
+          return result;
+        } };
+      } };
+    }, batch: db.batch.bind(db),
+  } as D1Database;
+  await expect(studyView(racingDb, row.user_id)).rejects.toMatchObject({ status: 409 });
+  expect(concurrent!.version).toBeGreaterThan(session.version);
+  expect(await browser.study()).toEqual(concurrent);
+});
