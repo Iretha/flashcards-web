@@ -1,7 +1,9 @@
 # Markdown v5 specification and legacy conversion
 
-Approved planned grammar revised by T-11/T-13/T-14; not implemented. Standard import becomes v5-only at cutover;
-legacy converts and previews first. Database migration is separate.
+Approved grammar revised by T-11/T-13/T-14. IMP-004 implements v5-only standard
+import locally, with presence-aware preview/apply and final merged-card validation.
+Legacy conversion remains IMP-005 work; direct v3/v4 import is rejected with conversion
+guidance. Database migration and production cutover authorization are separate.
 
 ## Grammar
 

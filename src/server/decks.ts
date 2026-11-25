@@ -66,8 +66,8 @@ function decodeCard(card: CardRow): Card {
   };
   const canonical = stored.metadata ? JSON.parse(stored.metadata) as CanonicalCardMetadata : validateCanonicalMetadata({ cardType: 'question' });
   const topics = topics_json ? JSON.parse(topics_json) as string[] : [];
-  // Transitional storage adapter for the still-live v3/v4 consumers. The canonical
-  // writer/read model is exposed separately and IMP-004 removes this legacy projection.
+  // Compatibility projection for existing management/Study consumers; v5 imports
+  // read canonical state directly and never round-trip through this projection.
   const metadata = legacyMetadataProjection(canonical, topics);
   const result = { ...stored, translations: JSON.parse(stored.translations) as Translations, metadata } as Card;
   Object.defineProperty(result, 'canonical', {
@@ -250,6 +250,7 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
   let parsed: ReturnType<typeof parseMarkdown>;
   try { parsed = parseMarkdown(source); }
   catch (error) { throw new HttpError(400, error instanceof Error ? error.message : 'Invalid Markdown frontmatter.'); }
+  check(parsed.version === 5, 'Standard import requires formatVersion: 5. Convert legacy v3/v4 Markdown to v5, review the conversion, then preview and explicitly import it.');
   check(parsed.cards.length > 0 && parsed.cards.length <= 1000, 'Include between 1 and 1000 Markdown questions.');
   const { metadata } = parsed;
   const key = metadata.deckId ? string(metadata.deckId, 'Markdown deckId', 160) : null;
@@ -258,7 +259,6 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
     : key ? await db.prepare('SELECT * FROM decks WHERE owner_id = ? AND source_key = ?').bind(user, key).first<Deck>() : null;
   if (deck) Object.assign(deck, decodeDeck(deck));
   const existing = deck ? await listCards(db, user, deck.id) : [];
-  if (parsed.version === 3 && existing.some(card => !card.metadata) && input.replace !== true) check(false, 'Target contains legacy cards. Use a new deck or separately approved v3 replacement; legacy cards are not migrated.');
   const links = object(input.links ?? {});
   if (input.replace === true) {
     check(deck && deck.owner_id === user, 'Only the owner may replace cards.', 403);
@@ -266,9 +266,29 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
   return { deck, key, metadata, existing, parsed, links };
 }
 
+function importLanguageConfig(deck: Deck | null, metadata: Record<string, string>, input: Record<string, unknown>, cards: ImportTarget[]) {
+  if (deck) return { primaryLanguage: deck.primaryLanguage, supportedLanguages: deck.supportedLanguages };
+  const languages = [...new Set(cards.flatMap(card => Object.keys(card.translations)))].sort();
+  return deckLanguages({
+    primaryLanguage: input.primaryLanguage ?? metadata.primaryLanguage ?? (languages.length === 1 ? languages[0] : null),
+    supportedLanguages: input.supportedLanguages ?? (metadata.supportedLanguages ? JSON.parse(metadata.supportedLanguages) : languages),
+  });
+}
+
 export async function inspectImport(db: D1Database, user: string, input: Record<string, unknown>) {
   const { deck, key, metadata, existing, parsed, links } = await prepareImport(db, user, input);
-  const { rows } = planImport(parsed, input.replace === true ? [] : existing, links, {});
+  const { rows, cards } = planImport(parsed, input.replace === true ? [] : existing, links, object(input.choices ?? {}));
+  try {
+    const inferred = [...new Set(cards.flatMap(card => Object.keys(card.translations)))];
+    // A new multilingual deck without a declared primary is resolved in the UI.
+    if (deck || input.primaryLanguage !== undefined || metadata.primaryLanguage || inferred.length === 1) {
+      const config = importLanguageConfig(deck, metadata, input, cards);
+      for (const card of cards) validateCardLanguages({ ...card, metadata: card.canonical?.metadata ?? card.metadata }, config);
+    }
+    check(uniqueQuestions(cards), 'A matching question already exists.', 409);
+  } catch (error) {
+    rows.push({ index: 'deck-validation', kind: 'invalid', question: '', message: error instanceof Error ? error.message : 'Invalid final deck' });
+  }
   const impact = deck ? await replacementImpact(db, deck.id) : null;
   return { impact, deck, key, metadata, rows, existing: existing.length, version: parsed.version };
 }
@@ -379,19 +399,12 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
   if (input.replace === true) check(input.confirmReplacement === deck?.id, 'Confirm replacement with the exact target deck ID.');
   const { rows, changed, cards } = planImport(parsed, input.replace === true ? [] : existing, links, updates);
   for (const row of rows) {
-    if (parsed.version >= 3 || input.replace === true) check(row.kind !== 'invalid', row.message ?? 'Invalid v3 card.');
+    check(row.kind !== 'invalid', row.message ?? 'Invalid v5 card.');
     check(row.kind !== 'link', 'Resolve how each card matches the existing deck.');
     if (row.kind === 'conflict') check(['keep', 'update'].includes(String(updates[row.index])), 'Resolve every content conflict.');
   }
-  const declaredPrimary = input.primaryLanguage ?? metadata.primaryLanguage;
-  const declaredSupported = input.supportedLanguages ?? (metadata.supportedLanguages ? JSON.parse(metadata.supportedLanguages) : undefined);
-  const inferredLanguages = [...new Set(cards.flatMap(card => Object.keys(card.translations)))].sort();
-  const inferredPrimary = inferredLanguages.length === 1 ? inferredLanguages[0] : null;
-  const languageConfig = deck ? { primaryLanguage: deck.primaryLanguage, supportedLanguages: deck.supportedLanguages }
-    : declaredPrimary !== undefined || declaredSupported !== undefined
-      ? deckLanguages({ primaryLanguage: declaredPrimary ?? inferredPrimary, supportedLanguages: declaredSupported ?? inferredLanguages })
-      : deckLanguages({ primaryLanguage: inferredPrimary, supportedLanguages: inferredLanguages });
-  for (const card of cards) validateCardLanguages(card, languageConfig);
+  const languageConfig = importLanguageConfig(deck, metadata, input, cards);
+  for (const card of cards) validateCardLanguages({ ...card, metadata: card.canonical?.metadata ?? card.metadata }, languageConfig);
   if (languageConfig.primaryLanguage) for (const card of changed) card.primary_language = languageConfig.primaryLanguage;
   check(uniqueQuestions(cards), 'A matching question already exists.', 409);
   check(rows.some(row => row.kind !== 'invalid'), 'There are no valid cards to import.');
@@ -410,7 +423,11 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
     // card_deleted invalidates sessions; progress cascades, historical events remain.
     batch.push(db.prepare('DELETE FROM cards WHERE deck_id = ? AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)').bind(id, id, mutation));
   }
-  batch.push(...writeCards(db, id, mutation, now, changed));
+  batch.push(...writeCanonicalCards(db, id, mutation, now, changed.map(card => ({
+    ...card, metadata: card.canonical!.metadata, topics: card.topicsProvided ? card.canonical!.topics : undefined,
+    priority: card.canonical!.priority, likelihood: card.canonical!.likelihood,
+    creation_mode: card.canonical!.creation_mode,
+  }))));
   const [result] = await db.batch(batch);
   check(result.meta.changes, 'Deck changed. Preview the import again.', 409);
   return { id, imported: changed.length, updatedTranslations: rows.filter(row => row.kind === 'conflict' && updates[row.index] === 'update').length };

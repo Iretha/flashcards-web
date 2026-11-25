@@ -25,7 +25,8 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
         if (selected.some(file => file.size > MAX_MARKDOWN_BYTES)) throw new Error(MARKDOWN_SIZE_ERROR);
         const entries = await Promise.all(selected.map(async (file, index): Promise<FileDraft> => {
           const source = await file.text();
-          const { metadata } = parseMarkdown(source);
+          const { metadata, version } = parseMarkdown(source);
+          if (version !== 5) throw new Error('Import requires Markdown v5. Convert legacy v3/v4 files, review the result, then preview and import.');
           const filename = file.name.replace(/\.[^.]+$/, '').slice(0, 160);
           return {
             key: String(index), filename, source, target: '',
@@ -64,6 +65,25 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
             patch(file.key, { preview: result, choices: {} });
           })}>Preview import</button>
           {preview && <>
+            {preview.rows.filter(row => row.classificationChange).map(row => {
+              const change = row.classificationChange!;
+              const before = change.before;
+              const after = change.after;
+              const fields = [
+                ['Topics', before?.topics.join(', ') || 'No topics', after.topics.join(', ') || 'No topics'],
+                ['Priority', before?.priority ?? 'New card', after.priority],
+                ['Likelihood', before?.likelihood ?? 'New card', after.likelihood],
+                ['Creation mode', before?.creation_mode ?? 'New card', after.creation_mode],
+                ['Card type', before?.metadata.cardType ?? 'New card', after.metadata.cardType],
+                ['Difficulty', change.beforeDifficulty ?? 'None', change.difficulty ?? 'None'],
+              ];
+              return <details key={row.index} open><summary>{row.key}: classification, type and metadata changes</summary>
+                <table><thead><tr><th>Field</th><th>Existing</th><th>Proposed</th></tr></thead><tbody>
+                  {fields.map(([field, oldValue, newValue]) => <tr key={field}><th>{field}</th><td>{oldValue}</td><td>{newValue}</td></tr>)}
+                  {(['provenance', 'answerReferences'] as const).map(field => <tr key={field}><th>{field === 'provenance' ? 'Provenance' : 'Answer references'}</th><td><pre>{JSON.stringify(before?.metadata[field] ?? null, null, 2)}</pre></td><td><pre>{JSON.stringify(after.metadata[field] ?? null, null, 2)}</pre></td></tr>)}
+                </tbody></table>
+              </details>;
+            })}
             {file.replace && preview.impact && <p role="alert">This will delete all {preview.impact.cards} existing cards and {preview.impact.progressRecords} progress records, and invalidate {preview.impact.activeSessions} active sessions. Only the cards from this file will remain.</p>}
             {!file.replace && preview.impact && <details><summary>Replacement impact report (read only)</summary><p>{preview.impact.cards} cards; {preview.impact.progressRecords} progress records would be lost; {preview.impact.activeSessions} active sessions would be invalidated. {preview.impact.retainedHistoricalEvents} historical events would remain. Normal import does not delete these records. See the reload runbook for separately approved replacement.</p></details>}
             {!preview.deck && <label>Primary language<select value={file.primaryLanguage ?? ''} disabled={busy} onChange={event => patch(file.key, { primaryLanguage: event.target.value })}>
@@ -75,9 +95,9 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
             {preview.rows.filter(row => row.metadata).filter((row, index, all) => all.findIndex(other => other.key === row.key) === index).map(row => <div key={'metadata-' + row.index}>{row.metadata && <CardSources metadata={row.metadata} />}</div>)}
             {preview.rows.filter(row => row.answerOperation).map(row => <details key={'answer-' + row.index}>
               <summary>{row.language?.toUpperCase()} / {row.question} / Answer: {row.answerOperation}</summary>
-              <pre>{row.incoming?.answer || '(empty answer)'}</pre>
+              <pre>{(row.answerOperation === 'preserve' ? row.existingAnswer : row.incoming?.answer) || '(empty answer)'}</pre>
             </details>)}
-            {preview.rows.filter(row => row.kind === 'invalid').map(row => <p key={row.index}>Invalid card {Number(row.index) + 1}: {row.question || row.key || '(empty question)'} {row.message}</p>)}
+            {preview.rows.filter(row => row.kind === 'invalid').map(row => <p key={row.index}>Invalid {row.key ? `card ${row.key}` : 'import'}: {row.question} {row.message}</p>)}
             {preview.rows.filter(row => row.kind === 'link').map(row => <fieldset className="stack" key={row.index}>
               <legend>{row.key} · {row.question}</legend>
               {row.message && <p>{row.message}</p>}
@@ -101,9 +121,13 @@ export default function Import({ decks, busy, run, reload }: { decks: Deck[]; bu
                 {(['question', 'questionDetails', 'answer'] as const).filter(field => row.incoming?.[field] !== undefined && row.incoming[field] !== row.existingTranslation?.[field]).map(field =>
                   <div key={field}><p>{field} · Existing</p><pre>{row.existingTranslation?.[field] || '—'}</pre><p>{field} · Incoming</p><pre>{row.incoming?.[field] || '—'}</pre></div>)}
               </details>
-              <label>Resolution<select value={file.choices[row.index] ?? ''} disabled={busy} onChange={event => patch(file.key, {
-                choices: { ...file.choices, [row.index]: event.target.value as 'keep' | 'update' },
-              })}><option value="">Choose a translation</option><option value="keep">Keep existing</option><option value="update">Use incoming</option></select></label>
+              <label>Resolution<select value={file.choices[row.index] ?? ''} disabled={busy} onChange={event => {
+                const choices = { ...file.choices, [row.index]: event.target.value as 'keep' | 'update' };
+                void run(async () => {
+                  const result = await api<Preview>('import/preview', { source: file.source, target: file.target, replace: file.replace === true, links: file.links, choices });
+                  patch(file.key, { choices, preview: result });
+                });
+              }}><option value="">Choose a translation</option><option value="keep">Keep existing</option><option value="update">Use incoming</option></select></label>
             </fieldset>)}
             {Object.keys(file.links).length > 0 && <button disabled={busy} onClick={() => patch(file.key, { links: {}, choices: {}, preview: undefined })}>Clear card matches</button>}
             <button className="primary" disabled={busy || (!preview.deck && !file.primaryLanguage && new Set(preview.rows.map(row => row.language).filter(Boolean)).size > 1) || !file.title.trim() || preview.rows.some(row => row.kind === 'invalid') ||

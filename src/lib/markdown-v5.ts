@@ -1,11 +1,10 @@
-import { parse } from 'yaml';
+import { parseMarkdownYaml as yaml } from './markdown-yaml';
 import { normalizeTopics, validateCardType, validateCreationMode, validateRating } from './classification';
 import { applyCanonicalMetadataPatch, validateCanonicalMetadata } from './metadata';
 import { parseLanguages } from './markdown-languages';
 import type { ImportDraft } from './markdown-languages';
-import { isLanguage, validateFinalTranslations } from './translations';
+import { isLanguage } from './translations';
 
-const yaml = (source: string) => parse(source, { maxAliasCount: 0, schema: 'core' });
 const reserved = /^(topics|priority|likelihood|creationMode|cardType|difficulty|provenance|answerReferences)(?::|\s*$)/;
 
 export function parseV5(lines: string[]): ImportDraft[] {
@@ -14,6 +13,7 @@ export function parseV5(lines: string[]): ImportDraft[] {
   for (const line of lines) {
     const marker = /^ {0,3}(`{3,}|~{3,})(.*)$/.exec(line);
     if (!fence && /^ {0,3}##\s+card:/.test(line)) chunks.push([]);
+    if (!chunks.length && line.trim()) throw new Error('Content must begin with a card heading.');
     chunks.at(-1)?.push(line);
     if (marker) {
       if (!fence) fence = marker[1];
@@ -34,10 +34,10 @@ function parseCard(chunk: string[], seen: Set<string>): ImportDraft {
   try {
     for (; index < chunk.length; index++) {
       const line = chunk[index];
-      const level3 = /^### (\S+)\s*$/.exec(line)?.[1];
+      const level3 = /^ {0,3}### (\S+)\s*$/.exec(line)?.[1];
       if (level3 && !reserved.test(level3) && isLanguage(level3)) break;
       if (!line.trim()) continue;
-      const heading = /^### (topics|priority|likelihood|creationMode|cardType|difficulty|provenance|answerReferences)(?::\s*(.*))?\s*$/.exec(line);
+      const heading = /^ {0,3}### (topics|priority|likelihood|creationMode|cardType|difficulty|provenance|answerReferences)(?::\s*(.*))?\s*$/.exec(line);
       if (!heading) throw new Error('metadata: unsupported heading or content');
       const [, field, inline] = heading;
       if (fields.has(field)) throw new Error(`${field}: duplicate field`);
@@ -47,17 +47,22 @@ function parseCard(chunk: string[], seen: Set<string>): ImportDraft {
       let value: unknown;
       if (block) {
         const body: string[] = [];
-        while (index + 1 < chunk.length && !/^### /.test(chunk[index + 1])) body.push(chunk[++index]);
+        while (index + 1 < chunk.length && !/^ {0,3}### /.test(chunk[index + 1])) body.push(chunk[++index]);
+        if (field === 'provenance' && !body.join('\n').trim()) throw new Error('provenance: supply an object or explicit null');
         value = yaml(body.join('\n'));
       } else {
         if (inline === undefined) throw new Error(`${field}: expected a colon and value`);
         value = inline.trim() ? yaml(inline) : null;
       }
       if (field === 'topics') authored.topics = normalizeTopics(value);
-      else if (field === 'priority' || field === 'likelihood') authored[field] = value === null ? null : validateRating(value, field);
-      else if (field === 'creationMode') authored.creationMode = value === null ? null : validateCreationMode(value, field);
+      else if (field === 'priority' || field === 'likelihood') {
+        if (!inline?.trim()) throw new Error(`${field}: use an integer or explicit null`);
+        authored[field] = value === null ? null : validateRating(value, field);
+      }
+      else if (field === 'creationMode') authored.creationMode = value === null || value === '' ? null : validateCreationMode(value, field);
       else if (field === 'cardType') metadata.cardType = validateCardType(value, field);
       else if (field === 'difficulty') {
+        if (!inline?.trim()) throw new Error('difficulty: use an integer or explicit null');
         if (value !== null) validateRating(value, field);
         authored.difficulty = value as number | null;
       } else if (field === 'provenance') metadata.provenance = value;
@@ -81,12 +86,13 @@ function parseCard(chunk: string[], seen: Set<string>): ImportDraft {
       else if (marker[1][0] === contentFence[0] && marker[1].length >= contentFence.length && !marker[2].trim()) contentFence = '';
       continue;
     }
-    if (!contentFence && /^ {0,3}### /.test(line) && reserved.test(line.replace(/^ {0,3}### /, ''))) error ??= 'metadata: must precede language sections';
+    if (!contentFence && /^ {0,3}#### (simple|example|details)\s*$/.test(line)) error ??= 'Examples and explanations belong in answer; use questionDetails for task statements.';
+    if (!contentFence && /^ {0,3}### /.test(line)) {
+      const label = line.replace(/^ {0,3}### /, '').trim();
+      if (reserved.test(label) || !isLanguage(label)) error ??= 'metadata: unsupported heading or metadata after languages';
+    }
   }
-  try {
-    const type = metadata.cardType ?? 'question';
-    validateFinalTranslations(Object.fromEntries(Object.entries(card.translations).map(([code, value]) => [code, { ...value, answer: value.answer ?? '' }])), type as 'question' | 'task');
-  } catch (reason) { error ??= reason instanceof Error ? reason.message : 'translations: invalid'; }
+  // Task constraints depend on retained translations and are checked after merging.
   if (seen.has(card.key)) error ??= 'id: duplicate card key';
   seen.add(card.key);
   if (error || card.error) card.error = `Card ${card.key || '(invalid id)'} — ${error ?? card.error}`;

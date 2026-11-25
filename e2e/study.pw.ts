@@ -1,13 +1,44 @@
 import { test, expect } from '@playwright/test';
-import { v3Fixture } from '../tests/fixtures/v3';
+import { v5Fixture } from '../tests/fixtures/v5';
 
-test('imports v3 in the browser and studies with keyboard, history, repeats and responsive controls', async ({ page }) => {
+test('previews v5 type transitions and clears, reimports and confirms destructive replacement', async ({ page }) => {
+  await page.goto('/');
+  await page.getByLabel('Username').fill('V5-preview-' + Date.now());
+  await page.getByLabel('Access code').fill('v3-e2e');
+  await page.getByRole('button', { name: 'Sign in', exact: true }).click();
+  await page.getByRole('button', { name: 'Import Markdown', exact: true }).click();
+  const upload = async (source: string) => {
+    await page.getByLabel('Markdown files').setInputFiles({ name: 'v5.md', mimeType: 'text/markdown', buffer: Buffer.from(source) });
+    await page.getByRole('button', { name: 'Preview import', exact: true }).click();
+    await expect(page.getByText('0 invalid', { exact: false })).toBeVisible();
+  };
+  await upload(v5Fixture);
+  await page.getByRole('button', { name: 'Apply import', exact: true }).click();
+  await expect(page.getByText('Imported successfully.')).toBeVisible();
+  await upload('---\nformatVersion: 5\ndeckId: v3-test\ntitle: V3 mixed deck\nprimaryLanguage: en\n---\n## card: task\n### cardType: question\n### topics\n[]\n### provenance\nnull\n### answerReferences\n[]\n### en\n#### question\nImplement a counter.\n#### questionDetails\n#### answer');
+  const change = page.locator('details').filter({ has: page.locator('summary', { hasText: 'classification, type and metadata changes' }) }).first();
+  await expect(change.getByRole('row').filter({ has: page.getByRole('rowheader', { name: 'Card type', exact: true }) })).toContainText('taskquestion');
+  await expect(change.getByRole('row').filter({ has: page.getByRole('rowheader', { name: 'Topics', exact: true }) })).toContainText('No topics');
+  await page.getByLabel('Resolution').selectOption('update');
+  await page.getByRole('button', { name: 'Apply import', exact: true }).click();
+  await expect(page.getByText('Imported successfully.')).toBeVisible();
+  await page.getByLabel('Markdown files').setInputFiles({ name: 'v5.md', mimeType: 'text/markdown', buffer: Buffer.from(v5Fixture) });
+  await page.getByLabel('Target deck').selectOption({ label: 'V3 mixed deck' });
+  await page.getByLabel('Replace all cards (re-import)').check();
+  await page.getByRole('button', { name: 'Preview import', exact: true }).click();
+  await expect(page.getByRole('alert')).toContainText('delete all 2 existing cards');
+  page.once('dialog', dialog => dialog.accept());
+  await page.getByRole('button', { name: 'Replace all cards', exact: true }).click();
+  await expect(page.getByText('Imported successfully.')).toBeVisible();
+});
+
+test('imports v5 in the browser and studies with keyboard, history, repeats and responsive controls', async ({ page }) => {
   await page.goto('/');
   await page.getByLabel('Username').fill('E2E-' + Date.now());
   await page.getByLabel('Access code').fill('v3-e2e');
   await page.getByRole('button', { name: 'Sign in', exact: true }).click();
   await page.getByRole('button', { name: 'Import Markdown', exact: true }).click();
-  await page.getByLabel('Markdown files').setInputFiles({ name: 'v3.md', mimeType: 'text/markdown', buffer: Buffer.from(v3Fixture) });
+  await page.getByLabel('Markdown files').setInputFiles({ name: 'v3.md', mimeType: 'text/markdown', buffer: Buffer.from(v5Fixture) });
   await page.getByRole('button', { name: 'Preview import', exact: true }).click();
   await expect(page.getByText('0 invalid', { exact: false })).toBeVisible();
   await page.getByRole('button', { name: 'Apply import', exact: true }).click();
@@ -19,7 +50,7 @@ test('imports v3 in the browser and studies with keyboard, history, repeats and 
   await expect(page.locator('article.item')).toHaveCount(1);
   await page.getByRole('combobox', { name: 'Company', exact: true }).selectOption('Example');
   await page.getByRole('combobox', { name: 'Provenance', exact: true }).selectOption('mixed');
-  await page.getByRole('combobox', { name: 'Topic', exact: true }).selectOption('Java');
+  await page.getByRole('combobox', { name: 'Topic', exact: true }).selectOption('JAVA');
   await expect(page.locator('article.item')).toHaveCount(1);
   await page.getByRole('combobox', { name: 'Card type', exact: true }).selectOption('question');
   await expect(page.getByText('No cards match these filters.')).toBeVisible();
@@ -99,7 +130,7 @@ test('studies an answerless imported card with a visual placeholder and AI links
   await page.getByLabel('Access code').fill('v3-e2e');
   await page.getByRole('button', {name:'Sign in', exact:true}).click();
   await page.getByRole('button', {name:'Import Markdown', exact:true}).click();
-  const source = '---\nformatVersion: 4\ntitle: Answerless study\nprimaryLanguage: en\n---\n## card: empty\n### cardType: question\n### topic: Java\n### provenance\ntype: generated\nsources: []\n### en\n#### question\nWhat is happens-before?';
+  const source = '---\nformatVersion: 5\ntitle: Answerless study\nprimaryLanguage: en\n---\n## card: empty\n### cardType: question\n### topics\n- Java\n### provenance\ntype: generated\nsources: []\n### en\n#### question\nWhat is happens-before?';
   await page.getByLabel('Markdown files').setInputFiles({name:'empty.md',mimeType:'text/markdown',buffer:Buffer.from(source)});
   await page.getByRole('button', {name:'Preview import',exact:true}).click();
   await expect(page.getByText('0 invalid',{exact:false})).toBeVisible();

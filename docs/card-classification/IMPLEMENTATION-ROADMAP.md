@@ -60,8 +60,7 @@ Acceptance does not authorize release or later roadmap work.
 
 ## IMP-003 — Forward migration and canonical membership writes
 
-Status: IMPLEMENTED LOCALLY — AWAITING INDEPENDENT REVIEW. No deployment, release,
-commit or later-task authorization is implied.
+Status: ACCEPTED by owner. Production deployment and release remain separately authorized.
 
 Implementation is coordinated-release gated: the migration must not be deployed until
 the schema-compatible application/import/session tasks are accepted and release is
@@ -84,6 +83,11 @@ separately authorized.
   remains blocked until compatible app/import/session tasks complete.
 
 ## IMP-004 — Markdown v5 parser, preview and apply
+
+Status: IMPLEMENTED LOCALLY. Standard import is v5-only; legacy parsers remain
+available as conversion dependencies. Parser/domain, local D1 API and browser import
+regressions cover presence, clears, retained identity/progress/languages, final task
+validation and guarded replacement. No deployment or IMP-005 work is included.
 
 - Objective/scope: exact v5 grammar, presence-aware patch, preview/apply parity.
 - Out of scope: direct legacy import, generated answers or question reassessment.

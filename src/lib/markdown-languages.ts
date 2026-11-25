@@ -3,6 +3,7 @@ import type { CardMetadata } from './metadata';
 import type { Language, Translation } from './translations';
 
 export interface ImportDraft {
+  canonical?: { topics?: string[]; priority?: import('./classification').Rating | null; likelihood?: import('./classification').Rating | null; creationMode?: import('./classification').CreationMode | null; difficulty?: number | null; metadata?: Record<string, unknown> };
   key: string;
   metadata?: CardMetadata;
   translations: Record<string, Omit<Translation, 'answer'> & { answer?: string }>;

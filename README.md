@@ -53,7 +53,7 @@ in that runbook.
 ## Documentation
 
 - [Current application specification](docs/FLASHCARDS-V4-SPECIFICATION.md)
-- [Markdown import template](docs/FLASHCARDS-IMPORT-TEMPLATE.md), [v4 example](docs/FLASHCARDS-V4-EXAMPLE.md), [v3 compatibility fixture](docs/FLASHCARDS-V3-REFERENCE.md)
+- [Markdown v5 import template](docs/FLASHCARDS-V5-IMPORT-TEMPLATE.md) and [v5 contract](docs/card-classification/MARKDOWN-V5.md). Standard import requires v5; legacy v3/v4 files require reviewed conversion before import (IMP-005 remains pending).
 - [Deck generation and review](skills/flashcards-deck-generator/README.md)
 - [Guarded card replacement](docs/CARD-REPLACEMENT.md)
 - [Management API](docs/MANAGEMENT-API.md)
