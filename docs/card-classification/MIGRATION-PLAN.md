@@ -7,7 +7,8 @@ No migration is authored/executed by this documentation task.
 Use standard SQL migrations, no custom runner. Before preparing migration inspect
 existing distinct topic values only in authorized data. Compare UPPER/TRIM against
 the canonical JS normalizer for the actual domain: Unicode/NFC, case expansion,
-edge/internal whitespace, repeated spaces/tabs/newlines/NBSP. Use SQL functions only
+final post-uppercase NFC, edge/internal whitespace, repeated spaces/tabs/newlines/NBSP.
+Use SQL functions only
 where equivalence is proven; explicit reviewed SQL mappings for exceptions. Guard
 unknown/invalid values and capture/cutover drift; abort rather than approximate.
 No production access or real migration preparation/execution in this documentation task.
@@ -43,7 +44,8 @@ terminal: no read/resume/filter/new-card reopening. See lifecycle spec.
 
 Normalize/validate before SQL. Existing authorized revision+mutation header guards
 card and membership statements in one D1 batch. Only supplied topics delete old and
-insert new memberships; omitted topics do no membership writes. Guard each statement
+insert new memberships; omitted topics do no membership writes and are not normalized
+again. Explicit null topics are invalid at shared-domain ingress. Guard each statement
 on successful mutation marker. Rollback card, links, deck revision and receipts on
 any error. Native indexes maintain themselves; no dual indexing/backfill service.
 

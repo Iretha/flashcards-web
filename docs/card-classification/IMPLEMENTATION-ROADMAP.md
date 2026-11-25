@@ -34,6 +34,12 @@ contradictory contract blocking IMP-002. Runtime implementation remains separate
 
 ## IMP-002 — Shared classification domain and validation
 
+Corrective cycle authorized after independent review: address F-001–F-004 using the
+Product Owner-approved final-NFC amendment to DEC-002/T-02. This does not mark IMP-002
+accepted or completed. Omitted topics must preserve exact values/order without ingress
+normalization; explicit null topics reject; Unicode round trips and comparator laws
+require expanded regression evidence. IMP-001 remains completed and is not reopened.
+
 - Objective/scope: normalizer, universal ratings/creationMode, question/task, type-only metadata,
   source/reference preservation, pure filter/comparator contracts.
 - Out of scope: schema execution, UI and new API capabilities.
@@ -44,7 +50,9 @@ contradictory contract blocking IMP-002. Runtime implementation remains separate
 - API impact: target schemas staged only with compatible adapters, no partial release.
 - Security impact: strict allowlists, bounded arrays/strings and task validation.
 - Migration impact: normalizer reused by approved preparation mechanism.
-- Automated tests: normalization/scale/default/task/comparator matrix.
+- Automated tests: normalization/scale/default/task/comparator matrix, exact Unicode
+  counterexample and broad idempotence coverage, omitted-topic preservation/aliasing,
+  null rejection, shared-domain round trips and comparator laws for every field/direction.
 - Manual acceptance: review BG/EN labels and Unicode collision examples.
 - Required decisions: T-08/T-10/T-13/T-14 approved; only newly discovered questions escalated.
 - Completion: native search normalization unchanged; domain tests pass.

@@ -35,12 +35,17 @@ retained languages not mentioned by a patch.
 
 Single server function: require string; normalize('NFC'); trim(); collapse
 consecutive ECMAScript Unicode whitespace with /\s+/gu to one ASCII space;
-toUpperCase() (not locale-dependent). Reject empty results; deduplicate final
-values. Apply NFC before uppercase exactly; no NFKC/accent-folding or extra
-normalization step. Empty array valid; empty elements invalid, not silently dropped.
+toUpperCase() (not locale-dependent); normalize('NFC') again. Reject empty results
+and enforce length against that final value; deduplicate final values. The Product
+Owner-approved final NFC supersedes the earlier prohibition on post-uppercase
+normalization. U+0390 demonstrates why: the final canonical result is U+03AA U+0301
+and remains binary stable on repeated ingress. No NFKC/accent-folding or other
+normalization step. Empty array valid; null/non-array topics and empty elements invalid.
 Use exact binary equality thereafter. No per-query normalization of stored rows.
 Reuse for create/update/import, conversion, migration preparation and filter/search
-ingress. Case expansion collisions are expected, not data corruption.
+ingress. Normalize explicitly supplied raw values once. Omitted topics preserve existing
+canonical values and order exactly; ordinary updates do not repair or re-normalize them.
+Case expansion collisions are expected, not data corruption.
 
 T-10 bounds: max10 unique normalized topics/card, max200 UTF-16 code units per
 normalized topic, validated after normalization/deduplication. Reject atomically;

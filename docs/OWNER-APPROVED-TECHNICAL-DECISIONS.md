@@ -1,6 +1,6 @@
 # Owner-approved technical decisions — Card Classification & Study Filters
 
-Status: Approved product decisions; documentation update pending. Not authorization to implement.
+Status: Approved product decisions; synchronized through the IMP-002 corrective amendment. Not release authorization.
 Repository: `Iretha/flashcards-web`
 Branch: `feature/card-classification-study-filters`
 Reference specification: `4560247d76670f0b440a151ac696da860ce9411a`
@@ -9,13 +9,23 @@ Reference specification: `4560247d76670f0b440a151ac696da860ce9411a`
 
 DEC-001–DEC-023 remain valid except where superseded below. Update the authoritative DEC records and dependent contracts, preserving traceability. Do not silently resolve new product questions. These decisions supersede earlier conflicting proposals.
 
+### IMP-002 corrective amendment — final NFC
+
+The Product Owner approved normalization Option B during the IMP-002 corrective cycle:
+after locale-independent uppercase conversion, apply NFC once more. This amends T-02
+and DEC-002 without creating a new decision identifier. The earlier prohibition on a
+normalization step after uppercase is superseded. U+0390 previously demonstrated the
+instability: uppercase produced U+0399 U+0308 U+0301, while a second ingress pass
+composed U+0399 U+0308 to U+03AA. Final NFC makes the canonical result U+03AA U+0301.
+This is specification and local IMP-002 correction authority only, not IMP-003 or release authority.
+
 ## T-01 — Legacy interview_priority
 
 Preserve the legacy field and raw values. Do not infer compatibility or direction of its scale. New functionality uses only `priority`; absent an attested compatible mapping, initialize it to 3. Removal is deferred to FI-001.
 
 ## T-02 — Topic normalization during migration
 
-Use the standard SQL migration mechanism, not a custom runner. Inspect existing distinct values before preparing migration; use `UPPER()` and `TRIM()` only where proven equivalent to the canonical normalization. Check Unicode, NFC, whitespace and repeated spaces. Use explicit SQL mappings for exceptions and guard against unknown or invalid values. No unauthorized production access. Future writes use one shared server-side JavaScript normalizer: NFC, trim, collapse whitespace, locale-independent uppercase, deduplicate, reject empty values. Preserve DEC-002.
+Use the standard SQL migration mechanism, not a custom runner. Inspect existing distinct values before preparing migration; use `UPPER()` and `TRIM()` only where proven equivalent to the canonical normalization. Check Unicode, NFC, whitespace and repeated spaces. Use explicit SQL mappings for exceptions and guard against unknown or invalid values. No unauthorized production access. Future writes use one shared server-side JavaScript normalizer: NFC, trim, collapse whitespace, locale-independent uppercase, final NFC, deduplicate, reject empty values. Validate emptiness and length against the final result. Preserve DEC-002. Raw ingress is normalized once; omitted topics preserve existing canonical values and order without normalization. In the shared API/domain contract, supplied topics must be an array and explicit null is invalid.
 
 ## T-03 — Session limits
 

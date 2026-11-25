@@ -28,6 +28,13 @@ The [current application specification](../FLASHCARDS-V4-SPECIFICATION.md),
 [search runbook](../SEARCH-ARCHITECTURE.md) describe shipped behavior until acceptance.
 Do not describe v5 or Fully Live as already available.
 
+## IMP-002 corrective amendment
+
+During the authorized IMP-002 corrective cycle, the Product Owner amended DEC-002/T-02
+to add final NFC after locale-independent uppercase. The decision register and technical
+specification contain the normative sequence and U+0390 traceability. This narrow
+amendment does not reopen IMP-001, accept IMP-002 or authorize IMP-003/release work.
+
 ## Scope
 
 Exactly five session filters/sort fields: Topics, Priority, Likelihood, Creation Mode and

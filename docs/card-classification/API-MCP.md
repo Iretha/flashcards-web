@@ -19,6 +19,7 @@ Type explicitly persisted for every card. difficulty stays existing nullable sca
 | invalid rating | Reject | Reject |
 | Omitted topics | [] | Preserve |
 | topics [] | [] | Clear |
+| topics null/non-array | Reject | Reject |
 | Omitted creationMode | UNKNOWN | Preserve |
 | creationMode UNKNOWN | UNKNOWN | Reset UNKNOWN |
 | creationMode null | Reject | Reject |
@@ -29,7 +30,10 @@ presence-aware: omitted members preserve, cardType question explicitly sets ques
 provenance null clears, answerReferences [] clears. metadata null resets to type-only
 question. Task validates every final retained language for nonblank questionDetails.
 Default/implicit type on creation is persisted, not only inferred at read time.
-Normalize topics then enforce10 unique/max200 UTF-16 units each, atomic rejection.
+Normalize supplied topics with the shared NFC/whitespace/uppercase/final-NFC sequence,
+then enforce10 unique/max200 UTF-16 units each against the final values, with atomic
+rejection. Omitted updates preserve existing canonical values and order without
+normalization or repair.
 Existing request caps protect raw payload; new concrete bounds require approval.
 
 Responses have numeric non-null universal ratings, creationMode, topics, metadata and

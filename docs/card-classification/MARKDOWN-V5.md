@@ -79,7 +79,9 @@ Specify concurrent operations and consistency guarantees.
 Metadata headings now patch by presence, unlike old unit replacement. Validate final
 merged card. Supplied provenance object/list replaces its sources under existing
 rules; no source heuristics. Clearing provenance leaves type/references intact.
-Reject empty topic elements; [] valid. Normal reimport retains IDs/progress/omitted
+Supplied topic lists use the shared NFC/whitespace/uppercase/final-NFC normalizer;
+reject null, non-list values and empty elements; [] is valid. Omitted topics preserve
+existing canonical values exactly without normalization. Normal reimport retains IDs/progress/omitted
 cards/import keys. Preview must show classifications, type transitions and clears;
 apply uses the identical proposed payload. Existing destructive replacement remains
 separate, owner-only and explicitly confirmed with impact report.

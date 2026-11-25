@@ -7,7 +7,7 @@ evidence; no measured performance is claimed here.
 
 | Area | Concrete acceptance scenarios |
 |---|---|
-| Normalizer | NFC composed/decomposed, spaces/tabs/newlines/NBSP, case expansion, dedup collisions, empty element rejection, empty array, 10 unique/200 UTF-16 after normalization and dedup; 11/201 rejected atomically; existing raw payload caps; idempotence |
+| Normalizer | Initial and final NFC, exact U+0390 -> U+03AA U+0301 counterexample, composed/decomposed Latin/Greek/Cyrillic, spaces/tabs/newlines/NBSP, case expansion, binary dedup collisions, empty element rejection, empty array, null/non-array rejection, 10 unique/200 UTF-16 against final values; 11/201 rejected atomically; existing raw payload caps; reproducible broad Unicode idempotence scan with coverage/runtime reported |
 | Membership | PK duplicate rejection, reverse index plan, card deletion cascade, no orphan/deck copy, atomic rollback |
 | Migration | Populated null/full metadata, source/reference preservation, coding_task->task/details, IDs/progress/events/session parity; unknown map abort; FK/FTS parity |
 | Priority | Strict int1..5; missing/null create3, omitted update preserve/null reset3; raw legacy unchanged, new3 absent attested mapping |
@@ -16,10 +16,10 @@ evidence; no measured performance is claimed here.
 | Type | Default question; type-only metadata no fake source; task every retained language details; clear details invalid for task |
 | v5 | Grammar, duplicate/unknown headings, fenced headings, aliases rejected, limits, presence/empty distinctions, preview/apply parity |
 | Legacy | v3/v4 only conversion, sources/count validation, scalar topic one value, lossless translations/answers/details; default3 plus retained raw legacy diagnostics/Q-01 |
-| Reimport | IDs/progress preserved, omitted fields/languages/cards retained; explicit topics/reference clears and rating null reset3; type changes validated |
+| Reimport | IDs/progress preserved, omitted fields/languages/cards retained; omitted topics preserve exact values/order without normalization or array aliasing; explicit topics/reference clears and rating null reset3; type changes validated |
 | Options | 1/2/30 decks UNION DISTINCT; no phantom enum; No Topics present-only/collision-free sentinel OR names; no missing-rating options; independent of Repeat/filters; stale selection remains restrictive |
 | Predicates | Each field one/multiple, OR within/AND across all five; all empty; clear one/all; no Evidence/Difficulty filters |
-| Sorting | Every field both directions/default, numeric ratings; UNKNOWN/no-topics last; sequences/prefixes/Unicode; stable ties/ranks; global deck interleave; history unchanged |
+| Sorting | Every field and applicable direction/default, numeric ratings; UNKNOWN/no-topics last; complete sequences/prefixes/Unicode; stable ties/ranks; reflexivity, antisymmetry and all-triples transitivity over varied primary values; comparator/input immutability; global deck interleave; history unchanged |
 | Live additions | Eligible/ineligible additions, preserve frontier, tail append, explicit Apply resorts; deterministic new ranks/default |
 | Re-inclusion | Passed excluded, unpassed restored, current excluded/reincluded, Repeat admission preserved |
 | Deletion/access | Current/pending/history deletion/revoke; no disclosure/new outcome; other decks continue; access regain; cascade |

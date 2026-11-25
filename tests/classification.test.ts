@@ -3,7 +3,7 @@ import {
   applyClassificationPatch, classificationComparator, classificationLabels, compareUnicodeScalars,
   matchesClassification, normalizeTopic, normalizeTopics, ratings, validateClassificationCreate,
   validateClassificationFilters, validateClassificationSort, validateCreationMode, validateRating,
-  type ClassificationFilters, type SortableClassification,
+  type CanonicalCardState, type ClassificationFilters, type SortableClassification,
 } from '../src/lib/classification';
 import { derivedMetadata, metadataForStorage, validateCanonicalMetadata } from '../src/lib/metadata';
 import { completeTranslation } from '../src/lib/translations';
@@ -45,6 +45,45 @@ describe('canonical topic normalization', () => {
     expect(compareUnicodeScalars(bmp, supplementary)).toBeLessThan(0);
     expect(normalizeTopics([supplementary, bmp])).toEqual([bmp, supplementary]);
   });
+  it('applies final NFC after uppercase and is idempotent for the reviewed Greek counterexample', () => {
+    const raw = '\u0390';
+    const expected = '\u03AA\u0301';
+    expect(normalizeTopic(raw)).toBe(expected);
+    expect(normalizeTopic(expected)).toBe(expected);
+    expect(normalizeTopic(normalizeTopic(raw))).toBe(normalizeTopic(raw));
+  });
+  it('is idempotent across every Unicode scalar value accepted as a one-scalar topic', () => {
+    let checked = 0;
+    let rejectedEmpty = 0;
+    for (let codePoint = 0; codePoint <= 0x10ffff; codePoint++) {
+      if (codePoint >= 0xd800 && codePoint <= 0xdfff) continue;
+      const raw = String.fromCodePoint(codePoint);
+      try {
+        const once = normalizeTopic(raw);
+        const twice = normalizeTopic(once);
+        if (twice !== once) throw new Error(`U+${codePoint.toString(16).toUpperCase()} is not idempotent`);
+        checked++;
+      } catch (error) {
+        if (raw.normalize('NFC').trim() !== '') throw error;
+        rejectedEmpty++;
+      }
+    }
+    expect({ checked, rejectedEmpty }).toEqual({ checked: 1_112_039, rejectedEmpty: 25 });
+  });
+  it('covers representative scripts, composition, expansion, whitespace and exact binary deduplication', () => {
+    expect(normalizeTopics([' български ', 'é', 'e\u0301', '\u0390', '\u03AA\u0301', 'ß', 'SS', ' A\t\n\u00a0B ', '😀']))
+      .toEqual(['A B', 'SS', 'É', 'Ϊ́', 'БЪЛГАРСКИ', '😀']);
+    expect(normalizeTopic('α\u0313\u0301')).toBe(normalizeTopic(normalizeTopic('α\u0313\u0301')));
+    expect(() => normalizeTopic(' \t\n\u00a0 ')).toThrow('empty');
+  });
+  it('enforces bounds against the final post-uppercase NFC value', () => {
+    expect(normalizeTopic(`a${'\u0315'.repeat(199)}`)).toHaveLength(200);
+    expect(() => normalizeTopic(`a${'\u0315'.repeat(200)}`)).toThrow('200');
+    expect(normalizeTopic('\u0390')).toHaveLength(2);
+    expect(() => normalizeTopic('ß'.repeat(101))).toThrow('200');
+    expect(normalizeTopics([...Array(10)].map((_, index) => `é${index}`))).toHaveLength(10);
+    expect(() => normalizeTopics([...Array(11)].map((_, index) => `é${index}`))).toThrow('maximum 10');
+  });
 });
 
 describe('ratings, creation mode and pure presence-aware updates', () => {
@@ -64,6 +103,61 @@ describe('ratings, creation mode and pure presence-aware updates', () => {
   it('never infers ratings or creation mode from provenance or content', () => {
     const value = create({ metadata: { cardType: 'question', provenance: { type: 'sourced', sources: [{ sourceName: 'S', sourceUrl: 'https://example.com' }] } } });
     expect(value).toMatchObject({ priority: 3, likelihood: 3, creationMode: 'UNKNOWN' });
+  });
+  it('requires topics to be an array whenever supplied on create or patch', () => {
+    expect(create()).toHaveProperty('topics', []);
+    expect(create({ topics: [] })).toHaveProperty('topics', []);
+    expect(create({ topics: [' java '] })).toHaveProperty('topics', ['JAVA']);
+    const current = create({ topics: ['JAVA'] });
+    for (const invalid of [null, 'JAVA', 1, true, {}, ['valid', null]]) {
+      expect(() => create({ topics: invalid })).toThrow('topics');
+      const snapshot = structuredClone(current);
+      expect(() => applyClassificationPatch(current, { topics: invalid })).toThrow('topics');
+      expect(current).toEqual(snapshot);
+    }
+    expect(applyClassificationPatch(current, {})).toHaveProperty('topics', ['JAVA']);
+    expect(applyClassificationPatch(current, { topics: [] })).toHaveProperty('topics', []);
+  });
+  it('preserves omitted topics byte-for-byte and by order without aliasing or implicit repair', () => {
+    const historical = '\u0399\u0308\u0301';
+    expect(normalizeTopic(historical)).toBe('\u03AA\u0301');
+    const current: CanonicalCardState = { ...create(), topics: [historical, 'Z', 'A'] };
+    const patches = [
+      {}, { priority: 1 }, { likelihood: 5 }, { creationMode: 'AI' },
+      { metadata: { cardType: 'question' } }, { translations: { en: { question: 'Changed?', answer: '' } } },
+    ];
+    for (const patch of patches) {
+      const updated = applyClassificationPatch(current, patch);
+      expect(updated.topics).toEqual([historical, 'Z', 'A']);
+      expect(updated.topics).not.toBe(current.topics);
+    }
+    expect(applyClassificationPatch(current, { topics: [' z ', 'é', 'e\u0301'] }).topics).toEqual(['Z', 'É']);
+    const snapshot = structuredClone(current);
+    expect(() => applyClassificationPatch(current, { topics: ['valid', ''] })).toThrow();
+    expect(current).toEqual(snapshot);
+  });
+});
+
+describe('canonical topic round trips', () => {
+  it('preserves canonical identity through create, filter ingress, matching and explicit replacement', () => {
+    const card = create({ topics: ['\u0390', 'e\u0301', ' no topics '] });
+    const input = { topics: { values: card.topics, includeNoTopics: false }, priorities: [], likelihoods: [], creationModes: [], cardTypes: [] };
+    const validated = validateClassificationFilters(input);
+    expect(validated.topics.values).toEqual(card.topics);
+    expect(matchesClassification(validated, card)).toBe(true);
+    expect(validateClassificationFilters({ ...input, topics: { values: validated.topics.values, includeNoTopics: false } }).topics.values).toEqual(card.topics);
+    expect(applyClassificationPatch(card, { topics: card.topics }).topics).toEqual(card.topics);
+    expect(normalizeTopics(card.topics)).toEqual(card.topics);
+    const equivalent = validateClassificationFilters({ ...input, topics: { values: ['é', '\u03AA\u0301'], includeNoTopics: false } });
+    expect(matchesClassification(equivalent, card)).toBe(true);
+  });
+  it('keeps literal NO TOPICS distinct and stale selections restrictive after round trips', () => {
+    const literal = create({ topics: ['NO TOPICS'] });
+    const selected = validateClassificationFilters({ topics: { values: ['no topics'], includeNoTopics: false }, priorities: [], likelihoods: [], creationModes: [], cardTypes: [] });
+    expect(matchesClassification(selected, literal)).toBe(true);
+    expect(matchesClassification(selected, create())).toBe(false);
+    const stale = validateClassificationFilters({ ...selected, topics: { values: ['missing'], includeNoTopics: false } });
+    expect(matchesClassification(stale, literal)).toBe(false);
   });
 });
 
@@ -136,6 +230,7 @@ describe('single-field deterministic sorting', () => {
     expect(sorted(values, 'priority', 'asc').map(x => x.id)).toEqual(['a', 'c', 'b']);
     expect(sorted(values, 'priority', 'desc').map(x => x.id)).toEqual(['b', 'c', 'a']);
     expect(sorted(values, 'likelihood', 'asc').map(x => x.id)).toEqual(['b', 'c', 'a']);
+    expect(sorted(values, 'likelihood', 'desc').map(x => x.id)).toEqual(['a', 'c', 'b']);
     expect(sorted(values, 'creationMode', 'asc').map(x => x.id)).toEqual(['a', 'b', 'c']);
     expect(sorted(values, 'creationMode', 'desc').map(x => x.id)).toEqual(['b', 'a', 'c']);
     expect(sorted(values, 'cardType', 'asc').map(x => x.id)).toEqual(['a', 'c', 'b']);
@@ -145,7 +240,7 @@ describe('single-field deterministic sorting', () => {
     const source = [sortable('supp', { topics: ['\u{10000}'] }), sortable('prefix', { topics: ['A'] }), sortable('long', { topics: ['A', 'B'] }), sortable('bmp', { topics: ['\uE000'] }), sortable('empty', { topics: [] })];
     const snapshot = structuredClone(source);
     expect(sorted(source, 'topics', 'asc').map(x => x.id)).toEqual(['prefix', 'long', 'bmp', 'supp', 'empty']);
-    expect(sorted(source, 'topics', 'desc').at(-1)?.id).toBe('empty');
+    expect(sorted(source, 'topics', 'desc').map(x => x.id)).toEqual(['supp', 'bmp', 'long', 'prefix', 'empty']);
     expect(source).toEqual(snapshot);
   });
   it('uses global originalRank then scalar card ID ties in both directions and obeys comparator laws', () => {
@@ -159,6 +254,49 @@ describe('single-field deterministic sorting', () => {
     const ordered = [...values].sort(comparator);
     expect(comparator(ordered[0], ordered[2])).toBeLessThanOrEqual(0);
     expect(sorted(values, 'default', 'asc').map(x => x.id)).toEqual(['a', 'b', 'z']);
+  });
+  it('satisfies comparator laws for every supported field and direction on varied primary values', () => {
+    const values = [
+      sortable('same-rank-b', { originalRank: 2, topics: ['B'], priority: 1, likelihood: 5, creationMode: 'AI', metadata: validateCanonicalMetadata({ cardType: 'question' }) }),
+      sortable('same-rank-a', { originalRank: 2, topics: ['A', 'B'], priority: 1, likelihood: 2, creationMode: 'MANUAL', metadata: validateCanonicalMetadata({ cardType: 'task' }) }),
+      sortable('low-rank', { originalRank: 1, topics: ['A'], priority: 3, likelihood: 2, creationMode: 'UNKNOWN', metadata: validateCanonicalMetadata({ cardType: 'question' }) }),
+      sortable('high-value', { originalRank: 4, topics: ['\u{10000}'], priority: 5, likelihood: 1, creationMode: 'AI', metadata: validateCanonicalMetadata({ cardType: 'task' }) }),
+      sortable('empty', { originalRank: 0, topics: [], priority: 5, likelihood: 5, creationMode: 'UNKNOWN', metadata: validateCanonicalMetadata({ cardType: 'question' }) }),
+    ];
+    const snapshot = structuredClone(values);
+    const sorts = [
+      { field: 'default', direction: 'asc' },
+      ...(['topics', 'priority', 'likelihood', 'creationMode', 'cardType'] as const).flatMap(field =>
+        (['asc', 'desc'] as const).map(direction => ({ field, direction }))),
+    ] as const;
+    for (const sort of sorts) {
+      const compare = classificationComparator(sort);
+      for (const a of values) {
+        expect(compare(a, a), `${sort.field}/${sort.direction} reflexivity`).toBe(0);
+        for (const b of values) {
+          const ab = Math.sign(compare(a, b));
+          const ba = Math.sign(compare(b, a));
+          expect(ab === 0 ? ba === 0 : ab === -ba, `${sort.field}/${sort.direction} antisymmetry ${a.id}/${b.id}`).toBe(true);
+          for (const c of values) {
+            if (compare(a, b) <= 0 && compare(b, c) <= 0) {
+              expect(compare(a, c), `${sort.field}/${sort.direction} transitivity ${a.id}/${b.id}/${c.id}`).toBeLessThanOrEqual(0);
+            }
+          }
+        }
+      }
+      [...values].sort(compare);
+    }
+    expect(values).toEqual(snapshot);
+  });
+  it('uses ascending rank then scalar card ID for primary ties in either direction', () => {
+    const values = [
+      sortable('b', { originalRank: 1, priority: 3 }),
+      sortable('a', { originalRank: 1, priority: 3 }),
+      sortable('rank-zero', { originalRank: 0, priority: 3 }),
+    ];
+    for (const direction of ['asc', 'desc'] as const) {
+      expect(sorted(values, 'priority', direction).map(value => value.id)).toEqual(['rank-zero', 'a', 'b']);
+    }
   });
 });
 

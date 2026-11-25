@@ -37,7 +37,7 @@ export function compareUnicodeScalars(left: string, right: string): number {
 
 export function normalizeTopic(value: unknown, field = 'topic'): string {
   if (typeof value !== 'string') fail(field, 'expected a string');
-  const normalized = value.normalize('NFC').trim().replace(/\s+/gu, ' ').toUpperCase();
+  const normalized = value.normalize('NFC').trim().replace(/\s+/gu, ' ').toUpperCase().normalize('NFC');
   if (!normalized) fail(field, 'must not be empty');
   if (normalized.length > MAX_TOPIC_LENGTH) fail(field, `exceeds ${MAX_TOPIC_LENGTH} UTF-16 code units`);
   return normalized;
@@ -117,7 +117,7 @@ export function validateClassificationCreate(input: unknown): CanonicalCardState
   const translations = validateTranslationsInput(data.translations ?? {});
   validateFinalTranslations(translations, metadata.cardType);
   return {
-    topics: normalizeTopics(data.topics ?? []),
+    topics: normalizeTopics(data.topics === undefined ? [] : data.topics),
     priority: ratingForCreate(data.priority, 'priority'),
     likelihood: ratingForCreate(data.likelihood, 'likelihood'),
     creationMode: data.creationMode === undefined ? DEFAULT_CREATION_MODE : validateCreationMode(data.creationMode),
@@ -136,7 +136,7 @@ export function applyClassificationPatch(existing: CanonicalCardState, input: un
   const translations = mergeTranslations(existing.translations, data.translations);
   validateFinalTranslations(translations, metadata.cardType);
   return {
-    topics: normalizeTopics(data.topics === undefined ? existing.topics : data.topics),
+    topics: data.topics === undefined ? [...existing.topics] : normalizeTopics(data.topics),
     priority: ratingForPatch(data.priority, validateRating(existing.priority, 'priority'), 'priority'),
     likelihood: ratingForPatch(data.likelihood, validateRating(existing.likelihood, 'likelihood'), 'likelihood'),
     creationMode: validateCreationMode(data.creationMode === undefined ? existing.creationMode : data.creationMode),

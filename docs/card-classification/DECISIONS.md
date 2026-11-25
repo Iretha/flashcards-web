@@ -5,7 +5,7 @@ All DEC entries below are approved requirements, not implementation evidence.
 | ID | Binding requirement | Primary document |
 |---|---|---|
 | DEC-001 | Canonical card_topics, composite PK/reverse index; no entities/JSON copy | TECHNICAL-SPECIFICATION |
-| DEC-002 | Server NFC, trim, collapse whitespace, uppercase, dedup, reject empty | TECHNICAL-SPECIFICATION |
+| DEC-002 | Server NFC, trim, collapse whitespace, uppercase, final NFC, dedup, reject empty; omitted canonical values preserved | TECHNICAL-SPECIFICATION |
 | DEC-003 | Value identity; no rename/aliases/history | TECHNICAL-SPECIFICATION |
 | DEC-004 | Universal priority 1 Critical to 5 Very Low; mandatory default3; legacy preserved (T-01/13) | MIGRATION-PLAN |
 | DEC-005 | Universal likelihood 1 highest; mandatory default3; attested inversion (T-13) | MARKDOWN-V5 |
@@ -33,6 +33,12 @@ All DEC entries below are approved requirements, not implementation evidence.
 Authority: OWNER-APPROVED-TECHNICAL-DECISIONS.md supplied by owner; reference commit
 4560247d76670f0b440a151ac696da860ce9411a. All rows APPROVED, planned not implemented.
 These supersede conflicting DEC/proposal text; no automatic implementation authority.
+
+IMP-002 corrective amendment: the Product Owner selected final-NFC Option B for DEC-002/T-02.
+The original pre-uppercase-only sequence is retained as decision history but is superseded
+normatively: apply NFC again after `toUpperCase()`. The motivating U+0390 case now yields
+U+03AA U+0301 idempotently. Normalize raw supplied topics; never re-normalize omitted
+canonical topics. Explicit null topics are invalid in the shared API/domain contract.
 
 | T | Revises/elaborates DEC | Effective requirement | Contract |
 |---|---|---|---|
