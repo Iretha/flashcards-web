@@ -5,6 +5,16 @@ import type { parseMarkdown } from '../lib/markdown';
 import { validTranslation } from '../lib/translations';
 import type { Language, Translation, Translations } from '../lib/translations';
 import { normalizeTopic } from '../lib/classification';
+import type { CanonicalCardMetadata } from '../lib/metadata';
+import type { CreationMode, Rating } from '../lib/classification';
+
+export interface CanonicalStoredState {
+  metadata: CanonicalCardMetadata;
+  topics: string[];
+  priority: Rating;
+  likelihood: Rating;
+  creation_mode: CreationMode;
+}
 
 export interface ImportTarget {
   id: string;
@@ -14,6 +24,8 @@ export interface ImportTarget {
   translations: Translations;
   interview_priority: number | null;
   difficulty: number | null;
+  /** Non-enumerable on read DTOs; preserves canonical state through legacy write adapters. */
+  canonical?: CanonicalStoredState;
 }
 interface PreviewRow {
   index: string;
@@ -92,6 +104,7 @@ export function planImport(
       primary_language: target?.primary_language ?? primary, translations: { ...target?.translations },
       interview_priority: draft.interviewPriority ?? target?.interview_priority ?? null,
       difficulty: draft.difficulty ?? target?.difficulty ?? null,
+      canonical: target?.canonical,
     };
     claimed.add(id);
     let dirty = isNew || next.import_key !== target?.import_key;

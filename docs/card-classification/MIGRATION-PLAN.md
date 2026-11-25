@@ -64,7 +64,8 @@ repair procedure remains unchanged. No ordinary deployment reconstruction/verifi
 ## Deployment and failure handling
 
 Later API/import/session consumers must become schema-compatible before cutover. Under a
-separately authorized release plan, rehearse migration and mapping coverage, then use
+separately authorized release plan pause traffic/writers, capture a verified restorable
+recovery point, rehearse migration and mapping coverage, then use
 unchanged npm run deploy (build -> migrations -> wrangler deploy --keep-vars).
 Preserve secrets/bindings/auth/arguments. Build/migration failure stops publish.
 

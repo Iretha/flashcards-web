@@ -51,7 +51,9 @@ INSERT INTO imp003_guard SELECT CASE WHEN NOT EXISTS (
   SELECT 1 FROM cards c, json_each(c.translations) t
   WHERE c.metadata ->> '$.cardType' = 'coding_task'
     AND (coalesce(json_type(t.value, '$.questionDetails'), '') <> 'text'
-      OR length(trim(t.value ->> '$.questionDetails')) = 0)
+      OR length(trim(t.value ->> '$.questionDetails',
+        char(9,10,11,12,13,32,160,5760,8192,8193,8194,8195,8196,8197,8198,8199,
+          8200,8201,8202,8232,8233,8239,8287,12288,65279))) = 0)
 ) THEN 1 ELSE 0 END;
 
 INSERT INTO card_topics(card_id, topic_name)

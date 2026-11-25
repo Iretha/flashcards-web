@@ -2,7 +2,7 @@ import { readFileSync, readdirSync } from 'node:fs';
 import { afterEach, expect, it } from 'vitest';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
 import { splitSql } from './sql';
-import { writeCanonicalCards } from '../src/server/decks';
+import { listCards, writeCanonicalCards, writeCards } from '../src/server/decks';
 import { validateCanonicalMetadata } from '../src/lib/metadata';
 
 let runtime: Miniflare | undefined;
@@ -79,6 +79,8 @@ it('fails the complete migration on unknown values or invalid task specification
   for (const fixture of [
     { metadata: { cardType: 'question', topic: 'Uninspected', provenance: { type: 'generated', sources: [] } }, translations: { en: { question: 'Unknown?', answer: '' } } },
     { metadata: { cardType: 'coding_task', topic: 'Test', provenance: { type: 'generated', sources: [] } }, translations: { en: { question: 'Broken task?', answer: '' } } },
+    { metadata: { cardType: 'coding_task', topic: 'Test', provenance: { type: 'generated', sources: [] } }, translations: { en: { question: 'NBSP task?', answer: '', questionDetails: '\u00a0' } } },
+    { metadata: { cardType: 'coding_task', topic: 'Test', provenance: { type: 'generated', sources: [] } }, translations: { en: { question: 'BOM task?', answer: '', questionDetails: '\ufeff' } } },
   ]) {
     const db = await database();
     await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,position,created_at,updated_at,primary_language,translations,metadata) VALUES('bad','deck','bad','bad',0,0,0,'en',?,?)")
@@ -113,6 +115,54 @@ it('writes canonical memberships atomically and leaves omitted topics untouched'
 
   await db.batch(writeCanonicalCards(db, 'deck', 'wrong-marker', 13, [{ ...base, topics: [] }]));
   expect((await db.prepare("SELECT topic_name FROM card_topics WHERE card_id='canonical'").all()).results).toHaveLength(2);
+});
+
+it('rejects a foreign-deck card ID and rolls back the entire authorized mutation', async () => {
+  const db = await database();
+  await db.batch(statements('0021_card_classification.sql').map(sql => db.prepare(sql)));
+  await db.prepare("INSERT INTO decks(id,owner_id,title,description,visibility,revision,mutation,created_at,updated_at,primaryLanguage,supportedLanguages) VALUES('foreign','owner','Foreign','','PRIVATE',2,'foreign-marker',0,0,'en','[\"en\"]')").run();
+  await db.prepare("INSERT INTO cards(id,deck_id,stable_key,question_key,position,created_at,updated_at,primary_language,translations,metadata) VALUES('foreign-card','foreign','foreign-card','foreign',0,0,0,'en',?,?)")
+    .bind(JSON.stringify({ en: { question: 'Foreign?', answer: 'Original' } }), JSON.stringify({ cardType: 'question' })).run();
+  await db.prepare("INSERT INTO card_topics VALUES('foreign-card','FOREIGN')").run();
+  const target = (id: string, question: string) => ({
+    id, import_key: id, primary_language: 'en' as const, translations: { en: { question, answer: 'Changed' } },
+    interview_priority: null, difficulty: null, metadata: validateCanonicalMetadata({ cardType: 'question' }),
+    priority: 1 as const, likelihood: 2 as const, creation_mode: 'MANUAL' as const, topics: ['CHANGED'],
+  });
+  const marker = 'attack-marker';
+  const batch = [
+    db.prepare("UPDATE decks SET revision=revision+1,mutation=? WHERE id='deck' AND revision=7").bind(marker),
+    ...writeCanonicalCards(db, 'deck', marker, 10, [target('local-card', 'Local?'), target('foreign-card', 'Attacked?')]),
+    db.prepare("INSERT INTO api_creates(user_id,route,request_key,fingerprint,resource_id) SELECT 'owner','attack','key','hash','local-card' WHERE EXISTS(SELECT 1 FROM decks WHERE id='deck' AND mutation=?)").bind(marker),
+    db.prepare("INSERT INTO mcp_card_idempotency(principal,operation,key,payload,card_id,created_at) SELECT 'owner','create_card','attack','hash','local-card',10 WHERE EXISTS(SELECT 1 FROM decks WHERE id='deck' AND mutation=?)").bind(marker),
+  ];
+  await expect(db.batch(batch)).rejects.toThrow();
+  expect(await db.prepare("SELECT revision,mutation FROM decks WHERE id='deck'").first()).toEqual({ revision: 7, mutation: 'write' });
+  expect(await db.prepare("SELECT id FROM cards WHERE id='local-card'").first()).toBeNull();
+  expect(await db.prepare("SELECT translations FROM cards WHERE id='foreign-card'").first()).toEqual({ translations: JSON.stringify({ en: { question: 'Foreign?', answer: 'Original' } }) });
+  expect((await db.prepare("SELECT topic_name FROM card_topics WHERE card_id='foreign-card'").all()).results).toEqual([{ topic_name: 'FOREIGN' }]);
+  expect(await db.prepare("SELECT 1 FROM api_creates WHERE route='attack'").first()).toBeNull();
+  expect(await db.prepare("SELECT 1 FROM mcp_card_idempotency WHERE key='attack'").first()).toBeNull();
+});
+
+it('preserves type-only and multi-topic canonical state through an answer-only legacy write', async () => {
+  const db = await database();
+  await db.batch(statements('0021_card_classification.sql').map(sql => db.prepare(sql)));
+  const canonical = {
+    id: 'preserved', import_key: null, primary_language: 'en' as const,
+    translations: { en: { question: 'Task?', questionDetails: 'Specification', answer: '' } },
+    interview_priority: null, difficulty: 4, metadata: validateCanonicalMetadata({ cardType: 'task' }),
+    priority: 1 as const, likelihood: 5 as const, creation_mode: 'AI' as const, topics: ['ONE', 'TWO'],
+  };
+  await db.batch(writeCanonicalCards(db, 'deck', 'write', 1, [canonical]));
+  const [legacy] = await listCards(db, 'owner', 'deck');
+  const card = legacy.id === 'preserved' ? legacy : (await listCards(db, 'owner', 'deck')).find(value => value.id === 'preserved')!;
+  expect(card.metadata).toBeNull();
+  card.translations.en!.answer = 'Updated';
+  await db.batch(writeCards(db, 'deck', 'write', 2, [card], false, false));
+  const stored = await db.prepare("SELECT metadata,priority,likelihood,creation_mode FROM cards WHERE id='preserved'").first();
+  expect(stored).toEqual({ metadata: JSON.stringify({ cardType: 'task' }), priority: 1, likelihood: 5, creation_mode: 'AI' });
+  expect((await db.prepare("SELECT topic_name FROM card_topics WHERE card_id='preserved' ORDER BY topic_name").all()).results).toEqual([{ topic_name: 'ONE' }, { topic_name: 'TWO' }]);
 });
 
 it('removes legacy invalidation behavior while retaining cascade and search consistency', async () => {

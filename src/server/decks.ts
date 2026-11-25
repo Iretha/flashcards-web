@@ -13,6 +13,7 @@ import { isLanguage } from '../lib/translations';
 import type { Translations } from '../lib/translations';
 import { planImport, uniqueQuestions } from './import-plan';
 import type { ImportTarget } from './import-plan';
+import type { CanonicalStoredState } from './import-plan';
 import { check, HttpError, object, string } from './http';
 
 export interface Deck {
@@ -60,15 +61,20 @@ type CardRow = Omit<Card, 'translations' | 'metadata'> & {
 };
 
 function decodeCard(card: CardRow): Card {
-  const { topics_json, priority: _priority, likelihood: _likelihood, creation_mode: _creationMode, ...stored } = card as CardRow & {
-    priority?: number; likelihood?: number; creation_mode?: string;
+  const { topics_json, priority, likelihood, creation_mode, ...stored } = card as CardRow & {
+    priority: Rating; likelihood: Rating; creation_mode: CreationMode;
   };
-  const canonical = stored.metadata ? JSON.parse(stored.metadata) as CanonicalCardMetadata : null;
+  const canonical = stored.metadata ? JSON.parse(stored.metadata) as CanonicalCardMetadata : validateCanonicalMetadata({ cardType: 'question' });
   const topics = topics_json ? JSON.parse(topics_json) as string[] : [];
   // Transitional storage adapter for the still-live v3/v4 consumers. The canonical
   // writer/read model is exposed separately and IMP-004 removes this legacy projection.
   const metadata = legacyMetadataProjection(canonical, topics);
-  return { ...stored, translations: JSON.parse(stored.translations) as Translations, metadata };
+  const result = { ...stored, translations: JSON.parse(stored.translations) as Translations, metadata } as Card;
+  Object.defineProperty(result, 'canonical', {
+    value: { metadata: canonical, topics, priority, likelihood, creation_mode } satisfies CanonicalStoredState,
+    enumerable: false,
+  });
+  return result;
 }
 
 export function legacyMetadataProjection(canonical: CanonicalCardMetadata | null, topics: string[]): CardMetadata | null {
@@ -204,7 +210,7 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       catch (error) { throw new HttpError(400, `Card ${current?.import_key ?? id}: ${error instanceof Error ? error.message : 'invalid metadata'}`); }
     }
     if (cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
-    const next = { metadata: cardMetadata, id, primary_language: primary, import_key: current?.import_key ?? null, translations,
+    const next = { metadata: cardMetadata, canonical: current?.canonical, id, primary_language: primary, import_key: current?.import_key ?? null, translations,
       interview_priority: current?.interview_priority ?? null, difficulty: current?.difficulty ?? null };
     validateCardLanguages(next, deck);
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
@@ -301,6 +307,10 @@ export function writeCanonicalCards(
     };
   });
   const encoded = JSON.stringify(values);
+  const targetGuard = db.prepare(`INSERT INTO card_topics(card_id, topic_name)
+    SELECT c.id, NULL FROM cards c JOIN json_each(?) input ON input.value ->> 'id' = c.id
+    WHERE c.deck_id <> ? AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
+    .bind(encoded, deck, deck, mutation);
   const write = db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, position,
     created_at, updated_at, import_key, primary_language, translations, interview_priority, difficulty, metadata,
     priority, likelihood, creation_mode)
@@ -313,21 +323,25 @@ export function writeCanonicalCards(
     ${insertOnly ? '' : `ON CONFLICT(id) DO UPDATE SET question_key = excluded.question_key, updated_at = excluded.updated_at, import_key = excluded.import_key,
       primary_language = excluded.primary_language, translations = excluded.translations,
       interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata
-      ${updateClassification ? ', priority = excluded.priority, likelihood = excluded.likelihood, creation_mode = excluded.creation_mode' : ''}`}`)
+      ${updateClassification ? ', priority = excluded.priority, likelihood = excluded.likelihood, creation_mode = excluded.creation_mode' : ''}
+      WHERE cards.deck_id = excluded.deck_id`}`)
     .bind(deck, deck, now, now, encoded, deck, mutation);
   const supplied = values.some(card => card.topics !== undefined);
-  if (!supplied) return [write];
+  if (!supplied) return [targetGuard, write];
   const remove = db.prepare(`DELETE FROM card_topics
-    WHERE card_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE json_type(value, '$.topics') = 'array')
+    WHERE card_id IN (SELECT c.id FROM cards c JOIN json_each(?) input ON input.value ->> 'id' = c.id
+      WHERE c.deck_id = ? AND json_type(input.value, '$.topics') = 'array')
     AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
-    .bind(encoded, deck, mutation);
+    .bind(encoded, deck, deck, mutation);
   const insert = db.prepare(`INSERT INTO card_topics(card_id, topic_name)
     SELECT card.value ->> 'id', topic.value
-    FROM json_each(?) card, json_each(card.value, '$.topics') topic
+    FROM json_each(?) card
+    JOIN cards c ON c.id = card.value ->> 'id' AND c.deck_id = ?
+    JOIN json_each(card.value, '$.topics') topic
     WHERE json_type(card.value, '$.topics') = 'array'
       AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
-    .bind(encoded, deck, mutation);
-  return [write, remove, insert];
+    .bind(encoded, deck, deck, mutation);
+  return [targetGuard, write, remove, insert];
 }
 
 /** Temporary v3/v4-to-canonical storage adapter; parsing semantics remain unchanged. */
@@ -337,15 +351,16 @@ export function writeCards(
 ) {
   const canonical = cards.map(card => {
     const legacy = card.metadata;
+    const stored = card.canonical;
     const metadata = legacy ? {
       cardType: legacy.cardType === 'coding_task' ? 'task' as const : 'question' as const,
       provenance: legacy.provenance,
       ...(legacy.answerReferences === undefined ? {} : { answerReferences: legacy.answerReferences }),
       occurrenceCount: legacy.occurrenceCount,
-    } : { cardType: 'question' as const, occurrenceCount: 0 };
+    } : stored?.metadata ?? { cardType: 'question' as const, occurrenceCount: 0 };
     return {
-      ...card, metadata, priority: DEFAULT_RATING, likelihood: DEFAULT_RATING,
-      creation_mode: DEFAULT_CREATION_MODE,
+      ...card, metadata, priority: stored?.priority ?? DEFAULT_RATING, likelihood: stored?.likelihood ?? DEFAULT_RATING,
+      creation_mode: stored?.creation_mode ?? DEFAULT_CREATION_MODE,
       ...(replaceTopics ? { topics: legacy ? normalizeTopics([legacy.topic]) : [] } : {}),
     } satisfies CanonicalWriteTarget;
   });

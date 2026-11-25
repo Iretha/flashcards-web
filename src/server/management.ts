@@ -110,7 +110,7 @@ function cardValues(value: unknown, id: string, current?: ImportTarget): ImportT
   };
   const key = 'import_key' in input ? input.import_key : current?.import_key ?? null;
   const importKey = key === null ? null : identifier(text(key, 'import_key', 100), 'import_key', 100);
-  return { id, translations, primary_language: primary, metadata, import_key: importKey, difficulty: rating('difficulty'), interview_priority: rating('interview_priority') };
+  return { id, translations, primary_language: primary, metadata, canonical: current?.canonical, import_key: importKey, difficulty: rating('difficulty'), interview_priority: rating('interview_priority') };
 }
 
 async function readBody(request: Request) {
