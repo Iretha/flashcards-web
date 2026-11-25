@@ -1200,6 +1200,27 @@ it('applies the v5 preview classification payload, preserves progress/raw legacy
   expect((await browser.cards(id))[0]).toMatchObject({ id: original.id, times_learned: 1, translations: { en: { answer: '', questionDetails: '' }, bg: original.translations.bg } });
 });
 
+it('F-001 persists explicit empty details through preview/apply and preserves omitted details and progress', async () => {
+  const browser = new Browser(); await browser.login('details presence regression');
+  const source = (details = '') => `---\nformatVersion: 5\nprimaryLanguage: en\n---\n## card: presence\n### en\n#### question\nDetails presence?${details}`;
+  const { id } = await browser.import(source());
+  const [original] = await browser.cards(id);
+  expect(original.translations.en).not.toHaveProperty('questionDetails');
+  const session = await browser.ok<Session>('study/start', { decks: [id], settings: defaults, version: 0 });
+  await browser.action(session, 'learn');
+  const explicit = source('\n#### questionDetails');
+  const preview = await browser.ok<Preview>('import/preview', { source: explicit, target: id });
+  expect(preview.rows.find(row => row.language === 'en')).toMatchObject({ kind: 'conflict', incoming: { questionDetails: '' } });
+  await browser.import(explicit, id, { '0:en': 'keep' });
+  expect((await browser.cards(id))[0].translations.en).not.toHaveProperty('questionDetails');
+  await browser.import(explicit, id, { '0:en': 'update' });
+  const [updated] = await browser.cards(id);
+  expect(updated).toMatchObject({ id: original.id, times_learned: 1, translations: { en: { questionDetails: '' } } });
+  expect((await browser.import(explicit, id)).preview.rows.every(row => row.kind === 'duplicate')).toBe(true);
+  await browser.import(source(), id);
+  expect((await browser.cards(id))[0]).toEqual(updated);
+});
+
 it.each([3, 4])('rejects direct legacy v%s preview and apply with conversion guidance', async version => {
   const browser = new Browser(); await browser.login('v5 legacy diagnostic ' + version);
   const before = (await browser.home()).decks;

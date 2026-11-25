@@ -50,8 +50,8 @@ interface PreviewRow {
   metadata?: CardMetadata | null;
 }
 
-const comparable = (value: Translation) => JSON.stringify([
-  questionKey(value.question), value.answer ?? '', value.questionDetails ?? '',
+const comparable = (value: Translation, preserveDetailsPresence: boolean) => JSON.stringify([
+  questionKey(value.question), value.answer ?? '', preserveDetailsPresence ? value.questionDetails : value.questionDetails ?? '',
 ]);
 
 export function planImport(
@@ -127,7 +127,7 @@ export function planImport(
       const previous = next.translations[actual];
       const proposed: Translation = { ...previous, ...value, answer: value.answer ?? previous?.answer ?? '' };
       const rowIndex = prefix + ':' + actual;
-      const duplicate = previous && comparable(previous) === comparable(proposed);
+      const duplicate = previous && comparable(previous, parsed.version === 5) === comparable(proposed, parsed.version === 5);
       const kind = duplicate ? 'duplicate' : previous ? 'conflict' : isNew && first ? 'new' : 'translation';
       rows.push({
         index: rowIndex, kind, question: value.question, answer: proposed.answer, language: actual,

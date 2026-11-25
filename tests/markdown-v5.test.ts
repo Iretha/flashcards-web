@@ -9,6 +9,32 @@ const current = (): ImportTarget => ({ id: 'same', import_key: 'stable', primary
   translations: { en: { question: 'Question', answer: 'Retain', questionDetails: 'Task statement' }, bg: { question: 'Въпрос', answer: 'Отговор', questionDetails: 'Условие' } },
   canonical: { topics: ['Java'], priority: 1, likelihood: 2, creation_mode: 'AI', metadata: validateCanonicalMetadata({ cardType: 'task', provenance: { type: 'generated', sources: [] }, answerReferences: [{ title: 'Reference', url: 'https://example.com' }] }) },
 });
+it('F-001 distinguishes absent details from an explicit empty section while preserving omissions', () => {
+  const existing = current();
+  existing.canonical!.metadata = validateCanonicalMetadata({ cardType: 'question' });
+  delete existing.translations.en.questionDetails;
+  const omitted = parseMarkdown(source());
+  expect(planImport(omitted, [existing], {}, {}).changed).toEqual([]);
+  const explicit = parseMarkdown(source('', '### en\n#### question\nQuestion\n#### questionDetails'));
+  const preview = planImport(explicit, [existing], {}, {});
+  expect(preview.rows.find(row => row.language === 'en')?.kind).toBe('conflict');
+  expect(planImport(explicit, [existing], {}, { '0:en': 'keep' }).changed).toEqual([]);
+  const applied = planImport(explicit, [existing], {}, { '0:en': 'update' });
+  expect(applied.changed[0].translations.en.questionDetails).toBe('');
+  expect(planImport(explicit, applied.cards, {}, {}).changed).toEqual([]);
+  expect(planImport(omitted, applied.cards, {}, {}).cards[0].translations.en).toHaveProperty('questionDetails', '');
+});
+it.each(['### provenance\nnull', '### answerReferences\n[]', '### cardType: task', '### provenance\ntype: generated\nsources: []'])('F-002 accepts partial metadata and preserves omitted task metadata: %s', metadata => {
+  const existing = current();
+  const parsed = parseMarkdown(source(metadata));
+  expect(parsed.cards[0].error).toBeUndefined();
+  const plan = planImport(parsed, [existing], {}, {});
+  expect(plan.rows.some(row => row.kind === 'invalid')).toBe(false);
+  const result = plan.cards[0].canonical!.metadata;
+  expect(result.cardType).toBe('task');
+  if (!metadata.startsWith('### provenance')) expect(result.provenance).toEqual(existing.canonical!.metadata.provenance);
+  if (!metadata.startsWith('### answerReferences')) expect(result.answerReferences).toEqual(existing.canonical!.metadata.answerReferences);
+});
 it('creates defaults and preserves all omitted fields, languages and legacy raw values on patch', () => {
   const created = planImport(parseMarkdown('\uFEFF' + source()), [], {}, {}).changed[0];
   expect(created.canonical).toMatchObject({ topics: [], priority: 3, likelihood: 3, creation_mode: 'UNKNOWN', metadata: { cardType: 'question' } });
