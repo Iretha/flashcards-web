@@ -35,7 +35,16 @@ export function isLanguage(value: unknown): value is Language {
 }
 
 export function completeTranslation(value: Translation | undefined, cardType?: string): value is Translation {
-  return Boolean(value && validTranslation(value) && (cardType !== 'coding_task' || value.questionDetails?.trim()));
+  return Boolean(value && validTranslation(value) && ((cardType !== 'coding_task' && cardType !== 'task') || value.questionDetails?.trim()));
+}
+
+/** Validates every retained language after a canonical metadata/translation merge. */
+export function validateFinalTranslations(translations: Translations, cardType: 'question' | 'task') {
+  for (const [language, translation] of Object.entries(translations)) {
+    if (!isLanguage(language)) throw new Error(`translations.${language}: expected a canonical BCP 47 language code`);
+    if (!validTranslation(translation)) throw new Error(`translations.${language}: invalid translation`);
+    if (cardType === 'task' && !translation.questionDetails?.trim()) throw new Error(`translations.${language}.questionDetails: task requires nonblank details`);
+  }
 }
 
 export function selectTranslation(translations: Translations, preferred: Language, primary: Language = 'en', cardType?: string) {

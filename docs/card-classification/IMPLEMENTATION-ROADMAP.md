@@ -8,6 +8,12 @@ change unrelated behavior. No new tests in this documentation phase.
 
 ## IMP-001 — Record approved contracts and implementation gates
 
+Status: COMPLETED (specification synchronization only). Verified against approved
+specification commit `4433b8e80a195167e4aabc553fd9a4178db03e61`. Product Owner acceptance of the
+specification is distinct from task-by-task implementation authorization: this record
+does not claim application functionality is implemented and does not authorize IMP-003,
+commit, push, merge, migration or deployment.
+
 - Objective/scope: record approved T-01-T-16, revised DEC traceability and resolved Q-01/Q-02 contracts for conversion/completion controls.
 - Out of scope: implementation, source snapshot capture without separate authorization.
 - Dependencies: approved owner decision source and review of this synchronized package.
@@ -18,6 +24,13 @@ change unrelated behavior. No new tests in this documentation phase.
   history wrap, completed Restart, start-only checks and approved MCP expansion examples.
 - Required owner decisions: T-01-T-16 approved; Q-01/Q-02 resolved; implementation authorization separate.
 - Completion: no contradictory unresolved contract for downstream task being authorized.
+
+Completion evidence: T-01–T-16 and resolved Q-01/Q-02 are recorded in the owner decision
+source and DEC/T matrix; the package links all nine dependent contracts and the FI-001
+register; TESTING-ACCEPTANCE covers priority ambiguity, normalization backfill, new-card
+Repeat admission, circular history, non-destructive completed Restart, start-only limits
+and the approved existing-MCP-tool expansion. Cross-document review found no unresolved
+contradictory contract blocking IMP-002. Runtime implementation remains separately gated.
 
 ## IMP-002 — Shared classification domain and validation
 
