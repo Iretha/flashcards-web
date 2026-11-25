@@ -149,7 +149,7 @@ Status: ACCEPTED. Management uses canonical classification validation and guarde
 
 ## IMP-007 — MCP classification capabilities
 
-Status: IMPLEMENTED LOCALLY. Existing tools extended using canonical validation and guarded writes. No deployment or IMP-008 work.
+Status: ACCEPTED. Existing tools extended using canonical validation and guarded writes. Owner accepted IMP-007; no deployment.
 
 - Objective/scope: get_card classifications/revision and approved create_card/update_card
   extensions for classification fields and answer patches; search_cards unchanged.
