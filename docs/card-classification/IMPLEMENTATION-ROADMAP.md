@@ -34,11 +34,12 @@ contradictory contract blocking IMP-002. Runtime implementation remains separate
 
 ## IMP-002 — Shared classification domain and validation
 
-Corrective cycle authorized after independent review: address F-001–F-004 using the
-Product Owner-approved final-NFC amendment to DEC-002/T-02. This does not mark IMP-002
-accepted or completed. Omitted topics must preserve exact values/order without ingress
-normalization; explicit null topics reject; Unicode round trips and comparator laws
-require expanded regression evidence. IMP-001 remains completed and is not reopened.
+Status: COMPLETED AND OWNER-ACCEPTED at
+`28d84df986f3208e16f1c5c9bda987f404664ac1`. The corrective cycle incorporated the
+Product Owner-approved final-NFC amendment to DEC-002/T-02 and closed F-001–F-004.
+Omitted topics preserve exact values/order without ingress normalization; explicit null
+topics reject; Unicode round trips and comparator laws have regression coverage.
+Acceptance does not authorize release or later roadmap work.
 
 - Objective/scope: normalizer, universal ratings/creationMode, question/task, type-only metadata,
   source/reference preservation, pure filter/comparator contracts.
@@ -58,6 +59,13 @@ require expanded regression evidence. IMP-001 remains completed and is not reope
 - Completion: native search normalization unchanged; domain tests pass.
 
 ## IMP-003 — Forward migration and canonical membership writes
+
+Status: IMPLEMENTED LOCALLY — AWAITING INDEPENDENT REVIEW. No deployment, release,
+commit or later-task authorization is implied.
+
+Implementation is coordinated-release gated: the migration must not be deployed until
+the schema-compatible application/import/session tasks are accepted and release is
+separately authorized.
 
 - Objective/scope: card_topics/indexes, ratings/creationMode, approved static standard SQL backfill (proven UPPER/TRIM plus exceptions/guards), type
   conversion, epoch triggers, lifecycle-compatible invalidation triggers.

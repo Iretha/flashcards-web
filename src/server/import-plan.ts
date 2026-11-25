@@ -4,6 +4,7 @@ import { questionKey } from '../lib/markdown';
 import type { parseMarkdown } from '../lib/markdown';
 import { validTranslation } from '../lib/translations';
 import type { Language, Translation, Translations } from '../lib/translations';
+import { normalizeTopic } from '../lib/classification';
 
 export interface ImportTarget {
   id: string;
@@ -86,7 +87,7 @@ export function planImport(
     const isNew = !target;
     const id = target?.id ?? crypto.randomUUID();
     const next: ImportTarget = {
-      metadata: draft.metadata ?? target?.metadata ?? null,
+      metadata: canonicalLegacyMetadata(draft.metadata) ?? target?.metadata ?? null,
       id, import_key: key ?? target?.import_key ?? null,
       primary_language: target?.primary_language ?? primary, translations: { ...target?.translations },
       interview_priority: draft.interviewPriority ?? target?.interview_priority ?? null,
@@ -144,4 +145,9 @@ export function uniqueQuestions(cards: ImportTarget[]) {
 function stableMetadata(value: CardMetadata | null | undefined): string {
  const sort = (v: unknown): unknown => Array.isArray(v) ? v.map(sort) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,item])=>[k,sort(item)])) : v;
  return JSON.stringify(sort(metadataForStorage(value)));
+}
+
+/** Normalize the legacy scalar at the import-plan/storage boundary without changing v4 grammar. */
+function canonicalLegacyMetadata(value: CardMetadata | null | undefined): CardMetadata | null | undefined {
+ return value && { ...value, topic: normalizeTopic(value.topic) };
 }

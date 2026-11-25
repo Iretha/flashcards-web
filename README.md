@@ -22,12 +22,14 @@ See [local development](docs/LOCAL-DEVELOPMENT.md) for persistence, reset and tr
 
 ```sh
 npm test
+npm run test:migration:imp003
 npm run typecheck
 npm run build
 npm run test:e2e
 ```
 
-E2E requires Microsoft Edge and free port 4322; it uses disposable isolated D1 storage.
+The IMP-003 rehearsal uses Wrangler, historical migrations and disposable isolated D1
+storage. E2E requires Microsoft Edge and free port 4322 and uses separate disposable storage.
 
 ## Deployment
 

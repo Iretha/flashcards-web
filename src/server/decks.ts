@@ -1,6 +1,11 @@
 import { editAccess, permissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { validateMetadata, derivedMetadata, metadataForStorage } from '../lib/metadata';
+import type { CanonicalCardMetadata } from '../lib/metadata';
+import { DEFAULT_CREATION_MODE, DEFAULT_RATING, normalizeTopics, validateCreationMode, validateRating } from '../lib/classification';
+import { validateCanonicalMetadata } from '../lib/metadata';
+import { validateFinalTranslations } from '../lib/translations';
+import type { CreationMode, Rating } from '../lib/classification';
 import { MAX_MARKDOWN_BYTES, MARKDOWN_SIZE_ERROR } from '../lib/import-limits';
 import type { CardMetadata } from '../lib/metadata';
 import { parseMarkdown, questionKey } from '../lib/markdown';
@@ -50,10 +55,28 @@ export function decodeDeck<T extends Deck>(deck: T): T {
   return { ...deck, supportedLanguages: typeof deck.supportedLanguages === 'string' ? JSON.parse(deck.supportedLanguages) : deck.supportedLanguages };
 }
 
-type CardRow = Omit<Card, 'translations' | 'metadata'> & { translations: string; metadata: string | null };
+type CardRow = Omit<Card, 'translations' | 'metadata'> & {
+  translations: string; metadata: string | null; topics_json?: string;
+};
 
 function decodeCard(card: CardRow): Card {
-  return { ...card, translations: JSON.parse(card.translations) as Translations, metadata: derivedMetadata(card.metadata ? JSON.parse(card.metadata) as CardMetadata : null) };
+  const { topics_json, priority: _priority, likelihood: _likelihood, creation_mode: _creationMode, ...stored } = card as CardRow & {
+    priority?: number; likelihood?: number; creation_mode?: string;
+  };
+  const canonical = stored.metadata ? JSON.parse(stored.metadata) as CanonicalCardMetadata : null;
+  const topics = topics_json ? JSON.parse(topics_json) as string[] : [];
+  // Transitional storage adapter for the still-live v3/v4 consumers. The canonical
+  // writer/read model is exposed separately and IMP-004 removes this legacy projection.
+  const metadata = legacyMetadataProjection(canonical, topics);
+  return { ...stored, translations: JSON.parse(stored.translations) as Translations, metadata };
+}
+
+export function legacyMetadataProjection(canonical: CanonicalCardMetadata | null, topics: string[]): CardMetadata | null {
+  return canonical?.provenance && topics.length === 1 ? derivedMetadata({
+    ...canonical,
+    cardType: canonical.cardType === 'task' ? 'coding_task' : 'question',
+    topic: topics[0],
+  } as CardMetadata) : null;
 }
 
 export async function deckWithCards(db: D1Database, user: string, id: string, cardId?: string) {
@@ -68,7 +91,10 @@ export async function deckWithCards(db: D1Database, user: string, id: string, ca
 
 function cardsForDeck(db: D1Database, user: string, deck: string, cardId?: string) {
   const args = cardId ? [user, deck, user, cardId] : [user, deck, user];
-  return db.prepare(`SELECT c.*, coalesce(p.status, 'UNLEARNED') AS status,
+  return db.prepare(`SELECT c.*,
+    coalesce((SELECT json_group_array(topic_name) FROM
+      (SELECT topic_name FROM card_topics WHERE card_id = c.id ORDER BY topic_name)), '[]') AS topics_json,
+    coalesce(p.status, 'UNLEARNED') AS status,
     coalesce(p.times_shown, 0) AS times_shown, coalesce(p.times_failed, 0) AS times_failed,
     coalesce(p.times_learned, 0) AS times_learned, p.last_shown_at, p.last_learned_at
     FROM cards c JOIN decks d ON d.id = c.deck_id
@@ -188,7 +214,8 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     const receipt = idempotency ? [db.prepare(`INSERT INTO mcp_card_idempotency(principal, operation, key, payload, card_id, created_at)
       SELECT ?, 'create_card', ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
       .bind(user, idempotency.key, idempotency.payload, id, now, deckId, mutation)] : [];
-    const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next]), ...receipt]);
+    const replaceTopics = !current || input.metadata !== undefined;
+    const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next], false, replaceTopics), ...receipt]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
     return { id, ...(method === 'answer' ? { answer: translations[String(input.language ?? current!.primary_language)].answer } : {}) };
   }
@@ -240,23 +267,89 @@ export async function inspectImport(db: D1Database, user: string, input: Record<
   return { impact, deck, key, metadata, rows, existing: existing.length, version: parsed.version };
 }
 
-export function writeCards(db: D1Database, deck: string, mutation: string, now: number, cards: ImportTarget[], insertOnly = false) {
+export interface CanonicalWriteTarget {
+  id: string;
+  metadata: CanonicalCardMetadata;
+  import_key: string | null;
+  primary_language: import('../lib/translations').Language;
+  translations: Translations;
+  interview_priority: number | null;
+  difficulty: number | null;
+  priority: Rating;
+  likelihood: Rating;
+  creation_mode: CreationMode;
+  /** Undefined preserves memberships without issuing membership SQL. */
+  topics?: string[];
+}
+
+export function writeCanonicalCards(
+  db: D1Database, deck: string, mutation: string, now: number,
+  cards: CanonicalWriteTarget[], insertOnly = false, updateClassification = true,
+) {
   const values = cards.map((card, position) => {
+    const metadata = validateCanonicalMetadata(metadataForStorage(card.metadata));
+    const translations = structuredClone(card.translations);
+    validateFinalTranslations(translations, metadata.cardType);
     const content = card.translations[card.primary_language]!;
-    return { ...card, metadata: metadataForStorage(card.metadata), position, questionKey: questionKey(content.question) };
+    return {
+      ...card, metadata: metadataForStorage(metadata), translations,
+      priority: validateRating(card.priority, 'priority'),
+      likelihood: validateRating(card.likelihood, 'likelihood'),
+      creation_mode: validateCreationMode(card.creation_mode, 'creationMode'),
+      ...(card.topics === undefined ? {} : { topics: normalizeTopics(card.topics) }),
+      position, questionKey: questionKey(content.question),
+    };
   });
+  const encoded = JSON.stringify(values);
   const write = db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, position,
-    created_at, updated_at, import_key, primary_language, translations, interview_priority, difficulty, metadata)
+    created_at, updated_at, import_key, primary_language, translations, interview_priority, difficulty, metadata,
+    priority, likelihood, creation_mode)
     SELECT value ->> 'id', ?, value ->> 'id', value ->> 'questionKey',
       (SELECT coalesce(max(position), -1) + 1 FROM cards WHERE deck_id = ?) + (value ->> 'position'),
       ?, ?, value ->> 'import_key', value ->> 'primary_language', value -> 'translations',
-      value ->> 'interview_priority', value ->> 'difficulty', CASE WHEN json_type(value, '$.metadata') = 'object' THEN value -> 'metadata' ELSE NULL END
+      value ->> 'interview_priority', value ->> 'difficulty', value -> 'metadata',
+      value ->> 'priority', value ->> 'likelihood', value ->> 'creation_mode'
     FROM json_each(?) WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)
     ${insertOnly ? '' : `ON CONFLICT(id) DO UPDATE SET question_key = excluded.question_key, updated_at = excluded.updated_at, import_key = excluded.import_key,
       primary_language = excluded.primary_language, translations = excluded.translations,
-      interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata`}`)
-    .bind(deck, deck, now, now, JSON.stringify(values), deck, mutation);
-  return [write];
+      interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata
+      ${updateClassification ? ', priority = excluded.priority, likelihood = excluded.likelihood, creation_mode = excluded.creation_mode' : ''}`}`)
+    .bind(deck, deck, now, now, encoded, deck, mutation);
+  const supplied = values.some(card => card.topics !== undefined);
+  if (!supplied) return [write];
+  const remove = db.prepare(`DELETE FROM card_topics
+    WHERE card_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE json_type(value, '$.topics') = 'array')
+    AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
+    .bind(encoded, deck, mutation);
+  const insert = db.prepare(`INSERT INTO card_topics(card_id, topic_name)
+    SELECT card.value ->> 'id', topic.value
+    FROM json_each(?) card, json_each(card.value, '$.topics') topic
+    WHERE json_type(card.value, '$.topics') = 'array'
+      AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
+    .bind(encoded, deck, mutation);
+  return [write, remove, insert];
+}
+
+/** Temporary v3/v4-to-canonical storage adapter; parsing semantics remain unchanged. */
+export function writeCards(
+  db: D1Database, deck: string, mutation: string, now: number,
+  cards: ImportTarget[], insertOnly = false, replaceTopics = true,
+) {
+  const canonical = cards.map(card => {
+    const legacy = card.metadata;
+    const metadata = legacy ? {
+      cardType: legacy.cardType === 'coding_task' ? 'task' as const : 'question' as const,
+      provenance: legacy.provenance,
+      ...(legacy.answerReferences === undefined ? {} : { answerReferences: legacy.answerReferences }),
+      occurrenceCount: legacy.occurrenceCount,
+    } : { cardType: 'question' as const, occurrenceCount: 0 };
+    return {
+      ...card, metadata, priority: DEFAULT_RATING, likelihood: DEFAULT_RATING,
+      creation_mode: DEFAULT_CREATION_MODE,
+      ...(replaceTopics ? { topics: legacy ? normalizeTopics([legacy.topic]) : [] } : {}),
+    } satisfies CanonicalWriteTarget;
+  });
+  return writeCanonicalCards(db, deck, mutation, now, canonical, insertOnly, false);
 }
 
 export async function applyImport(db: D1Database, user: string, input: Record<string, unknown>) {

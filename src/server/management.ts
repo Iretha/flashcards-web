@@ -7,7 +7,7 @@ import type { Deck } from './decks';
 import { check, HttpError, json } from './http';
 import { uniqueQuestions } from './import-plan';
 import type { ImportTarget } from './import-plan';
-import { validateMetadata, derivedMetadata } from '../lib/metadata';
+import { validateMetadata } from '../lib/metadata';
 import { isLanguage, validTranslation } from '../lib/translations';
 import type { Translation, Translations } from '../lib/translations';
 
@@ -263,7 +263,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
       batch = [
         db.prepare(`UPDATE decks SET revision = revision + 1, updated_at = ?, mutation = ? WHERE id = ? AND ${editAccess(4)} AND revision = ?`)
           .bind(now, mutation, deck.id, user, deck.revision),
-        ...writeCards(db, deck.id, mutation, now, [next], !cardId),
+        ...writeCards(db, deck.id, mutation, now, [next], !cardId, !current || Object.hasOwn(value as object, 'metadata')),
       ];
     }
     const parentId = deck?.id ?? id;
@@ -290,11 +290,10 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
     const status = method === 'POST' ? 201 : 200;
     const extra: Record<string, string> = method === 'POST' ? { Location: location(id) } : {};
     if (!cardsRoute) return respond(deckData(await getDeck(db, user, id), user), status, extra);
-    const saved = row as unknown as Omit<ImportTarget, 'translations' | 'metadata'> & {
-      deck_id: string; position: number; translations: string; metadata: string | null; revision: number;
-    };
-    return respond(cardData({ ...saved, translations: JSON.parse(saved.translations), metadata: derivedMetadata(saved.metadata ? JSON.parse(saved.metadata) : null) },
-      saved.revision), status, extra);
+    const revision = Number((row as { revision: number }).revision);
+    const saved = (await listCards(db, user, parentId)).find(card => card.id === id);
+    check(saved, 'Card not available.', 404);
+    return respond(cardData(saved, revision), status, extra);
   } catch (error) {
     const unique = error instanceof Error && error.message.includes('UNIQUE constraint failed');
     const status = error instanceof HttpError ? error.status : unique ? 409 : 500;

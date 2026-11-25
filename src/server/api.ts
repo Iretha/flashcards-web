@@ -1,4 +1,3 @@
-import { derivedMetadata } from '../lib/metadata';
 import { setThirdPartyAccess } from './third-party-access';
 import { deviceAuth } from './device-auth';
 import { emailAuth, googleCallback, googleStart, methods } from './supabase-auth';
@@ -8,7 +7,8 @@ import { tokens } from './tokens';
 import { collaborators } from './collaborators';
 import { authenticate, hasSessionCookie, login, logout, logoutAll } from './auth';
 import type { SessionDiagnostics } from './auth';
-import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, replacementImpact, saveDeck } from './decks';
+import { applyImport, changeCard, getDeck, inspectImport, legacyMetadataProjection, listCards, listDecks, replacementImpact, saveDeck } from './decks';
+import type { CanonicalCardMetadata } from '../lib/metadata';
 import { check, HttpError, json, object, string } from './http';
 import { act, reset, startSession, studyView } from './sessions';
 import { defaults } from '../lib/study';
@@ -71,12 +71,19 @@ async function dispatch(
       if (route === 'export') {
         const decks = await listDecks(db, user.id);
         const [cards, progress, history] = await db.batch<Record<string, unknown>>([
-          db.prepare(`SELECT c.* FROM cards c JOIN decks d ON d.id = c.deck_id WHERE d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?1)`).bind(user.id),
+          db.prepare(`SELECT c.*,
+            coalesce((SELECT json_group_array(topic_name) FROM (SELECT topic_name FROM card_topics WHERE card_id=c.id ORDER BY topic_name)), '[]') AS topics_json
+            FROM cards c JOIN decks d ON d.id = c.deck_id WHERE d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?1)`).bind(user.id),
           db.prepare('SELECT * FROM card_progress WHERE user_id = ?').bind(user.id),
           db.prepare('SELECT * FROM study_events WHERE user_id = ? ORDER BY created_at, rowid').bind(user.id),
         ]);
         return json({ version: 2, username: user.username, exportedAt: new Date().toISOString(), decks,
-          cards: cards.results.map(card => ({ ...card, metadata: derivedMetadata(card.metadata ? JSON.parse(String(card.metadata)) : null), translations: JSON.parse(String(card.translations)) as Translations })),
+          cards: cards.results.map(card => {
+            const { topics_json, priority: _priority, likelihood: _likelihood, creation_mode: _creationMode, ...legacy } = card;
+            return { ...legacy,
+              metadata: legacyMetadataProjection(legacy.metadata ? JSON.parse(String(legacy.metadata)) as CanonicalCardMetadata : null, JSON.parse(String(topics_json)) as string[]),
+              translations: JSON.parse(String(legacy.translations)) as Translations };
+          }),
           progress: progress.results, history: history.results,
         }, 200, { 'Content-Disposition': 'attachment; filename="flashcards-backup.json"' });
       }

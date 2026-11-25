@@ -11,7 +11,7 @@ beforeAll(async()=>{
  db=await runtime.getD1Database('DB') as unknown as D1Database;
  for(const file of readdirSync('migrations').filter(f=>f.endsWith('.sql')).sort()){
   const sql=readFileSync('migrations/'+file,'utf8');
-  const statements=file==='0020_native_search.sql'?splitSql(sql):file==='0002_progress.sql'?[sql]:file==='0001_initial.sql'?sql.trim().split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/):(file==='0015_card_search_fts.sql'||file==='0016_fts_consistency_recovery.sql')?sql.trim().split(/;\s*(?=CREATE)/):sql.split(';').filter(s=>s.trim());
+  const statements=['0020_native_search.sql','0021_card_classification.sql'].includes(file)?splitSql(sql):file==='0002_progress.sql'?[sql]:file==='0001_initial.sql'?sql.trim().split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/):(file==='0015_card_search_fts.sql'||file==='0016_fts_consistency_recovery.sql')?sql.trim().split(/;\s*(?=CREATE)/):sql.split(';').filter(s=>s.trim());
   await db.batch(statements.map(s=>db.prepare(s)));
  }
 

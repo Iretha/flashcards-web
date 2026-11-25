@@ -1,6 +1,8 @@
 # Database migration plan
 
-No migration is authored/executed by this documentation task.
+Migration 0021 and its canonical storage writes are implemented locally and await
+independent review. This is not deployment authorization; the coordinated-release gate
+remains in force.
 
 ## Approved preparation contract T-02
 
@@ -32,8 +34,10 @@ then remove metadata.topic in same forward transition: no dual canonical storage
 type -> question for otherwise valid metadata. Preserve all source properties,
 references, translations, details and identifiers. Reject invalid types/task specs;
 do not invent specifications, source records or new evidence fields.
-6. Forward-replace card-deletion/deck-unshare invalidation triggers to support live
-exclusion instead of forced restart. Keep historical events; keep existing FKs.
+6. Remove card-deletion/deck-unshare whole-session invalidation triggers. Fully Live
+reconciliation revalidates current access/source revisions and uses the existing session
+CAS only when session state changes; do not add a trigger-only version signal. Keep
+historical events and existing FKs.
 7. Membership INSERT/DELETE/UPDATE triggers increment existing card_search_state.epoch.
 No FTS text writes; no second epoch. Multiple increments per transaction harmless.
 8. Keep valid active/exhausted session data; lazy versioned adapter initializes new
@@ -59,9 +63,8 @@ repair procedure remains unchanged. No ordinary deployment reconstruction/verifi
 
 ## Deployment and failure handling
 
-Old code depends on scalar topic, coding_task and required provenance: incompatible
-cutover. Under separately authorized production plan pause traffic/writers, capture
-verified restorable recovery point, rehearse migration and mapping coverage, then use
+Later API/import/session consumers must become schema-compatible before cutover. Under a
+separately authorized release plan, rehearse migration and mapping coverage, then use
 unchanged npm run deploy (build -> migrations -> wrangler deploy --keep-vars).
 Preserve secrets/bindings/auth/arguments. Build/migration failure stops publish.
 

@@ -1,11 +1,11 @@
-import { derivedMetadata } from '../lib/metadata';
-import type { CardMetadata } from '../lib/metadata';
 import { advance, defaults, startStudy, normalizeStudyState } from '../lib/study';
 import type { Settings, StudyAction } from '../lib/study';
 import type { User } from './auth';
 import { check, object, string } from './http';
 import { isLanguage, languageUnion, reconcileLanguage, completeTranslation } from '../lib/translations';
 import type { Language, Translations } from '../lib/translations';
+import { legacyMetadataProjection } from './decks';
+import type { CanonicalCardMetadata } from '../lib/metadata';
 
 interface SessionRow {
   id: string; user_id: string; version: number; status: 'ACTIVE' | 'COMPLETE' | 'INVALIDATED';
@@ -29,10 +29,12 @@ const read = (db: D1Database, user: string) =>
   db.prepare('SELECT * FROM study_sessions WHERE user_id = ?').bind(user).first<SessionRow>();
 
 async function studyCard(db: D1Database, user: string, id: string) {
-  const card = await db.prepare(`SELECT c.deck_id, c.id, c.translations, c.metadata, c.primary_language, d.primaryLanguage, d.supportedLanguages, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
+  const card = await db.prepare(`SELECT c.deck_id, c.id, c.translations, c.metadata, c.primary_language,
+    coalesce((SELECT json_group_array(topic_name) FROM (SELECT topic_name FROM card_topics WHERE card_id=c.id ORDER BY topic_name)), '[]') AS topics,
+    d.primaryLanguage, d.supportedLanguages, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
     WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?2))`).bind(id, user)
-    .first<{ deck_id: string; id: string; title: string; primary_language: string; primaryLanguage: string | null; supportedLanguages: string; metadata: string | null; translations: string }>();
-  const decoded = card && { ...card, primaryLanguage: card.primaryLanguage ?? card.primary_language, supportedLanguages: JSON.parse(card.supportedLanguages) as string[], metadata: derivedMetadata(card.metadata ? JSON.parse(card.metadata) as CardMetadata : null), translations: JSON.parse(card.translations) as Translations };
+    .first<{ deck_id: string; id: string; title: string; primary_language: string; primaryLanguage: string | null; supportedLanguages: string; metadata: string | null; topics: string; translations: string }>();
+  const decoded = card && { ...card, primaryLanguage: card.primaryLanguage ?? card.primary_language, supportedLanguages: JSON.parse(card.supportedLanguages) as string[], metadata: legacyMetadataProjection(card.metadata ? JSON.parse(card.metadata) as CanonicalCardMetadata : null, JSON.parse(card.topics) as string[]), translations: JSON.parse(card.translations) as Translations };
   return decoded && completeTranslation(decoded.translations[decoded.primaryLanguage], decoded.metadata?.cardType) ? decoded : null;
 }
 

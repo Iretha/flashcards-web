@@ -32,8 +32,9 @@ Do not describe v5 or Fully Live as already available.
 
 During the authorized IMP-002 corrective cycle, the Product Owner amended DEC-002/T-02
 to add final NFC after locale-independent uppercase. The decision register and technical
-specification contain the normative sequence and U+0390 traceability. This narrow
-amendment does not reopen IMP-001, accept IMP-002 or authorize IMP-003/release work.
+specification contain the normative sequence and U+0390 traceability. IMP-002 is formally
+owner-accepted at `28d84df986f3208e16f1c5c9bda987f404664ac1`; that acceptance does not authorize
+release or later roadmap work.
 
 ## Scope
 

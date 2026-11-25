@@ -6,7 +6,7 @@ import { derivedMetadata } from '../src/lib/metadata';
 
 function statements(file: string) {
  const sql = readFileSync('migrations/'+file,'utf8');
- return file==='0020_native_search.sql'?splitSql(sql):file==='0002_progress.sql' ? [sql] : file==='0001_initial.sql' ? sql.trim().split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/) : ['0015_card_search_fts.sql','0016_fts_consistency_recovery.sql'].includes(file) ? sql.trim().split(/;\s*(?=CREATE)/) : sql.split(';').filter(s=>s.trim());
+ return ['0020_native_search.sql','0021_card_classification.sql'].includes(file)?splitSql(sql):file==='0002_progress.sql' ? [sql] : file==='0001_initial.sql' ? sql.trim().split(/;\s*(?=CREATE (?:TABLE|INDEX|TRIGGER))/) : ['0015_card_search_fts.sql','0016_fts_consistency_recovery.sql'].includes(file) ? sql.trim().split(/;\s*(?=CREATE)/) : sql.split(';').filter(s=>s.trim());
 }
 async function database() {
  const runtime = new Miniflare(convertV4MiniflareOptions({modules:true,script:'export default {fetch(){return new Response("ok")}}',d1Databases:{DB:'migration'}}));
