@@ -1,6 +1,6 @@
 # Study session lifecycle
 
-Approved planned state machine for DEC-012–019. T-03-T-06/T-09/T-16 are approved. IMP-008 is accepted with outstanding manual two-device verification retained for final acceptance; IMP-009 navigation/Apply/Restart is implemented locally. Existing snapshot
+Approved planned state machine for DEC-012–019. T-03-T-06/T-09/T-16 are approved. IMP-008 is accepted with outstanding manual two-device verification retained for final acceptance; IMP-009 navigation/Apply/Restart is accepted. Existing snapshot
 lifecycle changes explicitly; reuse D1 JSON/versioning, no push or timer redesign.
 
 ## State
@@ -160,7 +160,7 @@ start validation (including access, deck/card limits), creates a new ID, retains
 selected decks/applied settings/Repeat and persistent statistics/events, and initializes
 ordinary initial-pass navigation/answer/timer state. Failure leaves the completed
 session intact. COMPLETE accepts history navigation only; ordinary settings/actions
-cannot reopen it. No new UI controls are introduced before IMP-010.
+cannot reopen it. IMP-010 exposes the applied settings and Restart in Study.
 
 ## Timer boundary
 

@@ -52,6 +52,12 @@ export async function listCards(db: D1Database, user: string, deck: string) {
   return (await cardsForDeck(db, user, deck).all<CardRow>()).results.map(decodeCard);
 }
 
+export async function listBrowserCards(db: D1Database, user: string, deck: string) {
+  return (await listCards(db, user, deck)).map(card => ({
+    ...card, classificationMetadata: card.canonical!.metadata, topics: card.canonical!.topics,
+  }));
+}
+
 export function decodeDeck<T extends Deck>(deck: T): T {
   return { ...deck, supportedLanguages: typeof deck.supportedLanguages === 'string' ? JSON.parse(deck.supportedLanguages) : deck.supportedLanguages };
 }
@@ -205,21 +211,22 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
     check(Object.keys(translations).every(code => deck.supportedLanguages.includes(code)), 'Unsupported deck language.');
     check(primary && translations[primary], 'Primary language content is required.');
     check(primary, 'Add at least one translation.');
+    const canonicalWrite = thirdParty || Object.hasOwn(input, 'topics');
     let cardMetadata = current?.metadata ?? null;
-    if (!thirdParty && input.metadata !== undefined) {
+    if (!canonicalWrite && input.metadata !== undefined) {
       try { cardMetadata = validateMetadata(input.metadata); }
       catch (error) { throw new HttpError(400, `Card ${current?.import_key ?? id}: ${error instanceof Error ? error.message : 'invalid metadata'}`); }
     }
-    if (!thirdParty && cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
+    if (!canonicalWrite && cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
     const next = { metadata: cardMetadata, canonical: current?.canonical, id, primary_language: primary, import_key: current?.import_key ?? null, translations,
       interview_priority: current?.interview_priority ?? null, difficulty: current?.difficulty ?? null };
-    if (thirdParty) {
+    if (canonicalWrite) {
       const { cardValues } = await import('./management');
       const patch = Object.fromEntries(['metadata', 'topics', 'priority', 'likelihood', 'creationMode'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
       const validated = cardValues({ ...patch, translations, primary_language: primary }, id, current);
       next.canonical = validated.canonical;
     }
-    validateCardLanguages({ ...next, metadata: thirdParty ? next.canonical!.metadata : next.metadata }, deck);
+    validateCardLanguages({ ...next, metadata: canonicalWrite ? next.canonical!.metadata : next.metadata }, deck);
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
@@ -228,7 +235,7 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       SELECT ?, 'create_card', ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
       .bind(user, idempotency.key, idempotency.payload, id, now, deckId, mutation)] : [];
     const replaceTopics = !current || input.metadata !== undefined;
-    const [result] = await db.batch([header, ...(thirdParty ? writeCanonicalCards(db, deckId, mutation, now, [{ ...next, ...next.canonical!, topics: !current || Object.hasOwn(input, 'topics') ? next.canonical!.topics : undefined }]) : writeCards(db, deckId, mutation, now, [next], false, replaceTopics)), ...receipt]);
+    const [result] = await db.batch([header, ...(canonicalWrite ? writeCanonicalCards(db, deckId, mutation, now, [{ ...next, ...next.canonical!, topics: !current || Object.hasOwn(input, 'topics') ? next.canonical!.topics : undefined }]) : writeCards(db, deckId, mutation, now, [next], false, replaceTopics)), ...receipt]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
     return { id, revision: deck.revision + 1, ...(thirdParty ? { classification: { metadata: next.canonical!.metadata, topics: next.canonical!.topics, priority: next.canonical!.priority, likelihood: next.canonical!.likelihood, creationMode: next.canonical!.creation_mode } } : {}), ...(method === 'answer' ? { answer: translations[String(input.language ?? current!.primary_language)].answer } : {}) };
   }

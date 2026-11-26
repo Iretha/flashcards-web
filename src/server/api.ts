@@ -7,7 +7,7 @@ import { tokens } from './tokens';
 import { collaborators } from './collaborators';
 import { authenticate, hasSessionCookie, login, logout, logoutAll } from './auth';
 import type { SessionDiagnostics } from './auth';
-import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, replacementImpact, saveDeck } from './decks';
+import { applyImport, changeCard, getDeck, inspectImport, listBrowserCards, listDecks, replacementImpact, saveDeck } from './decks';
 import type { CanonicalCardMetadata } from '../lib/metadata';
 import { check, HttpError, json, object, string } from './http';
 import { act, configure, restartSession, reset, startSession, studyView } from './sessions';
@@ -59,7 +59,7 @@ async function dispatch(
       if (route === 'cards') {
         const id = string(url.searchParams.get('deck'), 'deck ID', 80);
         await getDeck(db, user.id, id);
-        return json(await listCards(db, user.id, id));
+        return json(await listBrowserCards(db, user.id, id));
       }
       if (route === 'replacement-report') {
         const owned = (await listDecks(db, user.id)).filter(deck => deck.owned);

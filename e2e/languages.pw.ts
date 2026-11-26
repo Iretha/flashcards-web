@@ -35,7 +35,7 @@ test('mixed decks preserve global preference, fall back for missing card transla
   await expect(global.getByRole('button')).toHaveCount(3);
   await expect(global.getByRole('button', { name: 'DE', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await expect(stage.locator('.study-question')).toContainText('English original?');
-  await expect(stage.getByRole('status')).toContainText('DE unavailable');
+  await expect(stage.getByRole('status').filter({ hasText: 'DE unavailable' })).toContainText('DE unavailable');
   await expect(stage.locator('.study-question')).toHaveAttribute('lang', 'en');
   const before = await (await page.request.get('/api/cards?deck=' + a)).json();
   await global.getByRole('button', { name: 'BG', exact: true }).click();
@@ -50,7 +50,7 @@ test('mixed decks preserve global preference, fall back for missing card transla
   await next.click();
   await expect(stage.locator('.study-question')).toContainText('Bulgarian original two?');
   await expect(stage.locator('.study-question')).toHaveAttribute('lang', 'bg');
-  await expect(stage.getByRole('status')).toContainText('DE unavailable');
+  await expect(stage.getByRole('status').filter({ hasText: 'DE unavailable' })).toContainText('DE unavailable');
   await expect(global.getByRole('button', { name: 'DE', exact: true })).toHaveAttribute('aria-pressed', 'true');
   await stage.locator('.study-navigation').getByRole('button', { name: 'Prev', exact: true }).click();
   await expect(stage.locator('.study-question')).toContainText('Deutsche Frage?');

@@ -1,3 +1,5 @@
+import { derivedMetadata } from '../lib/metadata';
+import { legacyMetadataProjection } from './decks';
 import { projectStudy, projectionOptions } from '../lib/study-projection';
 import type { ProjectionCard } from '../lib/study-projection';
 import { matchesClassification, validateClassificationFilters, validateClassificationSort } from '../lib/classification';
@@ -7,7 +9,6 @@ import type { User } from './auth';
 import { check, object, string } from './http';
 import { isLanguage, languageUnion, reconcileLanguage, completeTranslation } from '../lib/translations';
 import type { Language, Translations } from '../lib/translations';
-import { legacyMetadataProjection } from './decks';
 import type { CanonicalCardMetadata } from '../lib/metadata';
 
 interface SessionRow {
@@ -101,15 +102,23 @@ async function studyCard(db: D1Database, user: string, id: string) {
     d.primaryLanguage, d.supportedLanguages, d.title FROM cards c JOIN decks d ON d.id = c.deck_id
     WHERE c.id = ? AND (d.owner_id = ? OR d.visibility = 'SHARED' OR EXISTS (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id = d.id AND dc.user_id = ?2))`).bind(id, user)
     .first<{ deck_id: string; id: string; title: string; primary_language: string; primaryLanguage: string | null; supportedLanguages: string; metadata: string | null; topics: string; translations: string }>();
-  const decoded = card && { ...card, primaryLanguage: card.primaryLanguage ?? card.primary_language, supportedLanguages: JSON.parse(card.supportedLanguages) as string[], metadata: legacyMetadataProjection(card.metadata ? JSON.parse(card.metadata) as CanonicalCardMetadata : null, JSON.parse(card.topics) as string[]), translations: JSON.parse(card.translations) as Translations };
-  return decoded && completeTranslation(decoded.translations[decoded.primaryLanguage], decoded.metadata?.cardType) ? decoded : null;
+  if (!card) return null;
+  const topics = JSON.parse(card.topics) as string[];
+  const classificationMetadata = derivedMetadata(card.metadata ? JSON.parse(card.metadata) as CanonicalCardMetadata : { cardType: 'question', occurrenceCount: 0 })!;
+  const decoded = {
+    ...card, primaryLanguage: card.primaryLanguage ?? card.primary_language,
+    supportedLanguages: JSON.parse(card.supportedLanguages) as string[],
+    metadata: legacyMetadataProjection(classificationMetadata, topics), classificationMetadata,
+    topics, translations: JSON.parse(card.translations) as Translations,
+  };
+  return completeTranslation(decoded.translations[decoded.primaryLanguage], classificationMetadata.cardType) ? decoded : null;
 }
 
 export async function studyView(db: D1Database, user: string) {
   const reconciled = await reconcileRead(db, user);
   if (!reconciled) return null;
   const { row, state, cards, token } = reconciled;
-  const projection = { applied: state.classification, availableOptions: projectionOptions(cards),
+  const projection = { scopeTotal: cards.length, applied: state.classification, availableOptions: projectionOptions(cards),
     eligibleTotal: cards.filter(card => !state.classification || matchesClassification(state.classification.filters, card)).length,
     remainingInCycle: (state.cycles?.pending.length ?? 0) + (state.cycles?.live?.frontier ? 1 : 0) };
   const deckIds: string[] = JSON.parse(row.selected_deck_ids);

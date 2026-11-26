@@ -1,6 +1,6 @@
 # API and MCP contracts
 
-Management and JSON Export v3 accepted (IMP-006); MCP accepted (IMP-007); Study projection accepted (IMP-008, manual two-device verification outstanding); Apply/Restart implemented locally (IMP-009). Owner-approved contracts T-07/T-11-T-16. No broader access,
+Management and JSON Export v3 accepted (IMP-006); MCP accepted (IMP-007); Study projection accepted (IMP-008, manual two-device verification outstanding); Apply/Restart accepted (IMP-009). Owner-approved contracts T-07/T-11-T-16. No broader access,
 Study MCP tools or global classification search. Preserve existing credentials,
 origin/CSRF checks, grants, ownership/collaboration and atomic mutation guards.
 
@@ -112,7 +112,7 @@ same decks/applied settings/Repeat, resets local navigation/passed state only. N
 start checks once; fail leaves prior COMPLETE intact. Return authoritative new view.
 No mutation reopens prior COMPLETE. Restart route/action shares current start guards;
 POST /api/study/restart accepts only {id,version}; no remote administration.
-Browser UI API wrappers expose configureStudy and restartStudy; controls remain IMP-010.
+Browser UI API wrappers expose configureStudy and restartStudy; the Study panel uses them in IMP-010.
 ACTIVE reconcile at read/resume/action/Apply, no push/polling; COMPLETE reads only
 revalidate historical access. CAS persists active projection, bounded retry on source
 revision drift, never silently retry stale user input. Current access/source revisions

@@ -189,8 +189,8 @@ is carried forward to final acceptance; no deployment.
 
 ## IMP-009 — Lifecycle, navigation and atomic Apply API
 
-Status: IMPLEMENTED LOCALLY. Shared engine/projection, browser Apply/Restart, terminal
-history navigation and guarded writes. Manual acceptance remains outstanding. No deployment or IMP-010 work.
+Status: ACCEPTED. Shared engine/projection, browser Apply/Restart, terminal
+history navigation and guarded writes. Final cross-device manual verification remains in IMP-011.
 
 - Objective/scope: circular Previous, Next/frontier boundary, terminal completion/non-destructive Restart,
   atomic configure, all five filter/sort predicates and stale-state handling.

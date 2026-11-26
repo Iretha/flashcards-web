@@ -1,4 +1,4 @@
-import type { Card, inspectImport, listDecks } from '../server/decks';
+import type { listBrowserCards, inspectImport, listDecks } from '../server/decks';
 import type { studyView } from '../server/sessions';
 import type { Settings } from '../lib/study';
 
@@ -6,7 +6,7 @@ export type Deck = Awaited<ReturnType<typeof listDecks>>[number];
 export type Session = NonNullable<Awaited<ReturnType<typeof studyView>>>;
 export type Preview = Awaited<ReturnType<typeof inspectImport>>;
 export type Home = { username: string; settings: Settings; decks: Deck[]; session: Session | null };
-export type { Card };
+export type Card = Awaited<ReturnType<typeof listBrowserCards>>[number];
 
 export class ApiError extends Error {
   constructor(readonly status: number, message: string) { super(message); }

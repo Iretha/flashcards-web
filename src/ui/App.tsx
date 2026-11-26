@@ -1,3 +1,5 @@
+import StudyClassification from './StudyClassification';
+import { classificationLabels } from '../lib/classification';
 import AuthMethods from './AuthMethods';
 import { ApiTokens } from './ApiTokens';
 import { effectiveInstructions } from '../lib/chatgpt';
@@ -5,7 +7,7 @@ import AskChatGpt from './AskChatGpt';
 import { useEffect, useRef, useState } from 'react';
 import type { CSSProperties, SubmitEvent } from 'react';
 import MarkdownContent from './MarkdownContent';
-import { api, ApiError, signIn } from './api';
+import { api, ApiError, signIn, configureStudy, restartStudy } from './api';
 import type { Home, Session } from './api';
 import { DeckDetail, DeckEditor } from './Decks';
 import Import from './Import';
@@ -182,7 +184,7 @@ export default function App() {
   }
 
   function studyAction(action: StudyAction, values?: object) {
-    if (session?.status !== 'ACTIVE' || inFlight.current) return;
+    if (!session || inFlight.current || (session.status !== 'ACTIVE' && !(session.status === 'COMPLETE' && ['previous', 'next'].includes(action)))) return;
     void run(async () => { await send(action, session, values); });
   }
 
@@ -210,7 +212,9 @@ export default function App() {
 
   useEffect(() => {
     function keyboard(event: KeyboardEvent) {
+      if (event.defaultPrevented) return;
       const element = event.target instanceof HTMLElement ? event.target : null;
+      if (element?.closest('.study-classification') && !['Escape', 'Back', 'BrowserBack', 'GoBack'].includes(event.key)) return;
       if (element?.matches('input:not([type=checkbox]):not([type=file]), textarea, select, [contenteditable]')) return;
       if (['Escape', 'Back', 'BrowserBack', 'GoBack'].includes(event.key) && home && screen !== 'library') {
         event.preventDefault();
@@ -228,10 +232,10 @@ export default function App() {
           return;
         }
       }
-      if (screen === 'study' && session?.status === 'ACTIVE') {
+      if (screen === 'study' && session && session.status !== 'INVALIDATED') {
         let action: StudyAction | undefined;
         const interactive = element?.closest('button, input, a, summary, pre.code-block');
-        if (!interactive && (event.key === 'ArrowDown' || event.key === 'ArrowUp')) {
+        if (!interactive && (event.key === 'ArrowDown' || (event.key === 'ArrowUp' && !complete))) {
           event.preventDefault();
           if (!event.repeat && !busy) {
             if (event.key === 'ArrowUp') toggleStudyAnswer();
@@ -242,10 +246,10 @@ export default function App() {
           }
           return;
         }
-        if ((event.key === ' ' || event.key === 'Enter') && !interactive) action = 'show';
+        if ((event.key === ' ' || event.key === 'Enter') && !interactive && !complete) action = 'show';
         if (event.key === 'ArrowRight' && !interactive) action = 'next';
         if (event.key === 'ArrowLeft' && !interactive) action = 'previous';
-        if (event.key.toLowerCase() === 'r') action = 'repeat';
+        if (session.status === 'ACTIVE' && event.key.toLowerCase() === 'r') action = 'repeat';
         if (action) {
           event.preventDefault();
           if (!event.repeat) { if (action === 'show') toggleStudyAnswer(); else studyAction(action); }
@@ -286,10 +290,23 @@ export default function App() {
   const total = selectedDecks.reduce((sum, item) => sum + item.total, 0);
   const translations = session?.card?.translations ?? {};
   const availableLanguages = primaryLanguageFirst([...new Set(selectedDecks.flatMap(deck => deck.supportedLanguages))], selectedDecks[0]?.primaryLanguage);
-  const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language, session?.card?.primaryLanguage ?? 'en', session?.card?.metadata?.cardType);
+  const selectedLanguage = selectTranslation(translations, session?.language ?? settings.language, session?.card?.primaryLanguage ?? 'en', session?.card?.classificationMetadata.cardType);
   const answerVisible = Boolean(session?.revealed);
   const sizeLabels = answerSizeLabels[(session?.language ?? settings.language) === 'bg' ? 'bg' : 'en'];
-  const activeCard = session?.status === 'ACTIVE' && session.card;
+  const activeCard = session?.card;
+  const complete = session?.status === 'COMPLETE';
+  const studyClassification = session?.applied && <StudyClassification key={session.id}
+    session={{ ...session, applied: session.applied }} busy={busy}
+    apply={(draft, applied) => void run(async () => {
+      setSession(await configureStudy({ id: session.id, version: session.version, ...draft }));
+      setNow(Date.now());
+      applied();
+    })}
+    restart={() => void run(async () => {
+      setSession(await restartStudy(session));
+      setNow(Date.now());
+      stage.current?.focus();
+    })} />;
   const availableKey = availableLanguages.join(',');
   useEffect(() => {
     setSettings(current => ({ ...current, language: reconcileLanguage(current.language, availableLanguages) }));
@@ -415,7 +432,7 @@ export default function App() {
           <label className="check"><input type="checkbox" checked={settings.timer} onChange={event => setSettings({ ...settings, timer: event.target.checked })} />Enable timer</label>
           <label>Seconds per question<input type="number" min={1} max={3600} value={settings.seconds || ''} disabled={!settings.timer} onChange={event => setSettings({ ...settings, seconds: Number(event.target.value) })} /></label>
           <div className="session-start-actions">
-          {session?.status === 'ACTIVE' && <button className="primary" disabled={busy} onClick={resume}>Resume session</button>}
+          {session && session.status !== 'INVALIDATED' && <button className="primary" disabled={busy} onClick={resume}>{session.status === 'COMPLETE' ? 'Review completed session' : 'Resume session'}</button>}
           <button className="primary" disabled={busy || !total} onClick={() => {
             if (session?.status === 'ACTIVE' && !window.confirm('Replace the current study session?')) return;
             void run(async () => {
@@ -433,7 +450,8 @@ export default function App() {
       </div>}
       {home && screen === 'study' && <section className={activeCard ? 'panel study stack study-active' : 'panel study stack'} ref={stage} tabIndex={-1}
         style={{ '--answer-scale': answerSize / 100 } as CSSProperties}>
-        {activeCard ? <>
+        {complete && <h1>Session complete</h1>}
+        {activeCard && session ? <>
           <div className="between">
             <span>{session.remaining} remaining {session.historical && '· History'}</span>
             <div className="study-toolbar" role="group" aria-label="Study controls">
@@ -453,7 +471,7 @@ export default function App() {
           </div>
               <span className="toolbar-dot" aria-hidden="true">·</span>
               <div className="row language-controls" role="group" aria-label="Study language">
-                {primaryLanguageFirst(session.availableLanguages, session.card?.primaryLanguage).map(language => <button key={language} disabled={busy} aria-pressed={session.language === language}
+                {primaryLanguageFirst(session.availableLanguages, session.card?.primaryLanguage).map(language => <button key={language} disabled={busy || complete} aria-pressed={session.language === language}
                   onClick={() => studyAction('language', { language })}>{language.toUpperCase()}<span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">{language.toUpperCase()}</span></button>)}
               </div>
               <span className="toolbar-dot" aria-hidden="true">·</span>
@@ -476,6 +494,7 @@ export default function App() {
               <button disabled={busy} aria-label="Pause / Exit" onClick={exitStudy}><svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true"><path d="M8 5v14M16 5v14" /></svg><span className="study-sidebar-tooltip" role="tooltip" aria-hidden="true">Pause / Exit</span></button>
             </div>
           </div>
+          {studyClassification}
           {error && <button disabled={busy} onClick={() => void run(async () => {
             setSession(await api<Session>('study'));
             setNow(Date.now());
@@ -483,16 +502,16 @@ export default function App() {
           <div className="study-deck-row">
             <p className="muted study-note">{activeCard.title}</p>
             <label className="answer-toggle">
-              <input type="checkbox" role="switch" checked={session.repeat} disabled={busy} onChange={() => studyAction('repeat')} />
+              <input type="checkbox" role="switch" checked={session.repeat} disabled={busy || complete} onChange={() => studyAction('repeat')} />
               <span className="answer-toggle-track" aria-hidden="true" />
               <span>Repeat</span>
             </label>
           </div>
           {!selectedLanguage.translation && <p role="alert">Primary language content is missing or incomplete. Edit this card before studying.</p>}
           <div className="study-question-row">
-          {activeCard.metadata?.provenance.sources[0] && <a className="question-source-link"
-            href={activeCard.metadata.provenance.sources[0].sourceUrl} target="_blank" rel="noopener noreferrer"
-            aria-label="Open question source in a new tab" title={activeCard.metadata.provenance.sources[0].sourceName + ' (opens in a new tab)'}>
+          {activeCard.classificationMetadata?.provenance?.sources[0] && <a className="question-source-link"
+            href={activeCard.classificationMetadata.provenance.sources[0].sourceUrl} target="_blank" rel="noopener noreferrer"
+            aria-label="Open question source in a new tab" title={activeCard.classificationMetadata.provenance.sources[0].sourceName + ' (opens in a new tab)'}>
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
               <path d="M10 13a5 5 0 0 0 7 .1l3-3a5 5 0 0 0-7.1-7.1l-1.7 1.7" />
               <path d="M14 11a5 5 0 0 0-7-.1l-3 3a5 5 0 0 0 7.1 7.1l1.7-1.7" />
@@ -500,27 +519,29 @@ export default function App() {
           </a>}
           <div className="study-question markdown" role="heading" aria-level={1} lang={selectedLanguage.language}>
             <MarkdownContent>{selectedLanguage.translation?.question}</MarkdownContent>
-            {activeCard.metadata && <span className="question-occurrences" title="Independent interview occurrences">({activeCard.metadata.occurrenceCount})</span>}
+            {activeCard.classificationMetadata.provenance && <span className="question-occurrences" title="Independent interview occurrences">({activeCard.classificationMetadata.occurrenceCount})</span>}
           </div>
           </div>
           {selectedLanguage.fallback && <p className="muted study-note" role="status">{session.language.toUpperCase()} unavailable — showing {selectedLanguage.language.toUpperCase()}</p>}
           <details className="answer-panel" open={answerVisible}>
-            <summary aria-disabled={busy} onClick={event => { event.preventDefault(); if (!busy) toggleStudyAnswer(); }}>Answer <AskChatGpt question={selectedLanguage.translation?.question ?? ''} language={session.language} instructions={effectiveInstructions(home.decks.find(deck => deck.id === activeCard.deck_id) ?? {}, session.language)} /></summary>
+            <summary aria-disabled={busy || complete} onClick={event => { event.preventDefault(); if (!busy && !complete) toggleStudyAnswer(); }}>Answer <AskChatGpt question={selectedLanguage.translation?.question ?? ''} language={session.language} instructions={effectiveInstructions(home.decks.find(deck => deck.id === activeCard.deck_id) ?? {}, session.language)} /></summary>
             <div id="study-answer" className="answer markdown" lang={selectedLanguage.language}>{selectedLanguage.translation && !selectedLanguage.translation.answer.trim() ? <span>—</span> : <MarkdownContent>{selectedLanguage.translation?.answer}</MarkdownContent>}
-              {activeCard.metadata?.answerReferences?.length ? <details><summary>Answer references</summary>{activeCard.metadata.answerReferences.map((reference, index) => <p key={index}><a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a></p>)}</details> : null}
+              {activeCard.classificationMetadata?.answerReferences?.length ? <details><summary>Answer references</summary>{activeCard.classificationMetadata.answerReferences.map((reference, index) => <p key={index}><a href={reference.url} target="_blank" rel="noopener noreferrer">{reference.title}</a></p>)}</details> : null}
             </div>
           </details>
-          {activeCard.metadata ? <CardSources key={activeCard.id} metadata={activeCard.metadata}>
-            {selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
-          </CardSources> : selectedLanguage.translation?.questionDetails && <div className="markdown question-details"><MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
+          <CardSources key={activeCard.id} metadata={activeCard.classificationMetadata} topics={activeCard.topics} language={session.language}>
+            {selectedLanguage.translation?.questionDetails && <div className="markdown question-details">{activeCard.classificationMetadata.cardType === 'task' && <h3>{classificationLabels[session.language === 'bg' ? 'bg' : 'en'].taskSpecification}</h3>}<MarkdownContent>{selectedLanguage.translation.questionDetails}</MarkdownContent></div>}
+          </CardSources>
           <div className="study-navigation actions">
             <button disabled={busy || !session.hasPrevious} onClick={() => studyAction('previous')}><svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M19 12H5m7-7-7 7 7 7" /></svg>Prev</button>
             <div className="study-navigation-next">
               <button disabled={busy} onClick={() => studyAction('next')}>Next<svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true"><path d="M5 12h14m-7-7 7 7-7 7" /></svg></button>
             </div>
           </div>
+          {complete && <button onClick={exitStudy}>Back to library</button>}
         </> : <>
-          <h1>{session?.status === 'COMPLETE' ? 'Session complete' : 'Session unavailable'}</h1>
+          {!complete && <h1>Session unavailable</h1>}
+          {studyClassification}
           <button onClick={exitStudy}>Back to library</button>
         </>}
       </section>}
