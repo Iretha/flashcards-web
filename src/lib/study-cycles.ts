@@ -37,33 +37,36 @@ export function toggleRepeat(original: CycleState): CycleState {
   return state;
 }
 
-export function previousCycleCard(original: CycleState): CycleState {
+function browse(original: CycleState, direction: -1 | 1, wrap: boolean): CycleState {
   const state = structuredClone(original);
-  let cursor = state.cursor - 1;
-  while (cursor >= 0 && state.live && !state.live.accessible.includes(state.history[cursor])) cursor--;
-  if (cursor >= 0) state.cursor = cursor;
+  const accessible = state.live && new Set(state.live.accessible);
+  for (let step = 1; step <= state.history.length; step++) {
+    const index = state.cursor + direction * step;
+    if (!wrap && (index < 0 || index >= state.history.length)) break;
+    const cursor = ((index % state.history.length) + state.history.length) % state.history.length;
+    if (!accessible || accessible.has(state.history[cursor])) { state.cursor = cursor; break; }
+  }
   return state;
 }
 
+export function previousCycleCard(original: CycleState): CycleState { return browse(original, -1, true); }
+
 export function nextCycleCard(original: CycleState): CycleState {
   const state = structuredClone(original);
-  if (state.complete) return state;
-  if (state.cursor < state.history.length - 1) {
-    let cursor = state.cursor + 1;
-    while (cursor < state.history.length && state.live && !state.live.accessible.includes(state.history[cursor])) cursor++;
-    if (cursor < state.history.length) state.cursor = cursor;
-    return state;
-  }
+  if (state.complete) return browse(state, 1, true);
+  if (state.cursor < state.history.length - 1) return browse(state, 1, false);
   if (state.live && !state.live.frontier) return state;
   // The first pass is unconditional. Later pending entries must still be marked.
   const live = state.live;
   if (live?.frontier) live.passed = [...new Set([...live.passed, live.frontier])];
   if (state.cycle > 0) state.pending = state.pending.filter(id => state.repeat.includes(id) || live?.admittedNew.includes(id));
   if (!state.pending.length) {
-    state.cycle++;
     const marked = new Set(state.repeat);
     state.pending = (live ? live.eligible : state.cards).filter(id => marked.has(id));
-    if (live) { live.passed = []; live.admittedNew = []; live.members = [...state.pending]; }
+    if (state.pending.length) {
+      state.cycle++;
+      if (live) { live.passed = []; live.admittedNew = []; live.members = [...state.pending]; }
+    }
   }
   const next = state.pending.shift();
   if (live) { live.frontier = next ?? null; live.completionReason = next ? null : 'COMPLETE'; }

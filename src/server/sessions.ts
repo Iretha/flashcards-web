@@ -1,8 +1,8 @@
 import { projectStudy, projectionOptions } from '../lib/study-projection';
 import type { ProjectionCard } from '../lib/study-projection';
-import { matchesClassification } from '../lib/classification';
+import { matchesClassification, validateClassificationFilters, validateClassificationSort } from '../lib/classification';
 import { advance, defaults, startStudy, normalizeStudyState } from '../lib/study';
-import type { Settings, StudyAction } from '../lib/study';
+import type { Settings, StudyAction, StudyState } from '../lib/study';
 import type { User } from './auth';
 import { check, object, string } from './http';
 import { isLanguage, languageUnion, reconcileLanguage, completeTranslation } from '../lib/translations';
@@ -73,24 +73,24 @@ async function reconcileRead(db: D1Database, user: string) {
     if (!row) return null;
     const scope = await liveScope(db, row);
     const original = normalizeStudyState(JSON.parse(row.session_state));
-    const state = row.status === 'ACTIVE' ? projectStudy(original, scope.cards, sessionSettings(row), Date.now()) : original;
+    const state = row.status !== 'INVALIDATED' ? projectStudy(original, scope.cards, sessionSettings(row), Date.now()) : original;
     const encoded = JSON.stringify(state);
-    if (encoded === row.session_state) {
+    if (encoded === row.session_state && !(row.status === 'ACTIVE' && state.cycles?.complete)) {
       const token = await sessionSourceToken(db, row);
       if (token === scope.token) return { row, state, cards: scope.cards, token: scope.token };
       continue;
     }
     const mutation = crypto.randomUUID();
     const now = Date.now();
-    const batch = [db.prepare(`UPDATE study_sessions SET session_state=?, current_card_id=?,
+    const batch = [db.prepare(`UPDATE study_sessions SET session_state=?, current_card_id=?, status=?,
       version=version+1, mutation=?, updated_at=? WHERE user_id=? AND id=? AND version=?
-      AND (${sourceSql})=?`).bind(encoded, state.current, mutation, now, user, row.id, row.version,
+      AND (${sourceSql})=?`).bind(encoded, state.current, row.status === 'ACTIVE' && state.cycles?.complete ? 'COMPLETE' : row.status, mutation, now, user, row.id, row.version,
         ...sourceBindings(row), scope.token)];
     const frontier = state.cycles?.live?.frontier;
     if (row.status === 'ACTIVE' && frontier && frontier !== original.cycles?.live?.frontier &&
         frontier !== original.cycles?.history.at(-1)) batch.push(event(db, user, mutation, frontier, 'SHOWN', now));
     const [result] = await db.batch(batch);
-    if (result.meta.changes) return { row: { ...row, session_state: encoded, version: row.version + 1 }, state, cards: scope.cards, token: scope.token };
+    if (result.meta.changes) return { row: { ...row, status: row.status === 'ACTIVE' && state.cycles?.complete ? 'COMPLETE' as const : row.status, session_state: encoded, version: row.version + 1 }, state, cards: scope.cards, token: scope.token };
   }
   check(false, 'The deck or session changed. Reload and try again.', 409);
 }
@@ -117,9 +117,9 @@ export async function studyView(db: D1Database, user: string) {
   const language = reconcileLanguage(state.language ?? defaults.language, availableLanguages);
   const status = row.status === 'ACTIVE' && !state.cycles ? 'INVALIDATED' as const : row.status;
   check(await sessionSourceToken(db, row) === token, 'The deck or session changed. Reload and try again.', 409);
-  if (status !== 'ACTIVE') return { ...projection, id: row.id, version: row.version, status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds, language, availableLanguages, repeat: false };
+  if (status === 'INVALIDATED') return { ...projection, id: row.id, version: row.version, status, card: null, remaining: 0, historical: false, hasPrevious: false, revealed: false, deadline: null, paused: false, seconds: row.timer_seconds, deckIds, language, availableLanguages, repeat: false };
   const accessibleIds = new Set(cards.map(card => card.id));
-  const historical = state.current !== null && (state.cycles?.live?.frontier === null || state.cursor < state.history.length - 1);
+  const historical = state.current !== null && (status === 'COMPLETE' || state.cycles?.live?.frontier === null || state.cursor < state.history.length - 1);
   const id = state.history[state.cursor];
   const card = state.current ? await studyCard(db, user, id) : null;
   check(await sessionSourceToken(db, row) === token, 'The deck or session changed. Reload and try again.', 409);
@@ -127,7 +127,7 @@ export async function studyView(db: D1Database, user: string) {
     ...projection, id: row.id, version: row.version, status: row.status, card,
     repeat: state.cycles?.repeat.includes(id) ?? false,
     remaining: projection.remainingInCycle, historical,
-    hasPrevious: state.history.slice(0, state.cursor).some(id => accessibleIds.has(id)),
+    hasPrevious: state.history.some((id, index) => index !== state.cursor && accessibleIds.has(id)),
     revealed: historical ? Boolean(state.historyRevealed) : state.revealed,
     deadline: state.deadline, paused: state.remainingMs !== null, seconds: row.timer_seconds, deckIds,
     language, availableLanguages,
@@ -142,7 +142,7 @@ function event(db: D1Database, user: string, mutation: string, card: string, kin
       (SELECT 1 FROM deck_collaborators dc WHERE dc.deck_id=d.id AND dc.user_id=s.user_id))`).bind(crypto.randomUUID(), user, kind, now, user, card, mutation);
 }
 
-export async function startSession(db: D1Database, user: User, input: Record<string, unknown>) {
+export async function startSession(db: D1Database, user: User, input: Record<string, unknown>, restart?: StudyState) {
   check(Array.isArray(input.decks) && input.decks.length > 0 && input.decks.length <= 30, 'Select 1 to 30 decks.');
   const deckIds = [...new Set(input.decks.map(id => string(id, 'deck ID', 80)))];
   const config = { ...settings(object(input.settings)), onlyUnlearned: false };
@@ -165,7 +165,16 @@ export async function startSession(db: D1Database, user: User, input: Record<str
   const eligible = cards;
   check(eligible.length <= 5000, 'Select at most 5000 cards in one study session.');
   const now = Date.now();
-  const state = startStudy(eligible.map(card => ({ id: card.id })), config, now);
+  let state = startStudy(eligible.map(card => ({ id: card.id })), config, now);
+  if (restart) {
+    state.classification = structuredClone(restart.classification ?? state.classification);
+    state.cycles!.repeat = [...(restart.cycles?.repeat ?? [])];
+    const scope = await liveScope(db, { ...prior!, selected_deck_ids: serialized });
+    state.cycles!.live!.frontier = null;
+    state.cycles!.pending = state.cycles!.cards.slice();
+    state.cycles!.history = []; state.history = []; state.current = null;
+    state = projectStudy(state, scope.cards, config, now, true);
+  }
   const mutation = crypto.randomUUID();
   const id = crypto.randomUUID();
   const status = state.current ? 'ACTIVE' : 'COMPLETE';
@@ -197,11 +206,13 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
   const action = string(input.action, 'action', 20) as StudyAction;
   check(actions.includes(action), 'Invalid study action.');
   const row = await read(db, user.id);
-  check(row?.status === 'ACTIVE' && row.id === input.id && row.version === input.version, 'The session changed on another device.', 409);
+  check(row && row.status !== 'INVALIDATED' && row.id === input.id && row.version === input.version, 'The session changed on another device.', 409);
+  check(row.status === 'ACTIVE' || ['previous', 'next', 'forward'].includes(action), 'Completed session settings are read-only. Restart the session.', 409);
   const scope = await liveScope(db, row);
   const stored = normalizeStudyState(JSON.parse(row.session_state));
   const previous = projectStudy(stored, scope.cards, sessionSettings(row), Date.now());
   check(previous.cycles, 'This pre-v3 session must be restarted.', 409);
+  check(!previous.cycles.complete || ['previous', 'next', 'forward'].includes(action), 'Completed session settings are read-only. Restart the session.', 409);
   const now = Date.now();
   const replaced = previous.cycles?.live?.frontier !== stored.cycles?.live?.frontier &&
     previous.cycles?.live?.frontier !== stored.cycles?.history.at(-1);
@@ -231,11 +242,15 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
     }
   }
   const encoded = JSON.stringify(state);
-  if (encoded === row.session_state) return studyView(db, user.id);
+  if (encoded === row.session_state) {
+    if (await sessionSourceToken(db, row) === scope.token) return studyView(db, user.id);
+    if (attempt < 2) return act(db, user, input, attempt + 1);
+    check(false, 'The deck or session changed. Reload and try again.', 409);
+  }
   const mutation = crypto.randomUUID();
   const batch = [db.prepare(`UPDATE study_sessions SET session_state = ?, current_card_id = ?, status = ?,
-    version = version + 1, mutation = ?, updated_at = ? WHERE user_id = ? AND id = ? AND version = ? AND status = 'ACTIVE' AND (${sourceSql})=?`)
-    .bind(encoded, state.current, state.cycles?.complete ? 'COMPLETE' : 'ACTIVE', mutation, now, user.id, row.id, row.version, ...sourceBindings(row), scope.token)];
+    version = version + 1, mutation = ?, updated_at = ? WHERE user_id = ? AND id = ? AND version = ? AND status = ? AND (${sourceSql})=?`)
+    .bind(encoded, state.current, state.cycles?.complete ? 'COMPLETE' : 'ACTIVE', mutation, now, user.id, row.id, row.version, row.status, ...sourceBindings(row), scope.token)];
   if (action === 'resume' && typeof input.answersOpen === 'boolean') batch.push(db.prepare(`UPDATE users SET settings = json_set(settings, '$.answersOpen', json(?))
     WHERE id = ? AND EXISTS (SELECT 1 FROM study_sessions WHERE user_id = ? AND mutation = ?)`)
     .bind(JSON.stringify(input.answersOpen), user.id, user.id, mutation));
@@ -249,6 +264,42 @@ export async function act(db: D1Database, user: User, input: Record<string, unkn
   if (!result.meta.changes && attempt < 2) return act(db, user, input, attempt + 1);
   check(result.meta.changes, 'The deck or session changed. Reload and try again.', 409);
   return studyView(db, user.id);
+}
+
+export async function configure(db: D1Database, user: User, input: Record<string, unknown>, attempt = 0): Promise<Awaited<ReturnType<typeof studyView>>> {
+  check(Object.keys(input).every(key => ['id', 'version', 'filters', 'sorting'].includes(key)), 'Unsupported Apply field.');
+  let classification: NonNullable<StudyState['classification']>;
+  try { classification = { filters: validateClassificationFilters(input.filters), sorting: validateClassificationSort(input.sorting) }; }
+  catch (error) { check(false, error instanceof Error ? error.message : 'Invalid classification settings.'); }
+  const row = await read(db, user.id);
+  check(row?.status === 'ACTIVE' && row.id === input.id && row.version === input.version, 'The session changed or is complete. Reload and try again.', 409);
+  const scope = await liveScope(db, row);
+  const original = normalizeStudyState(JSON.parse(row.session_state));
+  check(original.cycles, 'This pre-v3 session must be restarted.', 409);
+  const draft = structuredClone(original);
+  draft.classification = classification;
+  const now = Date.now();
+  const state = projectStudy(draft, scope.cards, sessionSettings(row), now, true);
+  const mutation = crypto.randomUUID();
+  const batch = [db.prepare(`UPDATE study_sessions SET session_state=?,current_card_id=?,status=?,
+    version=version+1,mutation=?,updated_at=? WHERE user_id=? AND id=? AND version=? AND status='ACTIVE'
+    AND (${sourceSql})=?`).bind(JSON.stringify(state), state.current, state.cycles?.complete ? 'COMPLETE' : 'ACTIVE',
+      mutation, now, user.id, row.id, row.version, ...sourceBindings(row), scope.token)];
+  if (state.history.length > original.history.length && state.cycles?.live?.frontier)
+    batch.push(event(db, user.id, mutation, state.cycles.live.frontier, 'SHOWN', now));
+  const [result] = await db.batch(batch);
+  if (!result.meta.changes && attempt < 2) return configure(db, user, input, attempt + 1);
+  check(result.meta.changes, 'The deck or session changed. Reload and try again.', 409);
+  return studyView(db, user.id);
+}
+
+export async function restartSession(db: D1Database, user: User, input: Record<string, unknown>) {
+  check(Object.keys(input).every(key => ['id', 'version'].includes(key)), 'Unsupported Restart field.');
+  const row = await read(db, user.id);
+  check(row?.status === 'COMPLETE' && row.id === input.id && row.version === input.version, 'The session changed or is not complete.', 409);
+  const prior = normalizeStudyState(JSON.parse(row.session_state));
+  return startSession(db, user, { decks: JSON.parse(row.selected_deck_ids), version: row.version,
+    settings: { ...sessionSettings(row), language: prior.language ?? defaults.language, answersOpen: prior.answersOpen ?? false } }, prior);
 }
 
 export async function reset(db: D1Database, user: string, deck: string, card: string | null) {

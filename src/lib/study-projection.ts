@@ -18,7 +18,7 @@ export function adaptStudyState(original: StudyState, restored = true): StudySta
       !Number.isInteger(c.cursor) || c.cursor < 0 || (c.history.length > 0 && c.cursor >= c.history.length) ||
       !Number.isInteger(c.cycle) || c.cycle < 0 || typeof c.complete !== 'boolean' ||
       state.cursor !== c.cursor || JSON.stringify(state.history) !== JSON.stringify(c.history) ||
-      state.current !== (c.complete ? null : c.history[c.cursor] ?? null)) {
+      (state.current !== (c.history[c.cursor] ?? null) && !(c.complete && state.current === null))) {
     throw new Error('Malformed cycle-aware study session.');
   }
   const frontier = c.complete ? null : c.history.at(-1) ?? null;
@@ -33,11 +33,25 @@ export function adaptStudyState(original: StudyState, restored = true): StudySta
 }
 
 /** Read-time reconciliation only appends; sorting existing pending belongs to Apply. */
-export function projectStudy(original: StudyState, cards: ProjectionCard[], settings: Settings, now: number): StudyState {
+export function projectStudy(original: StudyState, cards: ProjectionCard[], settings: Settings, now: number, apply = false): StudyState {
   const state = adaptStudyState(original);
   const c = state.cycles;
   const live = c?.live;
-  if (!c || !live || !state.classification || c.complete) return state;
+  if (!c || !live || !state.classification) return state;
+  if (c.complete) {
+    const accessible = new Set(cards.map(card => card.id));
+    live.accessible = [...accessible];
+    if (!state.current || !accessible.has(state.current)) {
+      const index = c.history.findIndex(id => accessible.has(id));
+      if (index >= 0) { c.cursor = index; state.current = c.history[index]; }
+      else state.current = null;
+      state.revealed = state.current ? state.answerOverrides?.[state.current] ?? state.answersOpen ?? false : false;
+      state.historyRevealed = state.revealed;
+    }
+    state.cursor = c.cursor;
+    state.deadline = null; state.remainingMs = null;
+    return state;
+  }
   const accessible = new Set(cards.map(card => card.id));
   live.accessible = [...accessible];
   const known = new Set(live.originalOrder);
@@ -64,17 +78,25 @@ export function projectStudy(original: StudyState, cards: ProjectionCard[], sett
   for (const id of live.originalOrder) if (eligible.has(id) && id !== live.frontier && !queued.has(id)) {
     c.pending.push(id); queued.add(id);
   }
+  if (apply) {
+    const order = new Map(live.eligible.map((id, index) => [id, index]));
+    c.pending.sort((a, b) => order.get(a)! - order.get(b)!);
+  }
   if (!live.frontier) live.frontier = c.pending.shift() ?? null;
+  if (!live.frontier) {
+    c.complete = true; live.completionReason = 'COMPLETE';
+    state.deadline = null; state.remainingMs = null;
+  }
   const browsing = state.current !== null && c.cursor < c.history.length - 1 && accessible.has(c.history[c.cursor]);
   if (live.frontier !== oldFrontier) {
     if (live.frontier) c.history.push(live.frontier);
     if (!browsing) {
       c.cursor = Math.max(0, c.history.length - 1);
-      state.current = live.frontier;
+      state.current = live.frontier ?? (accessible.has(c.history[c.cursor]) ? c.history[c.cursor] : null);
       state.revealed = state.current ? state.answerOverrides?.[state.current] ?? state.answersOpen ?? false : false;
       state.historyRevealed = state.revealed;
       state.remainingMs = null;
-      state.deadline = state.current && settings.timer && !state.revealed ? now + settings.seconds * 1000 : null;
+      state.deadline = state.current && !c.complete && settings.timer && !state.revealed ? now + settings.seconds * 1000 : null;
     }
   }
   if (state.current && !accessible.has(state.current)) {
@@ -82,6 +104,8 @@ export function projectStudy(original: StudyState, cards: ProjectionCard[], sett
     while (index >= 0 && !accessible.has(c.history[index])) index--;
     if (index < 0) index = c.history.findIndex(id => accessible.has(id));
     c.cursor = Math.max(0, index); state.current = index >= 0 ? c.history[index] : live.frontier;
+    state.revealed = state.current ? state.answerOverrides?.[state.current] ?? state.answersOpen ?? false : false;
+    state.historyRevealed = state.revealed;
     state.deadline = null; state.remainingMs = null;
   }
   c.cards = [...live.originalOrder];

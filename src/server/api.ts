@@ -10,7 +10,7 @@ import type { SessionDiagnostics } from './auth';
 import { applyImport, changeCard, getDeck, inspectImport, listCards, listDecks, replacementImpact, saveDeck } from './decks';
 import type { CanonicalCardMetadata } from '../lib/metadata';
 import { check, HttpError, json, object, string } from './http';
-import { act, reset, startSession, studyView } from './sessions';
+import { act, configure, restartSession, reset, startSession, studyView } from './sessions';
 import { defaults } from '../lib/study';
 import type { Translations } from '../lib/translations';
 import { manage } from './management';
@@ -116,6 +116,8 @@ async function dispatch(
     if (route === 'deck') return json(await saveDeck(db, user.id, input));
     if (route === 'import/preview') return json(await inspectImport(db, user.id, input));
     if (route === 'import/apply') return json(await applyImport(db, user.id, input));
+    if (route === 'study/configure') return json(await configure(db, user, input));
+    if (route === 'study/restart') return json(await restartSession(db, user, input));
     if (route === 'study/start') return json(await startSession(db, user, input));
     if (route === 'study/action') return json(await act(db, user, input));
     if (route === 'card' || route === 'deck/delete' || route === 'reset') {

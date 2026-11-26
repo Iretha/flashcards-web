@@ -397,7 +397,7 @@ describe('Workers API with real local D1', () => {
     const guestSession = await guest.ok<Session>('study/start', { decks: [first], settings: defaults, version: 0 });
     await guest.action(guestSession, 'learn');
     await owner.ok('deck', { ...header, visibility: 'PRIVATE' });
-    expect(await guest.study()).toMatchObject({ status: 'ACTIVE', card: null, remainingInCycle: 0 });
+    expect(await guest.study()).toMatchObject({ status: 'COMPLETE', card: null, remainingInCycle: 0 });
     expect((await guest.request('cards?deck=' + first)).response.status).toBe(404);
     const backup = await guest.request<{ decks: Deck[]; cards: unknown[]; history: { kind: string }[] }>('export');
     expect(backup.response.headers.get('content-disposition')).toContain('flashcards-backup.json');
@@ -465,7 +465,7 @@ describe('Workers API with real local D1', () => {
     expect((await browser.cards(deck))[0]).toMatchObject({ id: second.id, translations: {en: {question: 'Edited'}}, status: 'LEARNED', times_learned: 1 });
     await browser.ok('card', { deck, method: 'delete', id: first.id });
     expect(await browser.cards(deck)).toHaveLength(1);
-    expect(await browser.study()).toMatchObject({ status: 'ACTIVE', card: null, remainingInCycle: 0 });
+    expect(await browser.study()).toMatchObject({ status: 'COMPLETE', card: null, remainingInCycle: 0 });
     await browser.ok('deck/delete', { deck });
     expect((await browser.home()).decks).toEqual([]);
   });
@@ -1366,7 +1366,7 @@ it.each(['next', 'replace'] as const)('retries unchanged read reconciliation aft
   expect((await browser.study()).version).toBe(concurrent!.version);
 });
 
-it('navigates accessible history with an empty frontier and recovers work without phantom learning', async () => {
+it('browses exhausted history without phantom learning or reopening when work returns', async () => {
   const browser = new Browser(); await browser.login('IMP008 empty navigation');
   const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Empty navigation', visibility: 'PRIVATE' });
   for (const question of ['A', 'B']) await browser.ok('card', { deck, method: 'save', question, answer: question });
@@ -1377,20 +1377,20 @@ it('navigates accessible history with an empty frontier and recovers work withou
   state.classification.filters.topics.values = ['MISSING'];
   await db.prepare('UPDATE study_sessions SET session_state=? WHERE id=?').bind(JSON.stringify(state), session.id).run();
   session = await browser.study();
-  expect(session).toMatchObject({ status: 'ACTIVE', card: null, hasPrevious: true, remainingInCycle: 0 });
+  expect(session).toMatchObject({ status: 'COMPLETE', historical: true, hasPrevious: true, remainingInCycle: 0 });
   const eventsBefore = (await db.prepare('SELECT count(*) n FROM study_events WHERE user_id=?').bind(row.user_id).first<{n: number}>())!.n;
   session = await browser.action(session, 'previous');
   expect(session).toMatchObject({ historical: true, card: { translations: { en: { question: 'A' } } }, remainingInCycle: 0 });
   session = await browser.action(session, 'next');
   expect(session).toMatchObject({ historical: true, card: { translations: { en: { question: 'B' } } }, remainingInCycle: 0 });
   session = await browser.action(session, 'next');
-  expect(session).toMatchObject({ status: 'ACTIVE', historical: true, remainingInCycle: 0 });
+  expect(session).toMatchObject({ status: 'COMPLETE', historical: true, remainingInCycle: 0 });
   expect((await db.prepare('SELECT count(*) n FROM study_events WHERE user_id=?').bind(row.user_id).first<{n: number}>())!.n).toBe(eventsBefore);
   // Ordinary classification restoration, without adding an Apply endpoint.
   const frontier = state.cycles.live.frontier;
   await db.prepare('INSERT INTO card_topics(card_id,topic_name) VALUES (?,?)').bind(frontier, 'MISSING').run();
   session = await browser.study();
-  expect(session).toMatchObject({ status: 'ACTIVE', historical: false, card: { id: frontier }, remainingInCycle: 1 });
+  expect(session).toMatchObject({ status: 'COMPLETE', historical: true, remainingInCycle: 0 });
 });
 
 it('bounds retries when the session keeps changing during unchanged read reconciliation', async () => {
@@ -1446,4 +1446,199 @@ it('rejects a view if the session changes during final card materialization', as
   await expect(studyView(racingDb, row.user_id)).rejects.toMatchObject({ status: 409 });
   expect(concurrent!.version).toBeGreaterThan(session.version);
   expect(await browser.study()).toEqual(concurrent);
+});
+
+async function imp009Fixture(name: string) {
+  const browser = new Browser(); await browser.login('IMP009 ' + name);
+  const { id: deck } = await browser.ok<{id: string}>('deck', { title: name, visibility: 'PRIVATE' });
+  for (const question of ['A', 'B', 'C', 'D']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  const cards = await browser.cards(deck);
+  const [a, b, c, d] = cards.map(card => card.id);
+  await db.batch([
+    db.prepare("UPDATE cards SET priority=1,likelihood=2,creation_mode='AI' WHERE id=?").bind(a),
+    db.prepare(`UPDATE cards SET priority=5,likelihood=4,creation_mode='MANUAL',metadata='{"cardType":"task"}',
+      translations=json_set(translations,'$.en.questionDetails','Implement B') WHERE id=?`).bind(b),
+    db.prepare("UPDATE cards SET priority=3,likelihood=2,creation_mode='UNKNOWN' WHERE id=?").bind(c),
+    db.prepare(`UPDATE cards SET priority=2,likelihood=4,creation_mode='AI',metadata='{"cardType":"task"}',
+      translations=json_set(translations,'$.en.questionDetails','Implement D') WHERE id=?`).bind(d),
+    ...[a, c, d].map((id, index) => db.prepare('INSERT INTO card_topics VALUES (?,?)').bind(id, index === 2 ? 'Y' : 'X')),
+  ]);
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: { ...defaults, timer: true }, version: 0 });
+  const row = (await db.prepare('SELECT user_id,session_state FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string; session_state: string}>())!;
+  const classification = JSON.parse(row.session_state).classification;
+  const stored = async () => JSON.parse((await db.prepare('SELECT session_state FROM study_sessions WHERE user_id=?').bind(row.user_id).first<{session_state: string}>())!.session_state);
+  return { browser, deck, a, b, c, d, session, classification, user: row.user_id, stored };
+}
+
+it('atomically applies all five predicates, No Topics and sorting without writing preferences or resetting timer/progress', async () => {
+  const f = await imp009Fixture('Apply predicates');
+  const { browser, a, b, c, d } = f;
+  const preferences = (await browser.home()).settings;
+  const filters = { topics: { values: [' x '], includeNoTopics: true }, priorities: [5], likelihoods: [4], creationModes: ['MANUAL'], cardTypes: ['task'] };
+  let session = await browser.ok<Session>('study/configure', { id: f.session.id, version: f.session.version, filters, sorting: { field: 'priority', direction: 'asc' } });
+  expect(session).toMatchObject({ status: 'ACTIVE', version: f.session.version + 1, card: { id: b }, eligibleTotal: 1, remainingInCycle: 1 });
+  expect(session.applied!.filters.topics).toEqual({ values: ['X'], includeNoTopics: true });
+  expect(session.availableOptions).toMatchObject({ topics: ['X', 'Y'], noTopicsAvailable: true, priorities: [1, 2, 3, 5] });
+  const deadline = session.deadline;
+  const history = (await f.stored()).history;
+  session = await browser.ok<Session>('study/configure', { id: session.id, version: session.version, filters: f.classification.filters, sorting: { field: 'priority', direction: 'asc' } });
+  expect(session.card!.id).toBe(b); expect(session.deadline).toBe(deadline);
+  expect((await f.stored()).cycles.pending).toEqual([a, d, c]);
+  expect((await f.stored()).history).toEqual(history);
+  expect((await browser.home()).settings).toEqual(preferences);
+  const stale = await browser.request('study/configure', { id: session.id, version: session.version - 1, ...f.classification });
+  expect(stale.response.status).toBe(409);
+  const identical = await browser.ok<Session>('study/configure', { id: session.id, version: session.version, ...session.applied });
+  expect(identical.version).toBe(session.version + 1);
+});
+
+it('sorts each pending field in both directions and restores default order without moving frontier', async () => {
+  const f = await imp009Fixture('Sort matrix');
+  const { a, b, c, d } = f;
+  const cases = [
+    ['topics', [c, d, b], [d, c, b]], ['priority', [d, c, b], [b, c, d]],
+    ['likelihood', [c, b, d], [b, d, c]], ['creationMode', [d, b, c], [b, d, c]],
+    ['cardType', [c, b, d], [b, d, c]],
+  ] as const;
+  let session = f.session;
+  for (const [field, asc, desc] of cases) for (const direction of ['asc', 'desc'] as const) {
+    const version = session.version;
+    session = await f.browser.ok<Session>('study/configure', { id: session.id, version, filters: f.classification.filters, sorting: { field, direction } });
+    expect(session).toMatchObject({ version: version + 1, card: { id: a }, deadline: f.session.deadline });
+    expect((await f.stored()).cycles.pending).toEqual(direction === 'asc' ? asc : desc);
+  }
+  session = await f.browser.ok<Session>('study/configure', { id: session.id, version: session.version, ...f.classification });
+  expect((await f.stored()).cycles.pending).toEqual([b, c, d]);
+});
+
+it('keeps accessible history through Apply and only consumes the frontier after forward browsing reaches it', async () => {
+  const f = await imp009Fixture('History Apply');
+  let session = await f.browser.action(f.session, 'next');
+  session = await f.browser.action(session, 'previous');
+  const passed = (await f.stored()).cycles.live.passed;
+  const history = (await f.stored()).history;
+  session = await f.browser.ok<Session>('study/configure', { id: session.id, version: session.version,
+    filters: { ...f.classification.filters, cardTypes: ['task'] }, sorting: { field: 'priority', direction: 'asc' } });
+  expect(session).toMatchObject({ card: { id: f.a }, historical: true });
+  expect((await f.stored()).history).toEqual(history);
+  session = await f.browser.action(session, 'learn');
+  expect(session.card!.id).toBe(f.a); // explicit learn cannot consume a different frontier
+  session = await f.browser.action(session, 'next');
+  expect(session.card!.id).toBe(f.b);
+  expect((await f.stored()).cycles.live.passed).toEqual(passed);
+  session = await f.browser.action(session, 'next');
+  expect(session.card!.id).toBe(f.d);
+  expect((await f.stored()).cycles.live.passed).toEqual([f.a, f.b]);
+});
+
+it('completes terminally, wraps history without events, and restarts with settings/Repeat and persistent progress intact', async () => {
+  const f = await imp009Fixture('Restart lifecycle');
+  let session = await f.browser.action(f.session, 'repeat');
+  session = await f.browser.ok<Session>('study/configure', { id: session.id, version: session.version,
+    filters: { ...f.classification.filters, priorities: [5] }, sorting: { field: 'priority', direction: 'desc' } });
+  session = await f.browser.action(session, 'learn');
+  expect(session).toMatchObject({ status: 'COMPLETE', historical: true, deadline: null, remainingInCycle: 0 });
+  const applied = session.applied;
+  const completed = await f.stored();
+  expect(completed.cycles.repeat).toEqual([f.a]);
+  const progress = (await db.prepare('SELECT * FROM card_progress WHERE user_id=? ORDER BY card_id').bind(f.user).all()).results;
+  const events = (await db.prepare('SELECT * FROM study_events WHERE user_id=? ORDER BY rowid').bind(f.user).all()).results;
+  const first = await f.browser.action(session, 'next');
+  expect(first).toMatchObject({ status: 'COMPLETE', historical: true, card: { id: f.a } });
+  session = await f.browser.action(first, 'previous');
+  expect(session.card!.id).toBe(f.b);
+  expect((await db.prepare('SELECT * FROM study_events WHERE user_id=? ORDER BY rowid').bind(f.user).all()).results).toEqual(events);
+  for (const action of ['resume', 'repeat', 'language', 'show', 'learn'])
+    expect((await f.browser.request('study/action', { id: session.id, version: session.version, action })).response.status).toBe(409);
+  expect((await f.browser.request('study/configure', { id: session.id, version: session.version, ...f.classification })).response.status).toBe(409);
+  await f.browser.ok('card', { deck: f.deck, method: 'save', question: 'New matching', answer: 'A' });
+  expect((await f.browser.study()).status).toBe('COMPLETE');
+  session = await f.browser.study();
+  const restarted = await f.browser.ok<Session>('study/restart', { id: session.id, version: session.version });
+  expect(restarted.id).not.toBe(session.id);
+  expect(restarted).toMatchObject({ status: 'ACTIVE', card: { id: f.b }, applied, historical: false });
+  const state = await f.stored();
+  expect(state.cycles).toMatchObject({ cycle: 0, repeat: [f.a], history: [f.b], live: { passed: [], admittedNew: [] } });
+  expect(state.answerOverrides).toEqual({});
+  const after = (await db.prepare('SELECT * FROM card_progress WHERE user_id=? ORDER BY card_id').bind(f.user).all()).results;
+  expect(after.map(row => ({ ...row, times_shown: 0, last_shown_at: null }))).toEqual(progress.map(row => ({ ...row, times_shown: 0, last_shown_at: null })));
+  expect((await db.prepare("SELECT count(*) n FROM study_events WHERE user_id=? AND kind='RESET'").bind(f.user).first<{n: number}>())!.n).toBe(0);
+});
+
+it('rejects invalid or cross-origin Apply and failed Restart without changing the retained session', async () => {
+  const f = await imp009Fixture('Validation');
+  const base = { id: f.session.id, version: f.session.version, ...f.classification };
+  for (const patch of [{ extra: true }, { filters: { ...f.classification.filters, priorities: [null] } }, { sorting: { field: 'default', direction: 'desc' } }, { filters: {} }])
+    expect((await f.browser.request('study/configure', { ...base, ...patch })).response.status).toBe(400);
+  expect((await f.browser.request('study/configure', base, 'https://other.example')).response.status).toBe(403);
+  expect((await new Browser().request('study/configure', base)).response.status).toBe(401);
+  expect((await f.browser.study()).version).toBe(f.session.version);
+  const complete = await f.browser.ok<Session>('study/configure', { ...base, filters: { ...f.classification.filters, topics: { values: ['MISSING'], includeNoTopics: false } } });
+  expect(complete.status).toBe('COMPLETE');
+  await db.prepare('DELETE FROM decks WHERE id=?').bind(f.deck).run();
+  const retained = await f.browser.study();
+  const before = await f.stored();
+  expect((await f.browser.request('study/restart', { id: retained.id, version: retained.version })).response.status).toBe(404);
+  expect(await f.stored()).toEqual(before);
+});
+
+it.each(['source', 'session'] as const)('guards Apply against concurrent %s changes without stale events or silent overwrite', async race => {
+  const { configure } = await import('../src/server/sessions');
+  const f = await imp009Fixture('Apply race ' + race);
+  let attempts = 0;
+  let winner: Session | undefined;
+  const racingDb = {
+    prepare: db.prepare.bind(db),
+    batch: async (statements: D1PreparedStatement[]) => {
+      if (++attempts === 1) {
+        if (race === 'source') await db.prepare('DELETE FROM cards WHERE id=?').bind(f.a).run();
+        else winner = await f.browser.action(f.session, 'next');
+      }
+      return db.batch(statements);
+    },
+  } as D1Database;
+  const request = { id: f.session.id, version: f.session.version, ...f.classification, sorting: { field: 'priority', direction: 'asc' } };
+  if (race === 'session') {
+    await expect(configure(racingDb, { id: f.user, username: 'Race', settings: '{}' }, request)).rejects.toMatchObject({ status: 409 });
+    expect(await f.browser.study()).toEqual(winner);
+  } else {
+    const result = await configure(racingDb, { id: f.user, username: 'Race', settings: '{}' }, request);
+    expect(attempts).toBe(2);
+    expect(result).toMatchObject({ version: f.session.version + 1, card: { id: f.d } });
+    expect((await db.prepare("SELECT count(*) n FROM study_events WHERE user_id=? AND card_id=? AND kind='SHOWN'").bind(f.user, f.d).first<{n: number}>())!.n).toBe(1);
+  }
+});
+
+it('retains a completed session when Restart exceeds the ordinary 5000-card limit', async () => {
+  const f = await imp009Fixture('Restart limit');
+  let session = await f.browser.ok<Session>('study/configure', { id: f.session.id, version: f.session.version,
+    filters: { ...f.classification.filters, priorities: [4] }, sorting: f.classification.sorting });
+  expect(session.status).toBe('COMPLETE');
+  await db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<5001)
+    INSERT INTO cards(id,deck_id,stable_key,question_key,position,created_at,updated_at,primary_language,translations,metadata)
+    SELECT ? || i, ?, 'restart-' || i, 'restart-' || i, i+10, 0, 0, 'en', json_object('en',json_object('question','Q' || i,'answer','A')), '{"cardType":"question"}' FROM n`)
+    .bind(f.deck + '-limit-', f.deck).run();
+  session = await f.browser.study();
+  const before = await f.stored();
+  expect((await f.browser.request('study/restart', { id: session.id, version: session.version })).response.status).toBe(400);
+  expect(await f.stored()).toEqual(before);
+  expect((await f.browser.study()).id).toBe(session.id);
+});
+
+it('applies each classification predicate independently through the browser contract', async () => {
+  const f = await imp009Fixture('Individual predicates');
+  let session = f.session;
+  const cases = [
+    [{ topics: { values: ['X'], includeNoTopics: false } }, f.a, [f.c]],
+    [{ topics: { values: [], includeNoTopics: true } }, f.b, []],
+    [{ priorities: [5] }, f.b, []], [{ likelihoods: [2] }, f.a, [f.c]],
+    [{ creationModes: ['AI'] }, f.a, [f.d]], [{ cardTypes: ['task'] }, f.b, [f.d]],
+  ] as const;
+  for (const [filter, frontier, pending] of cases) {
+    session = await f.browser.ok<Session>('study/start', { decks: [f.deck], settings: defaults, version: session.version });
+    session = await f.browser.ok<Session>('study/configure', { id: session.id, version: session.version,
+      filters: { ...f.classification.filters, ...filter }, sorting: f.classification.sorting });
+    expect(session).toMatchObject({ card: { id: frontier }, eligibleTotal: pending.length + 1 });
+    expect((await f.stored()).cycles.pending).toEqual(pending);
+  }
 });

@@ -168,8 +168,9 @@ Status: ACCEPTED. Existing tools extended using canonical validation and guarded
 
 ## IMP-008 — Session state adapter and Fully Live projection
 
-Status: IMPLEMENTED LOCALLY. Owner-approved unfiltered restoration amendment applied;
-shared engine and guarded read/action projection. No deployment or IMP-009 work.
+Status: ACCEPTED (owner, 2026-11-26). Owner-approved unfiltered restoration amendment
+and review fixes retained. Outstanding manual two-device mutation/resume verification
+is carried forward to final acceptance; no deployment.
 
 - Objective/scope: versioned state, original ranks, passed/admitted/frontier, live options
   and pending, access exclusion, start-only limits, No Topics; preserve existing sessions.
@@ -187,6 +188,9 @@ shared engine and guarded read/action projection. No deployment or IMP-009 work.
 - Completion: no duplicate cards or lost current/history/Repeat/timer/progress.
 
 ## IMP-009 — Lifecycle, navigation and atomic Apply API
+
+Status: IMPLEMENTED LOCALLY. Shared engine/projection, browser Apply/Restart, terminal
+history navigation and guarded writes. Manual acceptance remains outstanding. No deployment or IMP-010 work.
 
 - Objective/scope: circular Previous, Next/frontier boundary, terminal completion/non-destructive Restart,
   atomic configure, all five filter/sort predicates and stale-state handling.

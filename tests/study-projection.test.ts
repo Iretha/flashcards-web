@@ -108,16 +108,16 @@ it('browses retained accessible history from an empty frontier without consuming
   state = advance(state, defaults, 'next', 1).state;
   state.classification!.filters.topics.values = ['MISSING'];
   state = projectStudy(state, [card('a'), card('b')], defaults, 2);
-  expect(state.current).toBeNull();
+  expect(state.current).toBe('b');
   expect(state.cycles!.live!.frontier).toBeNull();
   const live = structuredClone(state.cycles!.live);
   const result = advance(state, defaults, 'previous', 3);
   expect(result).toMatchObject({ shown: null, outcome: null, state: { current: 'a', cursor: 0 } });
   expect(result.state.cycles!.live).toEqual(live);
-  expect(result.state.cycles!.complete).toBe(false);
+  expect(result.state.cycles!.complete).toBe(true);
 });
 
-it('recovers an empty presentation when access returns to a retained unpassed frontier', () => {
+it('never reopens terminal exhaustion when access and matching work return', () => {
   let state = startStudy([card('a'), card('b')], { ...defaults, timer: true }, 0);
   state = advance(state, defaults, 'next', 1).state;
   state = advance(state, defaults, 'previous', 2).state;
@@ -126,11 +126,11 @@ it('recovers an empty presentation when access returns to a retained unpassed fr
   state = projectStudy(state, [], defaults, 4);
   expect(state.current).toBeNull();
   expect(state.deadline).toBeNull();
-  expect(state.cycles!.complete).toBe(false);
+  expect(state.cycles!.complete).toBe(true);
   state.classification!.filters.topics.values = [];
   const recovered = projectStudy(state, [card('a'), card('b')], { ...defaults, timer: true }, 100);
-  expect(recovered).toMatchObject({ current: 'b', deadline: 30100 });
-  expect(recovered.cycles!.live).toMatchObject({ frontier: 'b', passed: ['a'] });
+  expect(recovered).toMatchObject({ current: 'a', deadline: null });
+  expect(recovered.cycles!.live).toMatchObject({ frontier: null, passed: ['a'] });
   expect(recovered.cycles!.pending).toEqual([]);
 });
 
@@ -140,7 +140,66 @@ it('keeps empty-frontier no-op navigation empty and never consumes retained hist
   state = projectStudy(state, [card('a')], defaults, 1);
   for (const action of ['previous', 'next', 'forward', 'learn'] as const) {
     const result = advance(state, defaults, action, 2);
-    expect(result).toMatchObject({ state: { current: null }, outcome: null, shown: null });
+    expect(result).toMatchObject({ state: { current: 'a' }, outcome: null, shown: null });
     expect(result.state.cycles).toEqual(state.cycles);
   }
+});
+
+it('Apply reorders pending only, preserves frontier and history timer state, and restores default ranks', () => {
+  const cards = [card('a'), { ...card('b'), priority: 5 as const }, { ...card('c'), priority: 1 as const }];
+  let state = startStudy(cards, { ...defaults, timer: true }, 0);
+  const deadline = state.deadline;
+  state.classification!.sorting = { field: 'priority', direction: 'asc' };
+  state = projectStudy(state, cards, defaults, 50, true);
+  expect(state).toMatchObject({ current: 'a', history: ['a'], deadline });
+  expect(state.cycles!.pending).toEqual(['c', 'b']);
+  state.classification!.sorting = { field: 'default', direction: 'asc' };
+  state = projectStudy(state, cards, defaults, 100, true);
+  expect(state.cycles!.pending).toEqual(['b', 'c']);
+});
+
+it('circular history navigation never consumes work; active Next at the frontier still advances', () => {
+  let state = startStudy([card('a'), card('b'), card('c')], defaults, 0);
+  state = advance(state, defaults, 'next', 1).state;
+  state = advance(state, defaults, 'previous', 2).state;
+  const before = structuredClone(state.cycles!.live);
+  const wrap = advance(state, defaults, 'previous', 3);
+  expect(wrap).toMatchObject({ shown: null, outcome: null, state: { current: 'b', cursor: 1 } });
+  expect(wrap.state.cycles!.live).toEqual(before);
+  const next = advance(wrap.state, defaults, 'next', 4);
+  expect(next).toMatchObject({ shown: 'c', state: { current: 'c' } });
+  state = advance(next.state, defaults, 'next', 5).state;
+  expect(state.cycles!.complete).toBe(true);
+  const completed = advance(state, defaults, 'next', 6);
+  expect(completed).toMatchObject({ shown: null, outcome: null, state: { current: 'a' } });
+  expect(completed.state.cycles!.live!.passed).toEqual(['a', 'b', 'c']);
+});
+
+it('completed circular navigation skips inaccessible entries and preserves repeated history positions', () => {
+  let state = startStudy([card('a'), card('b'), card('c')], defaults, 0);
+  state.cycles!.history = ['a', 'b', 'a', 'c']; state.history = [...state.cycles!.history];
+  state.cycles!.cursor = 0; state.cursor = 0; state.current = 'a'; state.cycles!.complete = true;
+  state.cycles!.live!.frontier = null; state.cycles!.live!.accessible = ['a', 'c'];
+  state = advance(state, defaults, 'previous', 1).state;
+  expect(state).toMatchObject({ cursor: 3, current: 'c' });
+  state = advance(state, defaults, 'next', 2).state;
+  expect(state.cursor).toBe(0);
+  const repeated = advance(state, defaults, 'next', 3);
+  expect(repeated).toMatchObject({ outcome: null, shown: null, state: { cursor: 2, current: 'a' } });
+});
+
+it('Apply from paused history preserves timer bytes, answer overrides and Repeat when the frontier remains eligible', () => {
+  const cards = [card('a'), { ...card('b'), metadata: { cardType: 'task' as const, occurrenceCount: 0 } }, card('c')];
+  const timed = { ...defaults, timer: true };
+  let state = startStudy(cards, timed, 0);
+  state = advance(state, timed, 'repeat', 1).state;
+  state = advance(state, timed, 'next', 2).state;
+  state = advance(state, timed, 'previous', 3).state;
+  state = advance(state, timed, 'pause', 4).state;
+  const before = structuredClone(state);
+  state.classification!.filters.cardTypes = ['task'];
+  state = projectStudy(state, cards, timed, 900, true);
+  expect(state).toMatchObject({ current: 'a', cursor: before.cursor, history: before.history,
+    deadline: before.deadline, remainingMs: before.remainingMs, revealed: before.revealed,
+    answerOverrides: before.answerOverrides, cycles: { repeat: ['a'], live: { frontier: 'b', passed: ['a'] } } });
 });

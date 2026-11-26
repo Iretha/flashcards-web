@@ -50,7 +50,7 @@ describe('study transitions', () => {
     expect(advance(resumed, timed, 'timeout', 44_999).shown).toBeNull();
     const expired = advance(resumed, timed, 'timeout', 45_000);
     expect(expired).toMatchObject({ outcome: 'TIMEOUT', shown: null, state: { deadline: null, revealed: true } });
-    expect(advance(expired.state, timed, 'learn', 45_001).state.current).toBeNull();
+    expect(advance(expired.state, timed, 'learn', 45_001).state).toMatchObject({ current: 'a', cycles: { complete: true }, deadline: null });
     expect(startStudy(queue, { ...defaults, timer: false }, 0).deadline).toBeNull();
   });
 });

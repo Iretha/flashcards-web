@@ -52,8 +52,8 @@ Difficulty changes, timer refactoring or production operations.
 | src/server/decks.ts changeCard/writeCards | Shared guarded writes; browser preserves ratings | Atomic classification/membership writes |
 | src/server/import-plan.ts | Omission preserves; metadata replaces as unit | Presence-aware v5 patch |
 | src/lib/markdown.ts / markdown-v3.ts | Direct v3/v4 import | v5 import; conversion-only legacy path |
-| src/lib/study-cycles.ts | IMP-008 local: shared live membership/admission/passed; Previous skips unavailable and clamps | IMP-009 circular navigation |
-| src/server/sessions.ts | IMP-008 local: guarded live projection, unfiltered legacy restoration, start-only limits | IMP-009 Apply/Restart |
+| src/lib/study-cycles.ts | IMP-009 local: circular access-aware history; frontier consumption and terminal cycles | IMP-010 controls |
+| src/server/sessions.ts | IMP-009 local: guarded Apply/Restart; terminal history; start-only limits | IMP-010 controls; outstanding final manual verification |
 | migrations/0001_initial.sql | Deletion/unshare invalidates sessions | Forward lifecycle-compatible trigger changes |
 | src/server/mcp-writes.ts | Create question/answer; update answer only | Approved existing update_card expansion, unchanged access |
 | migrations/0020_native_search.sql | Translation-triggered FTS; global epoch | Topic membership epoch coverage, no Topics in FTS |

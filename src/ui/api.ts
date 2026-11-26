@@ -44,3 +44,6 @@ export async function signIn(username: FormDataEntryValue | null, code: FormData
     throw problem;
   }
 }
+
+export const configureStudy = (input: { id: string; version: number; filters: import('../lib/classification').ClassificationFilters; sorting: import('../lib/classification').ClassificationSort }) => api<Session>('study/configure', input);
+export const restartStudy = (session: Pick<Session, 'id' | 'version'>) => api<Session>('study/restart', { id: session.id, version: session.version });

@@ -1,6 +1,6 @@
 # API and MCP contracts
 
-Management and JSON Export v3 accepted (IMP-006); MCP accepted (IMP-007); Study read/action projection implemented locally (IMP-008); Apply/Restart remain planned. Owner-approved contracts T-07/T-11-T-16. No broader access,
+Management and JSON Export v3 accepted (IMP-006); MCP accepted (IMP-007); Study projection accepted (IMP-008, manual two-device verification outstanding); Apply/Restart implemented locally (IMP-009). Owner-approved contracts T-07/T-11-T-16. No broader access,
 Study MCP tools or global classification search. Preserve existing credentials,
 origin/CSRF checks, grants, ownership/collaboration and atomic mutation guards.
 
@@ -90,7 +90,7 @@ reopens: display read-only settings/history and Restart. Q-02 RESOLVED: configur
 on COMPLETE is rejected without changing applied settings, queue or version.
 Settings can be edited only on the newly started session after successful Restart.
 
-Proposed POST /api/study/configure (ACTIVE only; Q-02 resolved):
+POST /api/study/configure (ACTIVE only; Q-02 resolved):
 
 ```json
 {"id":"s1","version":8,"filters":{"topics":{"values":["TRANSACTIONS"],"includeNoTopics":true},"priorities":[1,3],"likelihoods":[],"creationModes":[],"cardTypes":["task"]},"sorting":{"field":"priority","direction":"asc"}}
@@ -111,7 +111,8 @@ Browser-only explicit Restart operation uses session ID/version; creates new ID 
 same decks/applied settings/Repeat, resets local navigation/passed state only. Normal
 start checks once; fail leaves prior COMPLETE intact. Return authoritative new view.
 No mutation reopens prior COMPLETE. Restart route/action shares current start guards;
-implementation should select narrow existing-route extension, no remote administration.
+POST /api/study/restart accepts only {id,version}; no remote administration.
+Browser UI API wrappers expose configureStudy and restartStudy; controls remain IMP-010.
 ACTIVE reconcile at read/resume/action/Apply, no push/polling; COMPLETE reads only
 revalidate historical access. CAS persists active projection, bounded retry on source
 revision drift, never silently retry stale user input. Current access/source revisions

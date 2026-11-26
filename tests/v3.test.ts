@@ -74,5 +74,6 @@ it('removes unchecked pending repeat cards and can add a historical card in a la
   expect(state.current).toBe('c');
   expect(state.cycles?.repeat).toEqual(['c']);
   act('repeat'); act('next');
-  expect(state.current).toBeNull();
+  expect(state.cycles?.complete).toBe(true);
+  expect(state.current).toBe('c');
 });

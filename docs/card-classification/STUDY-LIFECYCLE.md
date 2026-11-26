@@ -1,6 +1,6 @@
 # Study session lifecycle
 
-Approved planned state machine for DEC-012–019. T-03-T-06/T-09/T-16 are approved. IMP-008 implements restoration and live projection; IMP-009 navigation/Apply/Restart remains planned. Existing snapshot
+Approved planned state machine for DEC-012–019. T-03-T-06/T-09/T-16 are approved. IMP-008 is accepted with outstanding manual two-device verification retained for final acceptance; IMP-009 navigation/Apply/Restart is implemented locally. Existing snapshot
 lifecycle changes explicitly; reuse D1 JSON/versioning, no push or timer redesign.
 
 ## State
@@ -130,7 +130,7 @@ classification predicates/comparators. Ordinary reads do not resort existing pen
 
 Persist adaptation once with session CAS plus current source/access guards, including
 terminal sessions without admission or reopening. COMPLETE remains terminal; explicit
-Restart is IMP-009. Unsupported pre-v3/no-cycle state keeps documented historical
+Restart uses POST /api/study/restart (IMP-009). Unsupported pre-v3/no-cycle state keeps documented historical
 handling. Malformed/unknown versioned state is diagnostic, never silently reset.
 Source guards reuse selected-deck revisions/current access and the existing card/topic
 epoch; no new signal, background work, index or per-user fanout. Retry source/CAS drift
@@ -140,12 +140,27 @@ read reconciliation checks session ID/version and source in the same SQL read; c
 session changes retry within the same three-attempt bound. A session change during final
 materialization returns a conflict rather than a stale view.
 
-IMP-008 empty-frontier handling retains ACTIVE state and existing linear/clamped
-history navigation. Previous can reach accessible retained history even when no card is
-currently presented; Next through that history does not consume work or emit SHOWN.
-A missing presentation is not historical browsing: when eligible work returns, it can
-become the presented frontier. Circular navigation, Restart and the remaining terminal
-lifecycle/API changes remain IMP-009.
+IMP-009 completes empty-frontier lifecycle handling: exhausted work becomes terminal
+COMPLETE while retaining accessible history, passed, original ranks and Repeat. New
+source work or classification changes do not admit cards into COMPLETE. Previous
+wraps accessible history; ACTIVE Next browses toward the frontier and consumes only
+that frontier, while COMPLETE Next wraps history without outcomes or SHOWN. Repeated
+history positions remain distinct. Legacy learn on historical entries cannot consume
+or advance another frontier. Empty/single-entry history navigation is safe.
+
+POST /api/study/configure accepts exactly id/version/full filters/full sorting. It
+validates shared contracts, projects once with the proposed settings, sorts all pending
+by the shared comparator, and commits one version increment under session/source guards.
+It preserves eligible frontier, historical cursor/view, Repeat/passed and unchanged
+frontier timer values. No global preferences are written. Source drift retries within
+three attempts; stale session IDs/versions and completed-session Apply return 409.
+
+POST /api/study/restart accepts exactly the completed id/version. It reuses normal
+start validation (including access, deck/card limits), creates a new ID, retains
+selected decks/applied settings/Repeat and persistent statistics/events, and initializes
+ordinary initial-pass navigation/answer/timer state. Failure leaves the completed
+session intact. COMPLETE accepts history navigation only; ordinary settings/actions
+cannot reopen it. No new UI controls are introduced before IMP-010.
 
 ## Timer boundary
 
