@@ -1,4 +1,4 @@
-import { cardTypes, classificationLabels, MAX_TOPICS_PER_CARD, MAX_TOPIC_LENGTH } from '../lib/classification';
+import { cardTypes, classificationLabels } from '../lib/classification';
 import { defaultInstructions, effectiveInstructions } from '../lib/chatgpt';
 import { useEffect, useState } from 'react';
 import CardSources from './CardSources';
@@ -98,7 +98,7 @@ function CardEditor({ deck, card, busy, save, close }: { deck: Deck; card?: Card
       {cardTypes.map(type => <option key={type} value={type}>{labels[type]}</option>)}
     </select></label>
     <label>{language === 'bg' ? 'Теми (по една на ред)' : 'Topics (one per line)'}
-      <textarea rows={3} maxLength={MAX_TOPICS_PER_CARD * (MAX_TOPIC_LENGTH + 1)} value={topics} onChange={event => setTopics(event.target.value)} />
+      <textarea rows={3} value={topics} onChange={event => setTopics(event.target.value)} />
     </label>
     <div className="row" role="group" aria-label="Translation tabs">
       {primaryLanguageFirst(deck.supportedLanguages, deck.primaryLanguage).map(item => <button key={item} type="button" aria-pressed={item === language}

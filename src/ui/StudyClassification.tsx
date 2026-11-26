@@ -14,6 +14,7 @@ function Filter<T>({ label, all, options, values, name, change, search, bg }: {
 }) {
   const [query, setQuery] = useState('');
   const unavailable = values.filter(value => !options.includes(value));
+  const valueKey = (value: T) => typeof value === 'symbol' ? 'no-topics' : 'value-' + String(value);
   const summary = values.length ? name(values[0]) + (values.length > 1 ? ` + ${values.length - 1} ${bg ? 'избрани' : 'selected'}` : '') : all;
   return <div>
     <span>{label}</span>
@@ -38,10 +39,16 @@ function Filter<T>({ label, all, options, values, name, change, search, bg }: {
       <fieldset aria-label={label}>
         {search && <input type="search" aria-label={bg ? 'Търсене на теми' : 'Search topics'} value={query} onChange={event => setQuery(event.target.value)} />}
         {options.filter(value => !search || name(value).toLocaleLowerCase().includes(query.toLocaleLowerCase())).map(value =>
-          <label className="check" key={typeof value === 'symbol' ? 'no-topics' : 'value-' + String(value)}>
+          <label className="check" key={valueKey(value)}>
             <input type="checkbox" checked={values.includes(value)} onChange={event => change(event.target.checked ? [...values, value] : values.filter(item => item !== value))} />{name(value)}
           </label>)}
-        {!!unavailable.length && <p>{bg ? 'Недостъпни' : 'Unavailable'}: {unavailable.map(name).join(', ')}</p>}
+        {!!unavailable.length && <div className="stack">
+          <p>{bg ? 'Недостъпни' : 'Unavailable'}</p>
+          {unavailable.map(value => <button key={valueKey(value)} type="button" onClick={event => {
+            event.currentTarget.closest('details')?.querySelector('summary')?.focus();
+            change(values.filter(item => item !== value));
+          }}>{bg ? 'Премахни' : 'Remove'} {name(value)}</button>)}
+        </div>}
         <button type="button" disabled={!values.length} onClick={() => change([])}>{bg ? 'Изчисти' : 'Clear'} {label}</button>
       </fieldset>
     </details>

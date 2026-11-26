@@ -111,13 +111,24 @@ test('imports v5 in the browser and studies with keyboard, history, repeats and 
   await page.getByRole('button', { name: 'Add card', exact: true }).click();
   const editor = page.locator('form.item');
   await editor.getByRole('combobox', { name: 'Card Type', exact: true }).selectOption('task');
-  await editor.getByRole('textbox', { name: 'Topics (one per line)', exact: true }).fill('Java\nConcurrency');
+  const topicsInput = editor.getByRole('textbox', { name: 'Topics (one per line)', exact: true });
+  const rawTopics = Array(250).fill('  java  ').concat('Concurrency').join('\n');
+  await topicsInput.focus();
+  await page.keyboard.insertText(rawTopics);
+  await expect(topicsInput).toHaveValue(rawTopics);
   await editor.getByRole('textbox', { name: 'Question', exact: true }).fill('Implement a sum.');
   await editor.getByRole('textbox', { name: 'Answer', exact: true }).fill('return a + b;');
   await expect(editor.getByRole('button', { name: 'Save card' })).toBeDisabled();
   await editor.getByRole('textbox', { name: 'Task Specification', exact: true }).fill('Implement sum(int a, int b).');
   await editor.getByRole('button', { name: 'Save card' }).click();
-  await expect(page.getByRole('heading', { name: 'Implement a sum.', exact: true })).toBeVisible();
+  const sum = page.locator('article.item').filter({ has: page.getByRole('heading', { name: 'Implement a sum.', exact: true }) });
+  await expect(sum.locator('summary').first()).toContainText('CONCURRENCY, JAVA');
+  await sum.getByRole('button', { name: 'Edit card' }).click();
+  await topicsInput.fill('ß'.repeat(101));
+  await editor.getByRole('button', { name: 'Save card' }).click();
+  await expect(page.getByRole('alert')).toContainText('exceeds 200 UTF-16 code units');
+  await expect(sum.locator('summary').first()).toContainText('CONCURRENCY, JAVA');
+  await editor.getByRole('button', { name: 'Cancel' }).click();
   await page.getByRole('combobox', { name: 'Card type', exact: true }).selectOption('task');
   await page.getByRole('combobox', { name: 'Provenance', exact: true }).selectOption('generated');
   await expect(page.locator('article.item')).toHaveCount(1);
@@ -207,4 +218,28 @@ test('keeps Study filters and sorting in a draft and restarts completed settings
   await panel.getByRole('button', { name: 'Restart Session' }).click();
   await expect(page.getByRole('heading', { name: 'Session complete' })).toHaveCount(0);
   await expect(panel.getByRole('status')).toHaveText('Applied: 1 of 2 cards');
+
+  const current = await (await page.request.get('/api/study')).json();
+  const configured = await page.request.post('/api/study/configure', {
+    headers: { Origin: new URL(page.url()).origin },
+    data: {
+      id: current.id, version: current.version, sorting: current.applied.sorting,
+      filters: { ...current.applied.filters, topics: { values: ['ARCHIVED', 'RETIRED'], includeNoTopics: true }, cardTypes: ['question'] },
+    },
+  });
+  expect(configured.ok()).toBe(true);
+  await page.reload();
+  await page.getByRole('button', { name: 'Resume session' }).click();
+  await panel.getByText('Filters and sorting', { exact: true }).click();
+  await panel.locator('summary').filter({ hasText: 'ARCHIVED' }).click();
+  const remove = panel.getByRole('button', { name: 'Remove ARCHIVED', exact: true });
+  await remove.press('Enter');
+  await expect(remove).toHaveCount(0);
+  await expect(panel.getByRole('button', { name: 'Remove RETIRED', exact: true })).toBeVisible();
+  await expect(noTopics).toBeChecked();
+  expect((await (await page.request.get('/api/study')).json()).applied.filters.topics.values).toEqual(['ARCHIVED', 'RETIRED']);
+  await apply.click();
+  await expect.poll(async () => (await (await page.request.get('/api/study')).json()).applied.filters).toMatchObject({
+    topics: { values: ['RETIRED'], includeNoTopics: true }, cardTypes: ['question'],
+  });
 });
