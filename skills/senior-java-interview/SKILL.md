@@ -5,6 +5,12 @@ description: Answer technical interview questions and solve practical tasks for 
 
 # Senior Java Interview Answer
 
+## Quick command: `/ji`
+
+Recognize `/ji <question or task>` at the beginning of a user message as an explicit invocation of this skill. Remove the command prefix and treat the remaining text as the question or task. If no question follows `/ji`, ask for one in English. Apply all instructions below. The command is an agent-level alias, not a registered application command.
+
+Example: `/ji What is a database?`
+
 ## Input
 
 Accept a plain question or task, or structured card content in this form:
