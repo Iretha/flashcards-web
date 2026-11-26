@@ -203,3 +203,43 @@ it('Apply from paused history preserves timer bytes, answer overrides and Repeat
     deadline: before.deadline, remainingMs: before.remainingMs, revealed: before.revealed,
     answerOverrides: before.answerOverrides, cycles: { repeat: ['a'], live: { frontier: 'b', passed: ['a'] } } });
 });
+
+it.each([true, false])('exhaustion without frontier consumption stays terminal (Apply=%s)', apply => {
+  const cards = [card('a'), card('b', apply ? ['X'] : [])];
+  let state = startStudy(cards, defaults, 0);
+  state = advance(state, defaults, 'repeat', 1).state;
+  state = advance(state, defaults, 'next', 2).state;
+  state.classification!.filters.topics.includeNoTopics = true;
+  if (!apply) state = projectStudy(state, cards, defaults, 3, true);
+  state = projectStudy(state, [cards[0], card('b', ['X'])], defaults, 4, apply);
+  expect(state.cycles).toMatchObject({
+    complete: true, cycle: 0, repeat: ['a'], pending: [], history: ['a', 'b'],
+    live: { frontier: null, passed: ['a'], eligible: ['a'] },
+  });
+  expect(projectStudy(state, [cards[0], card('b')], defaults, 5).cycles).toMatchObject({
+    complete: true, cycle: 0, live: { frontier: null },
+  });
+});
+
+it.each(['running', 'paused', 'revealed'] as const)('Apply replaces the frontier while history is %s', mode => {
+  const cards = [card('a', ['X']), card('b', ['X']), card('c')];
+  const settings = { ...defaults, timer: true };
+  let state = startStudy(cards, settings, 0);
+  state = advance(state, settings, 'next', 1).state;
+  state = advance(state, settings, 'previous', 2).state;
+  if (mode === 'paused') state = advance(state, settings, 'pause', 3).state;
+  if (mode === 'revealed') state = advance(state, settings, 'show', 3).state;
+  const { deadline, remainingMs, revealed, historyRevealed, answerOverrides } = state;
+  state.classification!.filters.topics.includeNoTopics = true;
+  state = projectStudy(state, cards, settings, 100, true);
+  expect(state).toMatchObject({
+    current: 'a', cursor: 0, history: ['a', 'b', 'c'],
+    deadline, remainingMs, revealed, historyRevealed, answerOverrides,
+    cycles: { live: { frontier: 'c' } },
+  });
+  state = projectStudy(state, [cards[0], cards[2]], settings, 101);
+  expect(advance(state, settings, 'next', 200)).toMatchObject({
+    shown: null, outcome: null,
+    state: { current: 'c', deadline: 30200, remainingMs: null, revealed: false, historyRevealed: false },
+  });
+});
