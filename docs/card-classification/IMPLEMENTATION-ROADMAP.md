@@ -60,8 +60,7 @@ Acceptance does not authorize release or later roadmap work.
 
 ## IMP-003 — Forward migration and canonical membership writes
 
-Status: IMPLEMENTED LOCALLY — AWAITING INDEPENDENT REVIEW. No deployment, release,
-commit or later-task authorization is implied.
+Status: ACCEPTED by owner. Production deployment and release remain separately authorized.
 
 Implementation is coordinated-release gated: the migration must not be deployed until
 the schema-compatible application/import/session tasks are accepted and release is
@@ -85,6 +84,11 @@ separately authorized.
 
 ## IMP-004 — Markdown v5 parser, preview and apply
 
+Status: ACCEPTED. Standard import is v5-only; legacy parsers remain
+available as conversion dependencies. Parser/domain, local D1 API and browser import
+regressions cover presence, clears, retained identity/progress/languages, final task
+validation and guarded replacement. No deployment or IMP-005 work is included.
+
 - Objective/scope: exact v5 grammar, presence-aware patch, preview/apply parity.
 - Out of scope: direct legacy import, generated answers or question reassessment.
 - Dependencies: IMP-002/003; approved v5 contract T-11/T-13.
@@ -100,6 +104,13 @@ separately authorized.
 - Completion: v5 validation and reimport parity pass, no silent metadata loss.
 
 ## IMP-005 — Legacy conversion and catalog documentation
+
+Status: ACCEPTED. Separate browser conversion/review/download feeds the
+unchanged v5 preview and explicit apply. Semantic/presence regression checks cover
+translations, empty/omitted fields, full legacy unit metadata, retained raw ratings,
+evidence contradictions and unsupported content. Four attested catalogs use the
+target likelihood scale with per-file SHA-256/version guards and raw-value reports;
+question text/local IDs/evidence remain unchanged. No deployment or IMP-006 work.
 
 - Objective/scope: v3/v4 conversion-only parser path, diagnostics, one-time attested
   likelihood inversion and rubric/template/guideline updates.
@@ -121,6 +132,8 @@ separately authorized.
 
 ## IMP-006 — Management API and JSON export
 
+Status: ACCEPTED. Management uses canonical classification validation and guarded writes; JSON Export v3 preserves raw legacy ratings separately. No deployment.
+
 - Objective/scope: read/create/PATCH classifications, metadata patch, export version.
 - Out of scope: global search and session endpoints for bearer clients.
 - Dependencies: IMP-002/003; target API/export acceptance.
@@ -136,10 +149,12 @@ separately authorized.
 
 ## IMP-007 — MCP classification capabilities
 
+Status: ACCEPTED. Existing tools extended using canonical validation and guarded writes. Owner accepted IMP-007; no deployment.
+
 - Objective/scope: get_card classifications/revision and approved create_card/update_card
   extensions for classification fields and answer patches; search_cards unchanged.
 - Out of scope: global search, Study controls, separate classification tool or broader access.
-- Dependencies: IMP-006; approved T-07 capability expansion, pending implementation authorization.
+- Dependencies: IMP-006; approved T-07 capability expansion, implementation authorized by owner.
 - Components: mcp-reads.ts, mcp-writes.ts, mcp.ts registration, schemas/tests/docs.
 - Database impact: reuse authorized canonical batches/receipts.
 - API impact: strict input/output additions and documented tool capability boundary.
@@ -153,6 +168,10 @@ separately authorized.
 
 ## IMP-008 — Session state adapter and Fully Live projection
 
+Status: ACCEPTED (owner, 2026-11-26). Owner-approved unfiltered restoration amendment
+and review fixes retained. Outstanding manual two-device mutation/resume verification
+is carried forward to final acceptance; no deployment.
+
 - Objective/scope: versioned state, original ranks, passed/admitted/frontier, live options
   and pending, access exclusion, start-only limits, No Topics; preserve existing sessions.
 - Out of scope: circular UI/timer refactor/push.
@@ -165,10 +184,13 @@ separately authorized.
 - Migration impact: lazy guarded adapter, no restart of valid sessions.
 - Automated tests: live addition/removal/reinclude/rank/start-limit, adapter random/history states.
 - Manual acceptance: mutate deck on second device and resume retained session.
-- Required decisions: T-03/T-04/T-09/T-16 approved; adapter ambiguity resolved with fixtures, no growth cap.
+- Required decisions: T-03/T-04/T-09/T-16 approved; unfiltered restoration amendment approved 2026-11-25, no historical inference or growth cap.
 - Completion: no duplicate cards or lost current/history/Repeat/timer/progress.
 
 ## IMP-009 — Lifecycle, navigation and atomic Apply API
+
+Status: ACCEPTED. Shared engine/projection, browser Apply/Restart, terminal
+history navigation and guarded writes. Final cross-device manual verification remains in IMP-011.
 
 - Objective/scope: circular Previous, Next/frontier boundary, terminal completion/non-destructive Restart,
   atomic configure, all five filter/sort predicates and stale-state handling.

@@ -13,6 +13,7 @@ import { isLanguage } from '../lib/translations';
 import type { Translations } from '../lib/translations';
 import { planImport, uniqueQuestions } from './import-plan';
 import type { ImportTarget } from './import-plan';
+import type { CanonicalStoredState } from './import-plan';
 import { check, HttpError, object, string } from './http';
 
 export interface Deck {
@@ -51,6 +52,12 @@ export async function listCards(db: D1Database, user: string, deck: string) {
   return (await cardsForDeck(db, user, deck).all<CardRow>()).results.map(decodeCard);
 }
 
+export async function listBrowserCards(db: D1Database, user: string, deck: string) {
+  return (await listCards(db, user, deck)).map(card => ({
+    ...card, classificationMetadata: card.canonical!.metadata, topics: card.canonical!.topics,
+  }));
+}
+
 export function decodeDeck<T extends Deck>(deck: T): T {
   return { ...deck, supportedLanguages: typeof deck.supportedLanguages === 'string' ? JSON.parse(deck.supportedLanguages) : deck.supportedLanguages };
 }
@@ -59,16 +66,21 @@ type CardRow = Omit<Card, 'translations' | 'metadata'> & {
   translations: string; metadata: string | null; topics_json?: string;
 };
 
-function decodeCard(card: CardRow): Card {
-  const { topics_json, priority: _priority, likelihood: _likelihood, creation_mode: _creationMode, ...stored } = card as CardRow & {
-    priority?: number; likelihood?: number; creation_mode?: string;
+export function decodeCard(card: CardRow): Card {
+  const { topics_json, priority, likelihood, creation_mode, ...stored } = card as CardRow & {
+    priority: Rating; likelihood: Rating; creation_mode: CreationMode;
   };
-  const canonical = stored.metadata ? JSON.parse(stored.metadata) as CanonicalCardMetadata : null;
+  const canonical = derivedMetadata(stored.metadata ? JSON.parse(stored.metadata) as CanonicalCardMetadata : validateCanonicalMetadata({ cardType: 'question' }))!;
   const topics = topics_json ? JSON.parse(topics_json) as string[] : [];
-  // Transitional storage adapter for the still-live v3/v4 consumers. The canonical
-  // writer/read model is exposed separately and IMP-004 removes this legacy projection.
+  // Compatibility projection for existing management/Study consumers; v5 imports
+  // read canonical state directly and never round-trip through this projection.
   const metadata = legacyMetadataProjection(canonical, topics);
-  return { ...stored, translations: JSON.parse(stored.translations) as Translations, metadata };
+  const result = { ...stored, translations: JSON.parse(stored.translations) as Translations, metadata } as Card;
+  Object.defineProperty(result, 'canonical', {
+    value: { metadata: canonical, topics, priority, likelihood, creation_mode } satisfies CanonicalStoredState,
+    enumerable: false,
+  });
+  return result;
 }
 
 export function legacyMetadataProjection(canonical: CanonicalCardMetadata | null, topics: string[]): CardMetadata | null {
@@ -160,9 +172,10 @@ export async function saveDeck(db: D1Database, user: string, input: Record<strin
   return { id };
 }
 
-export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>, thirdParty = false, idempotency?: { key: string; payload: string }): Promise<{ id?: string; answer?: string }> {
+export async function changeCard(db: D1Database, user: string, deckId: string, input: Record<string, unknown>, thirdParty = false, idempotency?: { key: string; payload: string }): Promise<{ id?: string; answer?: string; revision?: number; classification?: Record<string, unknown> }> {
   const deck = await getDeck(db, user, deckId, true);
   if (thirdParty) check(deck.third_party_access === 'READ_WRITE', 'Card not available.', 404);
+  if (thirdParty && input.expected_revision !== undefined) check(input.expected_revision === deck.revision, 'Deck changed.', 409);
   const now = Date.now();
   const id = input.id ? string(input.id, 'card ID', 80) : crypto.randomUUID();
   const method = input.method;
@@ -192,21 +205,28 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       const answer = string(input.answer ?? current?.translations[deck.primaryLanguage ?? current.primary_language]?.answer ?? '', 'answer', 20000, true);
       const language = deck.primaryLanguage ?? current?.primary_language;
       check(language, 'Resolve the deck primary language before adding cards.');
-      translations = { ...current?.translations, [language]: { ...current?.translations[language], question, answer } };
+      translations = { ...current?.translations, [language]: { ...current?.translations[language], question, answer, ...(thirdParty && input.questionDetails !== undefined ? { questionDetails: string(input.questionDetails, 'questionDetails', 20000, true) } : {}) } };
     }
     const primary = deck.primaryLanguage ?? current?.primary_language;
     check(Object.keys(translations).every(code => deck.supportedLanguages.includes(code)), 'Unsupported deck language.');
     check(primary && translations[primary], 'Primary language content is required.');
     check(primary, 'Add at least one translation.');
+    const canonicalWrite = thirdParty || Object.hasOwn(input, 'topics');
     let cardMetadata = current?.metadata ?? null;
-    if (input.metadata !== undefined) {
+    if (!canonicalWrite && input.metadata !== undefined) {
       try { cardMetadata = validateMetadata(input.metadata); }
       catch (error) { throw new HttpError(400, `Card ${current?.import_key ?? id}: ${error instanceof Error ? error.message : 'invalid metadata'}`); }
     }
-    if (cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
-    const next = { metadata: cardMetadata, id, primary_language: primary, import_key: current?.import_key ?? null, translations,
+    if (!canonicalWrite && cardMetadata?.cardType === 'coding_task') check(Object.values(translations).every(value => value.questionDetails?.trim()), `Card ${current?.import_key ?? id}: questionDetails: coding_task requires a task statement for every language.`);
+    const next = { metadata: cardMetadata, canonical: current?.canonical, id, primary_language: primary, import_key: current?.import_key ?? null, translations,
       interview_priority: current?.interview_priority ?? null, difficulty: current?.difficulty ?? null };
-    validateCardLanguages(next, deck);
+    if (canonicalWrite) {
+      const { cardValues } = await import('./management');
+      const patch = Object.fromEntries(['metadata', 'topics', 'priority', 'likelihood', 'creationMode'].filter(key => Object.hasOwn(input, key)).map(key => [key, input[key]]));
+      const validated = cardValues({ ...patch, translations, primary_language: primary }, id, current);
+      next.canonical = validated.canonical;
+    }
+    validateCardLanguages({ ...next, metadata: canonicalWrite ? next.canonical!.metadata : next.metadata }, deck);
     check(uniqueQuestions([...cards.filter(card => card.id !== id), next]), 'A matching question already exists.', 409);
     const mutation = crypto.randomUUID();
     const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ?
@@ -215,9 +235,9 @@ export async function changeCard(db: D1Database, user: string, deckId: string, i
       SELECT ?, 'create_card', ?, ?, ?, ? WHERE EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
       .bind(user, idempotency.key, idempotency.payload, id, now, deckId, mutation)] : [];
     const replaceTopics = !current || input.metadata !== undefined;
-    const [result] = await db.batch([header, ...writeCards(db, deckId, mutation, now, [next], false, replaceTopics), ...receipt]);
+    const [result] = await db.batch([header, ...(canonicalWrite ? writeCanonicalCards(db, deckId, mutation, now, [{ ...next, ...next.canonical!, topics: !current || Object.hasOwn(input, 'topics') ? next.canonical!.topics : undefined }]) : writeCards(db, deckId, mutation, now, [next], false, replaceTopics)), ...receipt]);
     check(result.meta.changes, 'Deck changed. Reload it and try again.', 409);
-    return { id, ...(method === 'answer' ? { answer: translations[String(input.language ?? current!.primary_language)].answer } : {}) };
+    return { id, revision: deck.revision + 1, ...(thirdParty ? { classification: { metadata: next.canonical!.metadata, topics: next.canonical!.topics, priority: next.canonical!.priority, likelihood: next.canonical!.likelihood, creationMode: next.canonical!.creation_mode } } : {}), ...(method === 'answer' ? { answer: translations[String(input.language ?? current!.primary_language)].answer } : {}) };
   }
   const mutation = crypto.randomUUID();
   const header = db.prepare(`UPDATE decks SET revision = revision + 1, mutation = ?, updated_at = ? WHERE id = ?
@@ -244,6 +264,7 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
   let parsed: ReturnType<typeof parseMarkdown>;
   try { parsed = parseMarkdown(source); }
   catch (error) { throw new HttpError(400, error instanceof Error ? error.message : 'Invalid Markdown frontmatter.'); }
+  check(parsed.version === 5, 'Standard import requires formatVersion: 5. Convert legacy v3/v4 Markdown to v5, review the conversion, then preview and explicitly import it.');
   check(parsed.cards.length > 0 && parsed.cards.length <= 1000, 'Include between 1 and 1000 Markdown questions.');
   const { metadata } = parsed;
   const key = metadata.deckId ? string(metadata.deckId, 'Markdown deckId', 160) : null;
@@ -252,7 +273,6 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
     : key ? await db.prepare('SELECT * FROM decks WHERE owner_id = ? AND source_key = ?').bind(user, key).first<Deck>() : null;
   if (deck) Object.assign(deck, decodeDeck(deck));
   const existing = deck ? await listCards(db, user, deck.id) : [];
-  if (parsed.version === 3 && existing.some(card => !card.metadata) && input.replace !== true) check(false, 'Target contains legacy cards. Use a new deck or separately approved v3 replacement; legacy cards are not migrated.');
   const links = object(input.links ?? {});
   if (input.replace === true) {
     check(deck && deck.owner_id === user, 'Only the owner may replace cards.', 403);
@@ -260,9 +280,29 @@ async function prepareImport(db: D1Database, user: string, input: Record<string,
   return { deck, key, metadata, existing, parsed, links };
 }
 
+function importLanguageConfig(deck: Deck | null, metadata: Record<string, string>, input: Record<string, unknown>, cards: ImportTarget[]) {
+  if (deck) return { primaryLanguage: deck.primaryLanguage, supportedLanguages: deck.supportedLanguages };
+  const languages = [...new Set(cards.flatMap(card => Object.keys(card.translations)))].sort();
+  return deckLanguages({
+    primaryLanguage: input.primaryLanguage ?? metadata.primaryLanguage ?? (languages.length === 1 ? languages[0] : null),
+    supportedLanguages: input.supportedLanguages ?? (metadata.supportedLanguages ? JSON.parse(metadata.supportedLanguages) : languages),
+  });
+}
+
 export async function inspectImport(db: D1Database, user: string, input: Record<string, unknown>) {
   const { deck, key, metadata, existing, parsed, links } = await prepareImport(db, user, input);
-  const { rows } = planImport(parsed, input.replace === true ? [] : existing, links, {});
+  const { rows, cards } = planImport(parsed, input.replace === true ? [] : existing, links, object(input.choices ?? {}));
+  try {
+    const inferred = [...new Set(cards.flatMap(card => Object.keys(card.translations)))];
+    // A new multilingual deck without a declared primary is resolved in the UI.
+    if (deck || input.primaryLanguage !== undefined || metadata.primaryLanguage || inferred.length === 1) {
+      const config = importLanguageConfig(deck, metadata, input, cards);
+      for (const card of cards) validateCardLanguages({ ...card, metadata: card.canonical?.metadata ?? card.metadata }, config);
+    }
+    check(uniqueQuestions(cards), 'A matching question already exists.', 409);
+  } catch (error) {
+    rows.push({ index: 'deck-validation', kind: 'invalid', question: '', message: error instanceof Error ? error.message : 'Invalid final deck' });
+  }
   const impact = deck ? await replacementImpact(db, deck.id) : null;
   return { impact, deck, key, metadata, rows, existing: existing.length, version: parsed.version };
 }
@@ -301,6 +341,10 @@ export function writeCanonicalCards(
     };
   });
   const encoded = JSON.stringify(values);
+  const targetGuard = db.prepare(`INSERT INTO card_topics(card_id, topic_name)
+    SELECT c.id, NULL FROM cards c JOIN json_each(?) input ON input.value ->> 'id' = c.id
+    WHERE c.deck_id <> ? AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
+    .bind(encoded, deck, deck, mutation);
   const write = db.prepare(`INSERT INTO cards (id, deck_id, stable_key, question_key, position,
     created_at, updated_at, import_key, primary_language, translations, interview_priority, difficulty, metadata,
     priority, likelihood, creation_mode)
@@ -313,21 +357,25 @@ export function writeCanonicalCards(
     ${insertOnly ? '' : `ON CONFLICT(id) DO UPDATE SET question_key = excluded.question_key, updated_at = excluded.updated_at, import_key = excluded.import_key,
       primary_language = excluded.primary_language, translations = excluded.translations,
       interview_priority = excluded.interview_priority, difficulty = excluded.difficulty, metadata = excluded.metadata
-      ${updateClassification ? ', priority = excluded.priority, likelihood = excluded.likelihood, creation_mode = excluded.creation_mode' : ''}`}`)
+      ${updateClassification ? ', priority = excluded.priority, likelihood = excluded.likelihood, creation_mode = excluded.creation_mode' : ''}
+      WHERE cards.deck_id = excluded.deck_id`}`)
     .bind(deck, deck, now, now, encoded, deck, mutation);
   const supplied = values.some(card => card.topics !== undefined);
-  if (!supplied) return [write];
+  if (!supplied) return [targetGuard, write];
   const remove = db.prepare(`DELETE FROM card_topics
-    WHERE card_id IN (SELECT value ->> 'id' FROM json_each(?) WHERE json_type(value, '$.topics') = 'array')
+    WHERE card_id IN (SELECT c.id FROM cards c JOIN json_each(?) input ON input.value ->> 'id' = c.id
+      WHERE c.deck_id = ? AND json_type(input.value, '$.topics') = 'array')
     AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
-    .bind(encoded, deck, mutation);
+    .bind(encoded, deck, deck, mutation);
   const insert = db.prepare(`INSERT INTO card_topics(card_id, topic_name)
     SELECT card.value ->> 'id', topic.value
-    FROM json_each(?) card, json_each(card.value, '$.topics') topic
+    FROM json_each(?) card
+    JOIN cards c ON c.id = card.value ->> 'id' AND c.deck_id = ?
+    JOIN json_each(card.value, '$.topics') topic
     WHERE json_type(card.value, '$.topics') = 'array'
       AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)`)
-    .bind(encoded, deck, mutation);
-  return [write, remove, insert];
+    .bind(encoded, deck, deck, mutation);
+  return [targetGuard, write, remove, insert];
 }
 
 /** Temporary v3/v4-to-canonical storage adapter; parsing semantics remain unchanged. */
@@ -336,17 +384,19 @@ export function writeCards(
   cards: ImportTarget[], insertOnly = false, replaceTopics = true,
 ) {
   const canonical = cards.map(card => {
+    const { legacyMetadataProvided, ...target } = card;
     const legacy = card.metadata;
+    const stored = card.canonical;
     const metadata = legacy ? {
       cardType: legacy.cardType === 'coding_task' ? 'task' as const : 'question' as const,
       provenance: legacy.provenance,
       ...(legacy.answerReferences === undefined ? {} : { answerReferences: legacy.answerReferences }),
       occurrenceCount: legacy.occurrenceCount,
-    } : { cardType: 'question' as const, occurrenceCount: 0 };
+    } : stored?.metadata ?? { cardType: 'question' as const, occurrenceCount: 0 };
     return {
-      ...card, metadata, priority: DEFAULT_RATING, likelihood: DEFAULT_RATING,
-      creation_mode: DEFAULT_CREATION_MODE,
-      ...(replaceTopics ? { topics: legacy ? normalizeTopics([legacy.topic]) : [] } : {}),
+      ...target, metadata, priority: stored?.priority ?? DEFAULT_RATING, likelihood: stored?.likelihood ?? DEFAULT_RATING,
+      creation_mode: stored?.creation_mode ?? DEFAULT_CREATION_MODE,
+      ...(replaceTopics && legacyMetadataProvided !== false ? { topics: legacy ? normalizeTopics([legacy.topic]) : [] } : {}),
     } satisfies CanonicalWriteTarget;
   });
   return writeCanonicalCards(db, deck, mutation, now, canonical, insertOnly, false);
@@ -363,19 +413,12 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
   if (input.replace === true) check(input.confirmReplacement === deck?.id, 'Confirm replacement with the exact target deck ID.');
   const { rows, changed, cards } = planImport(parsed, input.replace === true ? [] : existing, links, updates);
   for (const row of rows) {
-    if (parsed.version >= 3 || input.replace === true) check(row.kind !== 'invalid', row.message ?? 'Invalid v3 card.');
+    check(row.kind !== 'invalid', row.message ?? 'Invalid v5 card.');
     check(row.kind !== 'link', 'Resolve how each card matches the existing deck.');
     if (row.kind === 'conflict') check(['keep', 'update'].includes(String(updates[row.index])), 'Resolve every content conflict.');
   }
-  const declaredPrimary = input.primaryLanguage ?? metadata.primaryLanguage;
-  const declaredSupported = input.supportedLanguages ?? (metadata.supportedLanguages ? JSON.parse(metadata.supportedLanguages) : undefined);
-  const inferredLanguages = [...new Set(cards.flatMap(card => Object.keys(card.translations)))].sort();
-  const inferredPrimary = inferredLanguages.length === 1 ? inferredLanguages[0] : null;
-  const languageConfig = deck ? { primaryLanguage: deck.primaryLanguage, supportedLanguages: deck.supportedLanguages }
-    : declaredPrimary !== undefined || declaredSupported !== undefined
-      ? deckLanguages({ primaryLanguage: declaredPrimary ?? inferredPrimary, supportedLanguages: declaredSupported ?? inferredLanguages })
-      : deckLanguages({ primaryLanguage: inferredPrimary, supportedLanguages: inferredLanguages });
-  for (const card of cards) validateCardLanguages(card, languageConfig);
+  const languageConfig = importLanguageConfig(deck, metadata, input, cards);
+  for (const card of cards) validateCardLanguages({ ...card, metadata: card.canonical?.metadata ?? card.metadata }, languageConfig);
   if (languageConfig.primaryLanguage) for (const card of changed) card.primary_language = languageConfig.primaryLanguage;
   check(uniqueQuestions(cards), 'A matching question already exists.', 409);
   check(rows.some(row => row.kind !== 'invalid'), 'There are no valid cards to import.');
@@ -394,7 +437,11 @@ export async function applyImport(db: D1Database, user: string, input: Record<st
     // card_deleted invalidates sessions; progress cascades, historical events remain.
     batch.push(db.prepare('DELETE FROM cards WHERE deck_id = ? AND EXISTS(SELECT 1 FROM decks WHERE id = ? AND mutation = ?)').bind(id, id, mutation));
   }
-  batch.push(...writeCards(db, id, mutation, now, changed));
+  batch.push(...writeCanonicalCards(db, id, mutation, now, changed.map(card => ({
+    ...card, metadata: card.canonical!.metadata, topics: card.topicsProvided ? card.canonical!.topics : undefined,
+    priority: card.canonical!.priority, likelihood: card.canonical!.likelihood,
+    creation_mode: card.canonical!.creation_mode,
+  }))));
   const [result] = await db.batch(batch);
   check(result.meta.changes, 'Deck changed. Preview the import again.', 409);
   return { id, imported: changed.length, updatedTranslations: rows.filter(row => row.kind === 'conflict' && updates[row.index] === 'update').length };

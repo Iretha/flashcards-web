@@ -59,6 +59,16 @@ canonical topics. Explicit null topics are invalid in the shared API/domain cont
 | T-15 | 001/014/018 | No Topics sentinel OR names; not canonical topic | Model/API/UI/tests |
 | T-16 | 012/014/018 | Remove ineligible, append eligible unpassed, preserve still-eligible position; no COMPLETE reopen | Lifecycle/tests |
 
+## IMP-008 restoration amendment — approved 2026-11-25
+
+Restore legacy Study with no active classification filters and default sort. Preserve
+stored session state, progress, current/history, cycle, Repeat and timer values. Do not
+infer unavailable historical cycle boundaries or passed membership. Retain stored remaining
+work as the cycle admission snapshot and record consumption prospectively; use the shared
+engine at subsequent natural cycle boundaries. No forced resets, termination, or separate
+permanent legacy engine. This supersedes the historical adapter inference requirement.
+See [Existing-session adapter](STUDY-LIFECYCLE.md#existing-session-adapter).
+
 ## Superseded historical proposals
 
 At reference commit nullable ratings/default null/missing-rating options, planned

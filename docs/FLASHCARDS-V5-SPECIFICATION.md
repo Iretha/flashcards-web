@@ -1,6 +1,6 @@
 # Flashcards Markdown v5 — file format
 
-Approved planned format; not a claim of production support. The authoritative technical contract is [MARKDOWN-V5.md](card-classification/MARKDOWN-V5.md). See [example](FLASHCARDS-V5-EXAMPLE.md) and [generator classification rules](../skills/flashcards-deck-generator/CLASSIFICATION-GUIDELINES.md).
+Implemented locally for standard import; production deployment is separately authorized. The authoritative technical contract is [MARKDOWN-V5.md](card-classification/MARKDOWN-V5.md). See [example](FLASHCARDS-V5-EXAMPLE.md) and [generator classification rules](../skills/flashcards-deck-generator/CLASSIFICATION-GUIDELINES.md).
 
 ## Grammar
 

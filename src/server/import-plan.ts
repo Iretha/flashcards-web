@@ -5,17 +5,35 @@ import type { parseMarkdown } from '../lib/markdown';
 import { validTranslation } from '../lib/translations';
 import type { Language, Translation, Translations } from '../lib/translations';
 import { normalizeTopic } from '../lib/classification';
+import { applyClassificationPatch } from '../lib/classification';
+import { validateCanonicalMetadata } from '../lib/metadata';
+import type { CanonicalCardMetadata } from '../lib/metadata';
+import type { CreationMode, Rating } from '../lib/classification';
+
+export interface CanonicalStoredState {
+  metadata: CanonicalCardMetadata;
+  topics: string[];
+  priority: Rating;
+  likelihood: Rating;
+  creation_mode: CreationMode;
+}
 
 export interface ImportTarget {
   id: string;
   metadata?: CardMetadata | null;
+  topicsProvided?: boolean;
   import_key: string | null;
   primary_language: Language;
   translations: Translations;
   interview_priority: number | null;
   difficulty: number | null;
+  /** Non-enumerable on read DTOs; preserves canonical state through legacy write adapters. */
+  canonical?: CanonicalStoredState;
+  /** Internal import signal: omitted legacy metadata must not replace canonical memberships. */
+  legacyMetadataProvided?: boolean;
 }
 interface PreviewRow {
+  classificationChange?: { before: CanonicalStoredState | null; after: CanonicalStoredState; beforeDifficulty: number | null; difficulty: number | null };
   index: string;
   kind: 'new' | 'translation' | 'duplicate' | 'conflict' | 'invalid' | 'link' | 'metadata';
   question: string;
@@ -32,8 +50,8 @@ interface PreviewRow {
   metadata?: CardMetadata | null;
 }
 
-const comparable = (value: Translation) => JSON.stringify([
-  questionKey(value.question), value.answer ?? '', value.questionDetails ?? '',
+const comparable = (value: Translation, preserveDetailsPresence: boolean) => JSON.stringify([
+  questionKey(value.question), value.answer ?? '', preserveDetailsPresence ? value.questionDetails : value.questionDetails ?? '',
 ]);
 
 export function planImport(
@@ -92,6 +110,8 @@ export function planImport(
       primary_language: target?.primary_language ?? primary, translations: { ...target?.translations },
       interview_priority: draft.interviewPriority ?? target?.interview_priority ?? null,
       difficulty: draft.difficulty ?? target?.difficulty ?? null,
+      canonical: target?.canonical,
+      legacyMetadataProvided: draft.metadata !== undefined,
     };
     claimed.add(id);
     let dirty = isNew || next.import_key !== target?.import_key;
@@ -107,17 +127,38 @@ export function planImport(
       const previous = next.translations[actual];
       const proposed: Translation = { ...previous, ...value, answer: value.answer ?? previous?.answer ?? '' };
       const rowIndex = prefix + ':' + actual;
-      const duplicate = previous && comparable(previous) === comparable(proposed);
+      const duplicate = previous && comparable(previous, parsed.version === 5) === comparable(proposed, parsed.version === 5);
       const kind = duplicate ? 'duplicate' : previous ? 'conflict' : isNew && first ? 'new' : 'translation';
       rows.push({
         index: rowIndex, kind, question: value.question, answer: proposed.answer, language: actual,
-        answerOperation: !previous ? 'create' : value.answer === undefined ? 'preserve' : value.answer === '' ? 'clear' : 'replace',
+        answerOperation: !previous ? 'create' : choices[rowIndex] === 'keep' || value.answer === undefined ? 'preserve' : value.answer === '' ? 'clear' : 'replace',
         metadata: next.metadata, existingAnswer: previous?.answer, incoming: proposed, existingTranslation: previous, key: key ?? undefined,
       });
       first = false;
-      if (kind === 'duplicate' || (kind === 'conflict' && choices[rowIndex] !== 'update')) continue;
+      if (kind === 'duplicate' || (kind === 'conflict' && (parsed.version === 5 ? choices[rowIndex] === 'keep' : choices[rowIndex] !== 'update'))) continue;
       next.translations[actual] = proposed;
       dirty = true;
+    }
+    if (parsed.version === 5) {
+      try {
+        const supplied = draft.canonical ?? {};
+        const { difficulty, ...patch } = supplied;
+        const base = target?.canonical ?? { topics: [], priority: 3 as const, likelihood: 3 as const, creation_mode: 'UNKNOWN' as const, metadata: validateCanonicalMetadata({ cardType: 'question' }) };
+        const final = applyClassificationPatch({ ...base, creationMode: base.creation_mode, translations: next.translations }, {
+          ...patch, ...(patch.creationMode === null ? { creationMode: 'UNKNOWN' } : {}),
+        });
+        next.canonical = { topics: final.topics, priority: final.priority, likelihood: final.likelihood, creation_mode: final.creationMode, metadata: final.metadata };
+        next.topicsProvided = !target || supplied.topics !== undefined;
+        next.difficulty = difficulty === undefined ? target?.difficulty ?? null : difficulty;
+        const comparableState = (value: CanonicalStoredState | undefined) => value && JSON.stringify([value.topics, value.priority, value.likelihood, value.creation_mode, stableMetadata(value.metadata)]);
+        if (comparableState(next.canonical) !== comparableState(target?.canonical) || next.difficulty !== target?.difficulty) {
+          rows.push({ index: prefix + ':classification', kind: 'metadata', question, key, classificationChange: { before: target?.canonical ?? null, after: next.canonical, beforeDifficulty: target?.difficulty ?? null, difficulty: next.difficulty } });
+          dirty = true;
+        }
+      } catch (error) {
+        rows.push({ index: prefix + ':validation', kind: 'invalid', question, key, message: error instanceof Error ? error.message : 'Invalid final card' });
+        continue;
+      }
     }
     if (dirty) {
       cards.set(id, next);
@@ -142,7 +183,7 @@ export function uniqueQuestions(cards: ImportTarget[]) {
   return true;
 }
 
-function stableMetadata(value: CardMetadata | null | undefined): string {
+function stableMetadata(value: CardMetadata | CanonicalCardMetadata | null | undefined): string {
  const sort = (v: unknown): unknown => Array.isArray(v) ? v.map(sort) : v && typeof v === 'object' ? Object.fromEntries(Object.entries(v).sort(([a],[b])=>a.localeCompare(b)).map(([k,item])=>[k,sort(item)])) : v;
  return JSON.stringify(sort(metadataForStorage(value)));
 }

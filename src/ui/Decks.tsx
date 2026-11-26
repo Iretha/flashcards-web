@@ -1,4 +1,4 @@
-import { metadataForStorage } from '../lib/metadata';
+import { cardTypes, classificationLabels } from '../lib/classification';
 import { defaultInstructions, effectiveInstructions } from '../lib/chatgpt';
 import { useEffect, useState } from 'react';
 import CardSources from './CardSources';
@@ -6,7 +6,7 @@ import MarkdownContent from './MarkdownContent';
 import { api } from './api';
 import type { Card, Deck } from './api';
 import { languages, primaryLanguageFirst } from '../lib/translations';
-import type { CardMetadata } from '../lib/metadata';
+import type { CardType } from '../lib/classification';
 import type { Language, Translation } from '../lib/translations';
 
 type Run = (work: () => Promise<void>) => Promise<void>;
@@ -78,26 +78,28 @@ function ThirdPartyAccessControl({ deck }: { deck: Deck }) {
 function CardEditor({ deck, card, busy, save, close }: { deck: Deck; card?: Card; busy: boolean; save: (input: object) => void; close: () => void }) {
   const [language, setLanguage] = useState<Language>(deck.primaryLanguage ?? card?.primary_language ?? 'en');
   const [translations, setTranslations] = useState(card?.translations ?? {});
-  const [metadata, setMetadata] = useState<CardMetadata | null>(card ? card.metadata ?? null : {
-    cardType: 'question', topic: '', occurrenceCount: 0, provenance: { type: 'generated', sources: [] },
-  });
+  const [cardType, setCardType] = useState<CardType>(card?.classificationMetadata.cardType ?? 'question');
+  const [topics, setTopics] = useState((card?.topics ?? []).join('\n'));
+  const labels = classificationLabels[language === 'bg' ? 'bg' : 'en'];
   const fields: { key: keyof Translation; label: string }[] = [
     { key: 'question', label: 'Question' }, { key: 'answer', label: 'Answer' },
-    { key: 'questionDetails', label: 'Question details / task statement' },
+    { key: 'questionDetails', label: cardType === 'task' ? labels.taskSpecification : 'Question details' },
   ];
   const active = translations[language];
   const supplied = Object.entries(translations).filter(([, value]) =>
     Boolean(value.question.trim() || value.answer.trim() || value.questionDetails?.trim()));
-  const invalid = !supplied.some(([code]) => code === (deck.primaryLanguage ?? card?.primary_language)) || supplied.some(([, value]) => !value.question.trim() || (metadata?.cardType === 'coding_task' && !value.questionDetails?.trim()));
+  const invalid = !supplied.some(([code]) => code === (deck.primaryLanguage ?? card?.primary_language)) || supplied.some(([, value]) => !value.question.trim() || (cardType === 'task' && !value.questionDetails?.trim()));
   return <form className="item stack" onSubmit={event => {
     event.preventDefault();
-    if (!invalid) save({ id: card?.id, translations: Object.fromEntries(supplied), ...(metadata ? { metadata: metadataForStorage(metadata) } : {}), method: 'save' });
+    if (!invalid) save({ id: card?.id, translations: Object.fromEntries(supplied),
+      metadata: { cardType, ...(!card && { provenance: { type: 'generated', sources: [] } }) }, topics: topics.split('\n').filter(topic => topic.trim()), method: 'save' });
   }}>
-    {metadata && <>
-      <label>Card type<select value={metadata.cardType} onChange={event => setMetadata({ ...metadata, cardType: event.target.value as CardMetadata['cardType'] })}><option value="question">Question</option><option value="coding_task">Coding Task</option></select></label>
-      <label>Topic<input required maxLength={2000} value={metadata.topic} onChange={event => setMetadata({ ...metadata, topic: event.target.value })} /></label>
-      {!card && <p className="muted">New independently authored cards use generated provenance with zero documented interview occurrences. Use Markdown v3 import for sourced or adapted content and source references.</p>}
-    </>}
+    <label>{labels.cardType}<select value={cardType} onChange={event => setCardType(event.target.value as CardType)}>
+      {cardTypes.map(type => <option key={type} value={type}>{labels[type]}</option>)}
+    </select></label>
+    <label>{language === 'bg' ? 'Теми (по една на ред)' : 'Topics (one per line)'}
+      <textarea rows={3} value={topics} onChange={event => setTopics(event.target.value)} />
+    </label>
     <div className="row" role="group" aria-label="Translation tabs">
       {primaryLanguageFirst(deck.supportedLanguages, deck.primaryLanguage).map(item => <button key={item} type="button" aria-pressed={item === language}
         onClick={() => setLanguage(item)}>{item.toUpperCase()}</button>)}
@@ -109,7 +111,7 @@ function CardEditor({ deck, card, busy, save, close }: { deck: Deck; card?: Card
           setTranslations(current => ({ ...current, [language]: { ...(current[language] ?? { question: '', answer: '' }), [key]: value } }));
         }} />
     </label>)}
-    {invalid && <p className="muted">Add a question for every language you use. Coding tasks also require a task statement.</p>}
+    {invalid && <p className="muted">Add a question for every language you use. Tasks also require a task specification.</p>}
     <div className="row"><button className="primary" disabled={busy || invalid}>Save card</button><button type="button" onClick={close}>Cancel</button></div>
   </form>;
 }
@@ -139,10 +141,10 @@ export function DeckDetail({ deck, busy, run, reload, close, edit }: { deck: Dec
   const sorted = (cards ?? []).filter(card =>
     (!priority || String(card.interview_priority) === priority) &&
     (!difficulty || String(card.difficulty) === difficulty) &&
-    (!cardType || card.metadata?.cardType === cardType) &&
-    (!topic || card.metadata?.topic === topic) &&
-    (!provenance || card.metadata?.provenance.type === provenance) &&
-    (!company || card.metadata?.provenance.sources.some(source => source.company === company))
+    (!cardType || card.classificationMetadata.cardType === cardType) &&
+    (!topic || card.topics.includes(topic)) &&
+    (!provenance || card.classificationMetadata.provenance?.type === provenance) &&
+    (!company || card.classificationMetadata.provenance?.sources.some(source => source.company === company))
   ).sort((a, b) => {
     if (sort === 'hard') return b.times_shown - a.times_shown;
     if (sort === 'easy') return a.times_shown - b.times_shown;
@@ -184,18 +186,18 @@ export function DeckDetail({ deck, busy, run, reload, close, edit }: { deck: Dec
     </div>
     <div className="row">
       {[
-        { label: 'Card type', value: cardType, set: setCardType, options: ['question', 'coding_task'] },
-        { label: 'Topic', value: topic, set: setTopic, options: [...new Set((cards ?? []).flatMap(card => card.metadata ? [card.metadata.topic] : []))] },
-        { label: 'Company', value: company, set: setCompany, options: [...new Set((cards ?? []).flatMap(card => card.metadata?.provenance.sources.flatMap(source => source.company ? [source.company] : []) ?? []))] },
+        { label: 'Card type', value: cardType, set: setCardType, options: [...cardTypes] },
+        { label: 'Topic', value: topic, set: setTopic, options: [...new Set((cards ?? []).flatMap(card => card.topics))] },
+        { label: 'Company', value: company, set: setCompany, options: [...new Set((cards ?? []).flatMap(card => card.classificationMetadata.provenance?.sources.flatMap(source => source.company ? [source.company] : []) ?? []))] },
         { label: 'Provenance', value: provenance, set: setProvenance, options: ['sourced', 'mixed', 'generated'] },
-      ].map(filter => <label key={filter.label}>{filter.label}<select value={filter.value} onChange={event => filter.set(event.target.value)}><option value="">All</option>{filter.options.map(option => <option key={option}>{option}</option>)}</select></label>)}
+      ].map(filter => <label key={filter.label}>{filter.label}<select value={filter.value} onChange={event => filter.set(event.target.value)}><option value="">All</option>{filter.options.map(option => <option key={option} value={option}>{filter.label === 'Card type' && (option === 'task' || option === 'question') ? classificationLabels.en[option] : option}</option>)}</select></label>)}
     </div>
     {cards === null && <p role="status">Loading cards…</p>}
     {cards?.length === 0 && <p>No cards in this deck yet.</p>}
     {cards && cards.length > 0 && sorted.length === 0 && <p>No cards match these filters.</p>}
     {sorted.map(card => <article className="item stack" key={card.id}>
       <h2>{card.translations[card.primary_language]?.question}</h2>
-      {card.metadata && <CardSources metadata={card.metadata} />}
+      <CardSources metadata={card.classificationMetadata} topics={card.topics} language={card.primary_language} />
       {(card.interview_priority !== null || card.difficulty !== null) && <p className="muted">
         Interview priority {card.interview_priority ?? '—'} · Difficulty {card.difficulty ?? '—'}
       </p>}

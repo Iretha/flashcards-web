@@ -53,7 +53,7 @@ in that runbook.
 ## Documentation
 
 - [Current application specification](docs/FLASHCARDS-V4-SPECIFICATION.md)
-- [Markdown import template](docs/FLASHCARDS-IMPORT-TEMPLATE.md), [v4 example](docs/FLASHCARDS-V4-EXAMPLE.md), [v3 compatibility fixture](docs/FLASHCARDS-V3-REFERENCE.md)
+- [Markdown v5 import template](docs/FLASHCARDS-V5-IMPORT-TEMPLATE.md) and [v5 contract](docs/card-classification/MARKDOWN-V5.md). Standard import requires v5; legacy v3/v4 files require reviewed conversion before import using the Import screen’s separate legacy conversion panel. Review/download the v5 output and conversion report, then select the converted file for normal preview and explicit import.
 - [Deck generation and review](skills/flashcards-deck-generator/README.md)
 - [Guarded card replacement](docs/CARD-REPLACEMENT.md)
 - [Management API](docs/MANAGEMENT-API.md)
@@ -63,3 +63,11 @@ in that runbook.
 - [External AI links](EXTERNAL-AI-INTEGRATION.md)
 - [Search architecture, migrations and recovery](docs/SEARCH-ARCHITECTURE.md)
 - [Repository engineering rules](AGENTS.md)
+
+Catalog scale conversion (offline; never generates answers or import decks):
+
+```sh
+node scripts/convert-catalog.mjs <reviewed-original-catalog.md> <new-output.md> > conversion-report.json
+```
+
+The exact original filename/hash must match `docs/card-classification/conversion/catalog-manifest.json`. Existing output paths and target-scale catalogs are rejected. The checked-in catalogs already use the target scale.

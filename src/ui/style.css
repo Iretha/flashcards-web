@@ -428,3 +428,15 @@ fieldset { border: 1px solid var(--line); padding: .75rem; border-radius: .5rem;
 .auth-google { min-height: 3rem; font-weight: bold; }
 .auth-methods a { overflow-wrap: anywhere; }
 .auth-methods button:focus-visible, .auth-methods input:focus-visible { outline: 3px solid #60a5fa; outline-offset: 3px; }
+
+.study-classification { display: grid; gap: .5rem; min-width: 0; }
+.study-classification summary { cursor: pointer; padding: .55rem; min-height: 2.75rem; overflow-wrap: anywhere; }
+.study-classification :focus-visible { outline: 2px solid currentColor; outline-offset: 2px; }
+.classification-settings { min-width: 0; border: 0; padding: .5rem 0; }
+.classification-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: .5rem; }
+.classification-filter fieldset { min-width: 0; max-height: 18rem; overflow: auto; padding: .5rem; overflow-wrap: anywhere; }
+.classification-filter input[type="search"] { width: 100%; min-width: 0; }
+.classification-filter label { min-height: 2.75rem; }
+@media (max-width: 760px) {
+  .classification-grid { grid-template-columns: minmax(0, 1fr); }
+}

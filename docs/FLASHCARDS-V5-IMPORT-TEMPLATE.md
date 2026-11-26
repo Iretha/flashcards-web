@@ -6,7 +6,7 @@ description: Senior Java Developer interview preparation
 visibility: PRIVATE
 primaryLanguage: en
 supportedLanguages: [en, bg]
-# Planned v5 template; verify importer support before use.
+# Standard import accepts v5 only; legacy files require reviewed conversion.
 # New cards: explicitly supply all five classification fields.
 # Existing cards: preserve classification unless explicitly requested.
 # Metadata patches by presence; omitted fields/languages are preserved.

@@ -53,6 +53,9 @@ Every question has a `Priority` column immediately after `Topics`. Calculate it 
 | P2 | High — important for backend design and development. |
 | P3 | Medium — useful, typically requiring less depth. |
 | P4 | Low — specialized or less relevant to general Java roles. |
+| P5 | Very Low — rarely relevant to the target role. |
+
+Existing P1–P4 meanings and values are retained; no question reassessment is implied.
 
 Coverage measures the breadth and adequacy of the selected questions, not their count alone.
 
@@ -67,17 +70,19 @@ Reassess coverage after additions, moves and deletions. Do not mark a topic Good
 
 ## 6. Interview likelihood
 
+Use the target scale: 1 is highest likelihood, 5 is lowest. Convert attested historical 5-highest values exactly once as 6 − old, using the reviewed per-file manifest and source hash; never infer a scale from numbers. Missing/null likelihood becomes 3 in final new-card state, without inversion. Preserve historical evidence and editorial origin; use app creationMode UNKNOWN absent reliable attestation.
+
 Assign every question an integer from 1 to 5. Estimate likelihood across mainstream Java Developer and Senior Java Developer interviews, not DBA interviews, and not exclusively positions requiring a particular product.
 
 | Score | Label | Criterion |
 | ---: | --- | --- |
-| 5 | 🟢 Very high | Typical/core interview question. |
-| 4 | 🟢 High | Highly relevant and likely. |
-| 3 | 🟡 Moderate | Plausible but less common. |
-| 2 | 🟠 Low | Uncommon or stack/project-specific. |
-| 1 | 🔴 Very low | Very unlikely outside academic, DBA or specialist interviews. |
+| 1 | 🟢 Very High | Typical/core interview question. |
+| 2 | 🟢 High | Highly relevant and likely. |
+| 3 | 🟡 Medium | Plausible but less common. |
+| 4 | 🟠 Low | Uncommon or stack/project-specific. |
+| 5 | 🔴 Very Low | Very unlikely outside academic, DBA or specialist interviews. |
 
-This is an expert ordinal estimate, not a statistical probability, difficulty rating or documented occurrence count. Technical depth alone does not increase likelihood. Topic priority and question likelihood remain independent: a P1 topic may contain a score-1 specialist question. Cross-tabulate scores by topic when reviewing consistency; investigate high-priority topics dominated by low-likelihood questions rather than forcing scores to agree. Never delete low-scoring questions automatically. Explain material reassessments and obtain approval for deletions.
+This is an expert ordinal estimate, not a statistical probability, difficulty rating or documented occurrence count. Technical depth alone does not increase likelihood. Topic priority and question likelihood remain independent: a P1 topic may contain a score-5 specialist question. Cross-tabulate scores by topic when reviewing consistency; investigate high-priority topics dominated by low-likelihood questions rather than forcing scores to agree. Never delete low-likelihood questions automatically. Explain material reassessments and obtain approval for deletions.
 
 ## 7. Local numbering and origin
 
@@ -97,7 +102,7 @@ Canonical question table (illustrative row only):
 
 | ID | Question | Origin | Topics | Priority | Evidence | Likelihood |
 | ---: | --- | --- | --- | --- | --- | ---: |
-| 1 | What is a Database? | ORIGINAL | Database Fundamentals | P3 | — | 4 |
+| 1 | What is a Database? | ORIGINAL | Database Fundamentals | P3 | — | 2 |
 
 Use semicolons between topic tags. Store scores as plain integers, not emoji. Escape literal pipes in table cells (`\|`), including inside inline code. Do not insert blank lines within a table. Keep one question per row.
 

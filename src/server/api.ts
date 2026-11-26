@@ -7,10 +7,10 @@ import { tokens } from './tokens';
 import { collaborators } from './collaborators';
 import { authenticate, hasSessionCookie, login, logout, logoutAll } from './auth';
 import type { SessionDiagnostics } from './auth';
-import { applyImport, changeCard, getDeck, inspectImport, legacyMetadataProjection, listCards, listDecks, replacementImpact, saveDeck } from './decks';
+import { applyImport, changeCard, getDeck, inspectImport, listBrowserCards, listDecks, replacementImpact, saveDeck } from './decks';
 import type { CanonicalCardMetadata } from '../lib/metadata';
 import { check, HttpError, json, object, string } from './http';
-import { act, reset, startSession, studyView } from './sessions';
+import { act, configure, restartSession, reset, startSession, studyView } from './sessions';
 import { defaults } from '../lib/study';
 import type { Translations } from '../lib/translations';
 import { manage } from './management';
@@ -59,7 +59,7 @@ async function dispatch(
       if (route === 'cards') {
         const id = string(url.searchParams.get('deck'), 'deck ID', 80);
         await getDeck(db, user.id, id);
-        return json(await listCards(db, user.id, id));
+        return json(await listBrowserCards(db, user.id, id));
       }
       if (route === 'replacement-report') {
         const owned = (await listDecks(db, user.id)).filter(deck => deck.owned);
@@ -77,12 +77,13 @@ async function dispatch(
           db.prepare('SELECT * FROM card_progress WHERE user_id = ?').bind(user.id),
           db.prepare('SELECT * FROM study_events WHERE user_id = ? ORDER BY created_at, rowid').bind(user.id),
         ]);
-        return json({ version: 2, username: user.username, exportedAt: new Date().toISOString(), decks,
+        return json({ version: 3, username: user.username, exportedAt: new Date().toISOString(), decks,
           cards: cards.results.map(card => {
-            const { topics_json, priority: _priority, likelihood: _likelihood, creation_mode: _creationMode, ...legacy } = card;
-            return { ...legacy,
-              metadata: legacyMetadataProjection(legacy.metadata ? JSON.parse(String(legacy.metadata)) as CanonicalCardMetadata : null, JSON.parse(String(topics_json)) as string[]),
-              translations: JSON.parse(String(legacy.translations)) as Translations };
+            const { topics_json, creation_mode, interview_priority, ...content } = card;
+            return { ...content, creationMode: creation_mode, interviewPriority: interview_priority,
+              topics: JSON.parse(String(topics_json)),
+              metadata: card.metadata ? JSON.parse(String(card.metadata)) as CanonicalCardMetadata : null,
+              translations: JSON.parse(String(card.translations)) as Translations };
           }),
           progress: progress.results, history: history.results,
         }, 200, { 'Content-Disposition': 'attachment; filename="flashcards-backup.json"' });
@@ -115,6 +116,8 @@ async function dispatch(
     if (route === 'deck') return json(await saveDeck(db, user.id, input));
     if (route === 'import/preview') return json(await inspectImport(db, user.id, input));
     if (route === 'import/apply') return json(await applyImport(db, user.id, input));
+    if (route === 'study/configure') return json(await configure(db, user, input));
+    if (route === 'study/restart') return json(await restartSession(db, user, input));
     if (route === 'study/start') return json(await startSession(db, user, input));
     if (route === 'study/action') return json(await act(db, user, input));
     if (route === 'card' || route === 'deck/delete' || route === 'reset') {

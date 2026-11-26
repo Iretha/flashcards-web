@@ -2,12 +2,12 @@ import { quoteSearch } from '../lib/search';
 import { canEditDeck, editAccess, managementPermissions } from './permissions';
 import { deckLanguages, validateCardLanguages, validateLanguageChange } from './deck-languages';
 import { authenticateClient, digest } from './auth';
-import { deckWithCards, getDeck, listCards, listDecks, writeCards, primaryLanguageStatements, decodeDeck } from './decks';
+import { deckWithCards, getDeck, listCards, listDecks, writeCanonicalCards, primaryLanguageStatements, decodeDeck } from './decks';
 import type { Deck } from './decks';
 import { check, HttpError, json } from './http';
 import { uniqueQuestions } from './import-plan';
 import type { ImportTarget } from './import-plan';
-import { validateMetadata } from '../lib/metadata';
+import { applyClassificationPatch, validateClassificationCreate } from '../lib/classification';
 import { isLanguage, validTranslation } from '../lib/translations';
 import type { Translation, Translations } from '../lib/translations';
 
@@ -45,7 +45,7 @@ function deckData(deck: Deck, user: string) {
 
 function cardData(card: ImportTarget & { deck_id: string; position: number }, revision: number) {
   const { id, deck_id, position, import_key, primary_language, translations, interview_priority, difficulty, metadata } = card;
-  return { id, deck_id, position, import_key, primary_language, translations, interview_priority, difficulty, metadata, revision };
+  return { id, deck_id, position, import_key, primary_language, translations, interview_priority, difficulty, metadata: card.canonical?.metadata ?? metadata, topics: card.canonical?.topics ?? [], priority: card.canonical?.priority ?? 3, likelihood: card.canonical?.likelihood ?? 3, creationMode: card.canonical?.creation_mode ?? 'UNKNOWN', revision };
 }
 
 function deckValues(value: unknown, current?: Deck) {
@@ -64,8 +64,8 @@ function deckValues(value: unknown, current?: Deck) {
     preset, optionalText('chatgpt_en', 10000), optionalText('chatgpt_bg', 10000)] as const;
 }
 
-function cardValues(value: unknown, id: string, current?: ImportTarget): ImportTarget {
-  const input = fields(value, 'body', ['translations', 'primary_language', 'import_key', 'metadata', 'interview_priority', 'difficulty']);
+export function cardValues(value: unknown, id: string, current?: ImportTarget): ImportTarget {
+  const input = fields(value, 'body', ['translations', 'primary_language', 'import_key', 'metadata', 'interview_priority', 'difficulty', 'topics', 'priority', 'likelihood', 'creationMode']);
   const translations: Translations = { ...current?.translations };
   if ('translations' in input) {
     const entries = fields(input.translations, 'translations', Object.keys(input.translations && typeof input.translations === 'object' ? input.translations : {}));
@@ -89,20 +89,16 @@ function cardValues(value: unknown, id: string, current?: ImportTarget): ImportT
   }
   const primary = 'primary_language' in input ? input.primary_language : current?.primary_language ?? Object.keys(translations)[0];
   requireField(isLanguage(primary) && translations[primary], 'primary_language', 'Provide a complete translation for the primary language.');
-  let metadata = current?.metadata ?? null;
-  if ('metadata' in input) {
-    try { metadata = input.metadata === null ? null : validateMetadata(input.metadata); }
-    catch (error) {
-      const [field, ...message] = (error as Error).message.split(': ');
-      throw new InvalidField(field === 'metadata' || field.startsWith('metadata.') ? field : 'metadata.' + field, message.join(': '));
-    }
+  let state;
+  try {
+    const classification = Object.fromEntries(['metadata', 'topics', 'priority', 'likelihood', 'creationMode'].filter(key => key in input).map(key => [key, input[key]]));
+    state = current?.canonical
+      ? applyClassificationPatch({ ...current.canonical, creationMode: current.canonical.creation_mode, translations: current.translations }, { ...classification, translations })
+      : validateClassificationCreate({ ...classification, translations });
+  } catch (error) {
+    throw new InvalidField('classification', (error as Error).message);
   }
-  if (metadata?.cardType === 'coding_task') {
-    for (const language of Object.keys(translations)) {
-      const translation = translations[language];
-      requireField(!translation || translation.questionDetails?.trim(), 'translations.' + language + '.questionDetails', 'Coding tasks require a task statement.');
-    }
-  }
+  const canonical = { ...state, creation_mode: state.creationMode };
   const rating = (key: 'difficulty' | 'interview_priority') => {
     const value = key in input ? input[key] : current?.[key] ?? null;
     requireField(value === null || (typeof value === 'number' && Number.isInteger(value) && value >= 1 && value <= 5), key, 'Expected null or an integer from 1 to 5.');
@@ -110,7 +106,7 @@ function cardValues(value: unknown, id: string, current?: ImportTarget): ImportT
   };
   const key = 'import_key' in input ? input.import_key : current?.import_key ?? null;
   const importKey = key === null ? null : identifier(text(key, 'import_key', 100), 'import_key', 100);
-  return { id, translations, primary_language: primary, metadata, import_key: importKey, difficulty: rating('difficulty'), interview_priority: rating('interview_priority') };
+  return { id, translations, primary_language: primary, metadata: current?.metadata ?? null, canonical, import_key: importKey, difficulty: rating('difficulty'), interview_priority: rating('interview_priority') };
 }
 
 async function readBody(request: Request) {
@@ -250,7 +246,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
       const current = cardId ? cards.find(card => card.id === cardId) : undefined;
       check(!cardId || current, 'Card not available.', 404);
       const next = cardValues({ ...(value as object), primary_language: (value as Record<string, unknown>).primary_language ?? deck.primaryLanguage ?? current?.primary_language ?? Object.keys(((value as Record<string, unknown>).translations ?? {}) as object)[0] }, id, current);
-      validateCardLanguages(next, deck);
+      validateCardLanguages({ ...next, metadata: next.canonical!.metadata }, deck);
       const supported = deck.supportedLanguages as string[];
       requireField(Object.keys(next.translations).every(code => supported.includes(code)), 'translations', 'Language is not supported by this deck.');
       requireField(!deck.primaryLanguage || next.translations[deck.primaryLanguage as keyof Translations], 'translations', 'Primary language content is required.');
@@ -263,7 +259,7 @@ export async function manage(request: Request, db: D1Database, url: URL, route: 
       batch = [
         db.prepare(`UPDATE decks SET revision = revision + 1, updated_at = ?, mutation = ? WHERE id = ? AND ${editAccess(4)} AND revision = ?`)
           .bind(now, mutation, deck.id, user, deck.revision),
-        ...writeCards(db, deck.id, mutation, now, [next], !cardId, !current || Object.hasOwn(value as object, 'metadata')),
+        ...writeCanonicalCards(db, deck.id, mutation, now, [{ ...next, ...next.canonical!, topics: !current || Object.hasOwn(value as object, 'topics') ? next.canonical!.topics : undefined }], !cardId),
       ];
     }
     const parentId = deck?.id ?? id;

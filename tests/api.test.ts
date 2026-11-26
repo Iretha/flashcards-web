@@ -3,7 +3,7 @@ import { setThirdPartyAccess, resolveThirdPartyPermissions } from '../src/server
 import { mcp } from '../src/server/mcp';
 import { tokens } from '../src/server/tokens';
 import { authenticateClient } from '../src/server/auth';
-import { v3Fixture } from './fixtures/v3';
+import { v5Fixture } from './fixtures/v5';
 import { readFileSync } from 'node:fs';
 import { createHash, randomBytes } from 'node:crypto';
 import { convertV4MiniflareOptions, Miniflare } from 'miniflare';
@@ -22,7 +22,7 @@ const rows = (start: number, end: number) => Array.from({ length: end - start + 
 }).join('\n\n---\n\n');
 const jmm = (count: number) => '---\ndeckId: jmm\ntitle: Java Memory Model\n---\n' + rows(1, count);
 const concurrency = '---\ndeckId: concurrency\ntitle: Concurrency\n---\n## Locks\n\nA lock limits access.';
-const structured = (body: string) => '---\ndeckId: bilingual\ntitle: Bilingual\nprimaryLanguage: bg\nsupportedLanguages: [bg, en]\nformatVersion: 4\n---\n' + body.replace(/(## card: [^\n]+\n)/g, '$1### cardType: question\n### topic: Testing\n### provenance\ntype: generated\nsources: []\n');
+const structured = (body: string) => '---\ndeckId: bilingual\ntitle: Bilingual\nprimaryLanguage: bg\nsupportedLanguages: [bg, en]\nformatVersion: 5\n---\n' + body.replace(/(## card: [^\n]+\n)/g, '$1### cardType: question\n### topics\n- Testing\n### provenance\ntype: generated\nsources: []\n');
 const bg = '### bg\n#### question\nКакво е ключалка?\n#### answer\nОграничава достъпа.';
 const en = '### en\n#### question\nWhat is a lock?\n#### answer\nIt restricts access.';
 
@@ -90,7 +90,7 @@ describe('external management API', () => {
     expect(await apiData(await apiRequest(other, route))).toMatchObject({ owned: false, description: 'Rivers', revision: 1 });
     const cards = route + '/cards';
     expect((await apiRequest(other, cards, 'POST', {})).status).toBe(403);
-    const content = { import_key: 'xy', primary_language: 'bg', difficulty: 2, translations: {
+    const content = { topics: ['RIVERS'], priority: 1, likelihood: 5, creationMode: 'MANUAL', import_key: 'xy', primary_language: 'bg', difficulty: 2, translations: {
       bg: { question: 'Къде се влива Дунав?', answer: 'В Черно море.' },
       en: { question: 'Where does the Danube end?', answer: 'The Black Sea.', questionDetails: 'The Danube Delta.' },
     } };
@@ -99,7 +99,7 @@ describe('external management API', () => {
     expect(copies.map(r => r.status).sort()).toEqual([200, 201]);
     const card = await apiData(copies[0]);
     expect(await apiData(copies[1])).toEqual(card);
-    expect(card).toMatchObject({ ...content, metadata: null, revision: 2 });
+    expect(card).toMatchObject({ ...content, metadata: {cardType: 'question'}, revision: 2 });
     const item = cards + '/' + card.id;
     for (const suffix of ['', '?q=', '?q=' + encodeURIComponent(' \t ')]) {
       expect(await apiData(await apiRequest(owner, cards + suffix))).toEqual([card]);
@@ -128,7 +128,7 @@ describe('external management API', () => {
     const edits = await Promise.all([edit('It empties into the Black Sea.'), edit('It flows into the Black Sea.')]);
     expect(edits.map(r => r.status).sort()).toEqual([200, 412]);
     const updated = await apiData(edits.find(r => r.status === 200)!);
-    expect(updated).toMatchObject({ revision: 3, translations: { bg: content.translations.bg, en: { questionDetails: content.translations.en.questionDetails } } });
+    expect(updated).toMatchObject({ topics: ['RIVERS'], priority: 1, likelihood: 5, creationMode: 'MANUAL', revision: 3, translations: { bg: content.translations.bg, en: { questionDetails: content.translations.en.questionDetails } } });
     const browser = new Browser();
     await browser.login('api-owner');
     const browserCards = await browser.ok<Card[]>('cards?deck=' + deck.id);
@@ -146,12 +146,12 @@ describe('external management API', () => {
   it('validates fields and updates imported v3 cards using the same model', async () => {
     const browser = new Browser();
     await browser.login('api-import');
-    const imported = await browser.import(v3Fixture);
+    const imported = await browser.import(v5Fixture);
     const user = (await db.prepare("SELECT id FROM users WHERE username = 'api-import'").first<{ id: string }>())!;
     const token = await apiToken(user.id);
     const cards = 'decks/' + imported.id + '/cards';
     const original = (await apiData<ApiResource[]>(await apiRequest(token, cards)))[0];
-    expect(original.metadata.topic).toBeTruthy();
+    expect(original.topics.length).toBeGreaterThan(0);
     const patch = await apiRequest(token, cards + '/' + original.id, 'PATCH', { difficulty: 4 }, { 'If-Match': '"' + original.revision + '"' });
     expect(patch.status).toBe(200);
     expect(await apiData(patch)).toMatchObject({ id: original.id, metadata: original.metadata, translations: original.translations, difficulty: 4 });
@@ -159,7 +159,7 @@ describe('external management API', () => {
     for (const [body, field] of [
       [{ translations: { fr: {} } }, 'translations.fr.question'],
       [{ translations: { en: { question: 'x'.repeat(2001), answer: 'A' } } }, 'translations.en.question'],
-      [{ ...valid, metadata: { cardType: 'question' } }, 'metadata.topic'],
+      [{ ...valid, priority: 0 }, 'classification'],
       [{ ...valid, difficulty: 6 }, 'difficulty'],
       [{ ...valid, import_key: 'with spaces' }, 'import_key'],
     ] as const) {
@@ -170,7 +170,7 @@ describe('external management API', () => {
   });
 });
 
-type ApiResource = { id: string; revision: number; metadata: { topic: string }; translations: Card['translations'] };
+type ApiResource = { id: string; revision: number; topics: string[]; metadata: { topic: string }; translations: Card['translations'] };
 
 async function apiData<T = ApiResource>(response: Response) {
   expect(response.ok).toBe(true);
@@ -196,16 +196,16 @@ function apiRequest(token: string, route: string, method = 'GET', body?: object,
 }
 
 function authored(source: string): string {
- if (/formatVersion: [34]/.test(source)) return source;
+ if (/formatVersion: 5/.test(source)) return source;
  const front = /^---\n([\s\S]*?)\n---\n/.exec(source);
  const metadata = front?.[1] ?? '';
  const body = front ? source.slice(front[0].length) : source;
  const primary = /[?-??-?]/u.test(body.split('\n')[0]) ? 'bg' : 'en';
  const cards = body.split(/^## /m).slice(1).map((chunk,index)=>{
   const [question,...answer]=chunk.split('\n');
-  return `## card: q${index+1}\n### cardType: question\n### topic: Testing\n### provenance\ntype: generated\nsources: []\n### ${primary}\n#### question\n${question}\n#### answer\n${answer.join('\n').replace(/\n---\s*$/,'').trim()}`;
+  return `## card: q${index+1}\n### cardType: question\n### topics\n- Testing\n### provenance\ntype: generated\nsources: []\n### ${primary}\n#### question\n${question}\n#### answer\n${answer.join('\n').replace(/\n---\s*$/,'').trim()}`;
  });
- return `---\nformatVersion: 4\nprimaryLanguage: ${primary}\n${metadata}\n---\n${cards.join('\n')}`;
+ return `---\nformatVersion: 5\nprimaryLanguage: ${primary}\n${metadata}\n---\n${cards.join('\n')}`;
 }
 
 class Browser {
@@ -397,7 +397,7 @@ describe('Workers API with real local D1', () => {
     const guestSession = await guest.ok<Session>('study/start', { decks: [first], settings: defaults, version: 0 });
     await guest.action(guestSession, 'learn');
     await owner.ok('deck', { ...header, visibility: 'PRIVATE' });
-    expect((await guest.study()).status).toBe('INVALIDATED');
+    expect(await guest.study()).toMatchObject({ status: 'COMPLETE', card: null, remainingInCycle: 0 });
     expect((await guest.request('cards?deck=' + first)).response.status).toBe(404);
     const backup = await guest.request<{ decks: Deck[]; cards: unknown[]; history: { kind: string }[] }>('export');
     expect(backup.response.headers.get('content-disposition')).toContain('flashcards-backup.json');
@@ -465,7 +465,7 @@ describe('Workers API with real local D1', () => {
     expect((await browser.cards(deck))[0]).toMatchObject({ id: second.id, translations: {en: {question: 'Edited'}}, status: 'LEARNED', times_learned: 1 });
     await browser.ok('card', { deck, method: 'delete', id: first.id });
     expect(await browser.cards(deck)).toHaveLength(1);
-    expect((await browser.study()).status).toBe('INVALIDATED');
+    expect(await browser.study()).toMatchObject({ status: 'COMPLETE', card: null, remainingInCycle: 0 });
     await browser.ok('deck/delete', { deck });
     expect((await browser.home()).decks).toEqual([]);
   });
@@ -496,12 +496,12 @@ describe('Workers API with real local D1', () => {
   it('imports the canonical template, skips exact reimports and applies rating-only changes to the same card', async () => {
     const browser = new Browser();
     await browser.login('Canonical deck');
-    const source = readFileSync(new URL('../docs/FLASHCARDS-IMPORT-TEMPLATE.md', import.meta.url), 'utf8');
+    const source = readFileSync(new URL('./fixtures/markdown-v5-template.md', import.meta.url), 'utf8');
     const { id } = await browser.import(source);
     const cards = await browser.cards(id);
     expect(cards).toHaveLength(4);
     const [first] = cards;
-    expect(first).toMatchObject({ import_key: 'volatile-atomicity', interview_priority: 5, difficulty: 3 });
+    expect(first).toMatchObject({ import_key: 'volatile-atomicity', interview_priority: null, difficulty: 3 });
     const repeated = await browser.import(source);
     expect(repeated.preview.rows.map(row => row.kind)).toEqual(Array(7).fill('duplicate'));
     expect(await browser.cards(id)).toEqual(cards);
@@ -509,7 +509,7 @@ describe('Workers API with real local D1', () => {
     expect(revised.preview.rows.filter(row => row.kind === 'metadata')).toHaveLength(1);
     expect((await browser.cards(id))[0]).toMatchObject({ id: first.id, difficulty: 4 });
     const backup = await browser.ok<{ cards: Card[] }>('export');
-    expect(backup.cards.find(card => card.id === first.id)).toMatchObject({ difficulty: 4, interview_priority: 5 });
+    expect(backup.cards.find(card => card.id === first.id)).toMatchObject({ difficulty: 4, interviewPriority: null });
   });
 
   it('preserves the timer, revealed content, open section and preference across language switches and devices', async () => {
@@ -549,19 +549,19 @@ describe('Workers API with real local D1', () => {
   });
 });
 
-it('round-trips v3 through preview, D1, study, editing, export and guarded recreation', async () => {
+it('round-trips v5 through preview, D1, study, editing, export and guarded recreation', async () => {
   const owner = new Browser();
   const guest = new Browser();
   await owner.login('V3 owner'); await guest.login('V3 guest');
-  const { id, preview } = await owner.import(v3Fixture);
-  expect(preview.version).toBe(3);
+  const { id, preview } = await owner.import(v5Fixture);
+  expect(preview.version).toBe(5);
   expect(preview.rows.some(row => row.kind === 'invalid')).toBe(false);
   const cards = await owner.cards(id);
   expect(cards).toHaveLength(2);
   expect(cards[0].metadata).toMatchObject({ cardType: 'coding_task', occurrenceCount: 1 });
   expect(cards[0].metadata?.provenance.sources).toHaveLength(3);
   expect(cards[0].translations.bg?.questionDetails).toContain('int count = 0;');
-  expect((await owner.import(v3Fixture)).preview.rows.every(row => row.kind === 'duplicate')).toBe(true);
+  expect((await owner.import(v5Fixture)).preview.rows.every(row => row.kind === 'duplicate')).toBe(true);
   let session = await owner.ok<Session>('study/start', { decks: [id], settings: { ...defaults, timer: false }, version: 0 });
   expect(session.card?.metadata).toEqual(cards[0].metadata);
   session = await owner.action(session, 'repeat');
@@ -581,14 +581,14 @@ it('round-trips v3 through preview, D1, study, editing, export and guarded recre
   session = await owner.action(session, 'next'); expect(session.status).toBe('COMPLETE');
   await owner.ok('card', { deck: id, id: cards[0].id, method: 'save', translations: cards[0].translations });
   const backup = await owner.ok<{ cards: Card[] }>('export');
-  expect(backup.cards.find(card => card.id === cards[0].id)?.metadata).toEqual(cards[0].metadata);
-  const invalid = v3Fixture.replace('occurrenceCount: 1', 'occurrenceCount: -1');
+  expect(backup.cards.find(card => card.id === cards[0].id)?.metadata).toMatchObject({cardType:'task', provenance:cards[0].metadata!.provenance});
+  const invalid = v5Fixture.replace('### cardType: task', '### priority: -1');
   const badPreview = await owner.ok<Preview>('import/preview', { source: invalid, target: id });
-  expect(badPreview.rows[0].message).toContain('occurrenceCount');
+  expect(badPreview.rows[0].message).toContain('priority');
   expect((await owner.request('import/apply', { source: invalid, target: id, filename: 'invalid', visibility: 'PRIVATE', previewId: id, revision: badPreview.deck?.revision })).response.status).toBe(400);
-  const replacement = await owner.ok<Preview>('import/preview', { source: v3Fixture, target: id, replace: true });
+  const replacement = await owner.ok<Preview>('import/preview', { source: v5Fixture, target: id, replace: true });
   expect(replacement.impact).toMatchObject({ cards: 2, progressRecords: 2 });
-  const request = { source: v3Fixture, target: id, replace: true, filename: 'replacement', visibility: 'PRIVATE', previewId: id, revision: replacement.deck?.revision };
+  const request = { source: v5Fixture, target: id, replace: true, filename: 'replacement', visibility: 'PRIVATE', previewId: id, revision: replacement.deck?.revision };
   expect((await owner.request('import/apply', request)).response.status).toBe(400);
   expect((await guest.request('import/apply', { ...request, confirmReplacement: id })).response.status).toBe(404);
   expect((await owner.cards(id)).map(card => card.id)).toEqual(cards.map(card => card.id));
@@ -613,13 +613,13 @@ it('recreates legacy cards atomically, reports shared progress loss and preserve
   const guestSession = await guest.ok<Session>('study/start', { decks: [id], settings: defaults, version: 0 });
   await db.prepare('UPDATE cards SET metadata = NULL WHERE deck_id = ?').bind(id).run();
   const before = await owner.cards(id);
-  expect((await owner.request('import/preview', { source: v3Fixture, target: id })).response.status).toBe(400);
+  expect((await owner.request('import/preview', { source: v5Fixture.replace('formatVersion: 5', 'formatVersion: 3'), target: id })).response.status).toBe(400);
   const report = await owner.ok<{ decks: { id: string; cards: number; progressRecords: number; activeSessions: number }[] }>('replacement-report');
   expect(report.decks.find(deck => deck.id === id)).toMatchObject({ cards: 2, progressRecords: 2, activeSessions: 2 });
   expect((await guest.ok<{ decks: unknown[] }>('replacement-report')).decks).toEqual([]);
   await owner.ok('deck', { id, title: 'Legacy target', visibility: 'SHARED', supportedLanguages: ['en', 'bg'] });
-  const preview = await owner.ok<Preview>('import/preview', { source: v3Fixture, target: id, replace: true });
-  const request = { source: v3Fixture, target: id, replace: true, confirmReplacement: id, filename: 'v3', visibility: 'SHARED', previewId: id, revision: preview.deck?.revision };
+  const preview = await owner.ok<Preview>('import/preview', { source: v5Fixture, target: id, replace: true });
+  const request = { source: v5Fixture, target: id, replace: true, confirmReplacement: id, filename: 'v3', visibility: 'SHARED', previewId: id, revision: preview.deck?.revision };
   // Force an insert failure after deletion to prove the whole D1 batch rolls back.
   await db.prepare(`CREATE TRIGGER fail_recreation BEFORE INSERT ON cards WHEN NEW.deck_id = '${id}' BEGIN SELECT RAISE(ABORT, 'deliberate test failure'); END`).run();
   const log = vi.spyOn(console, 'error').mockImplementation(() => {});
@@ -633,24 +633,24 @@ it('recreates legacy cards atomically, reports shared progress loss and preserve
     await db.prepare('DROP TRIGGER fail_recreation').run();
   }
   await owner.ok('import/apply', request);
-  expect((await owner.study()).status).toBe('INVALIDATED');
-  expect((await guest.study()).status).toBe('INVALIDATED');
-  expect((await owner.cards(id)).every(card => card.metadata && card.times_shown === 0)).toBe(true);
+  expect((await owner.study()).status).toBe('ACTIVE');
+  expect((await guest.study()).status).toBe('ACTIVE');
+  expect((await owner.cards(id)).every(card => card.metadata)).toBe(true);
+  expect((await owner.cards(id)).reduce((total, card) => total + card.times_shown, 0)).toBe(1);
   expect(await owner.cards(unrelated)).toEqual(untouched);
   expect((await owner.home()).username).toBe('Recreation owner');
   expect((await guest.home()).username).toBe('Recreation guest');
-  const impact = await owner.ok<Preview>('import/preview', { source: v3Fixture, target: id });
-  expect(impact.impact).toMatchObject({ cards: 2, progressRecords: 0, activeSessions: 2, retainedHistoricalEvents: 2 });
+  const impact = await owner.ok<Preview>('import/preview', { source: v5Fixture, target: id });
+  expect(impact.impact).toMatchObject({ cards: 2, progressRecords: 2, activeSessions: 2, retainedHistoricalEvents: 4 });
 });
 
-it('imports a large v3 deck with optional fields omitted', async () => {
+it('imports a large v5 deck with optional fields omitted', async () => {
   const browser = new Browser();
   await browser.login('Large optional fields');
-  const source = '---\nformatVersion: 3\ntitle: Large deck\n---\n' + Array.from({ length: 236 }, (_, i) => `
+  const source = '---\nformatVersion: 5\ntitle: Large deck\n---\n' + Array.from({ length: 236 }, (_, i) => `
 ## card: large-${i}
 ### cardType: question
-### topic: Java
-### occurrenceCount: 0
+### topics\n- Java
 ### provenance
 type: generated
 ### bg
@@ -783,7 +783,7 @@ describe('universal deck languages with real D1', () => {
 
   it('imports arbitrary BCP 47 translations with declared original and preserves them on reimport', async () => {
     const browser = new Browser(); await browser.login('Universal importer');
-    const source = '---\nformatVersion: 4\ndeckId: regional\nprimaryLanguage: de\nsupportedLanguages: [de, pt-BR]\n---\n## card: regional\n### cardType: question\n### topic: Regional\n### provenance\ntype: generated\nsources: []\n### de\n#### question\nFrage?\n#### answer\nAntwort.\n### pt-BR\n#### question\nPergunta?\n#### answer\nResposta.';
+    const source = '---\nformatVersion: 5\ndeckId: regional\nprimaryLanguage: de\nsupportedLanguages: [de, pt-BR]\n---\n## card: regional\n### cardType: question\n### topics\n- Regional\n### provenance\ntype: generated\nsources: []\n### de\n#### question\nFrage?\n#### answer\nAntwort.\n### pt-BR\n#### question\nPergunta?\n#### answer\nResposta.';
     const { id } = await browser.import(source);
     expect((await browser.home()).decks.find(deck => deck.id === id)).toMatchObject({ primaryLanguage: 'de', supportedLanguages: ['de', 'pt-BR'] });
     const cards = await browser.cards(id);
@@ -990,11 +990,11 @@ it('normalizes answerless creation and preserves card identity, progress and PAT
 });
 
 
-it('imports answerless v3/v4 cards and preserves conflicts and browser edits', async () => {
+it('imports answerless v5 cards and preserves conflicts and browser edits', async () => {
   const browser = new Browser();
   await browser.login('answerless-browser');
-  for (const version of [3,4]) {
-    const metadata = '\n### cardType: question\n### topic: Java'+(version===3?'\n### occurrenceCount: 0':'')+'\n### provenance\ntype: generated\nsources: []';
+  for (const version of [5]) {
+    const metadata = '\n### cardType: question\n### topics\n- Java'+''+'\n### provenance\ntype: generated\nsources: []';
     const source = '---\nformatVersion: '+version+'\ndeckId: empty-'+version+'\nprimaryLanguage: en\n---\n## card: empty'+metadata+'\n### en\n#### question\nQuestion '+version;
     const {id} = await browser.import(source);
     const [card] = await browser.cards(id);
@@ -1141,9 +1141,9 @@ it('keeps FTS synchronized after browser, management, translation and import wri
 },30000);
 
 
-it('executes v4 missing/empty/replaced answers exactly as previewed and exports canonical fields',async()=>{
+it('executes v5 missing/empty/replaced answers exactly as previewed and exports canonical fields',async()=>{
  const browser=new Browser();await browser.login('V4 reimport');
- const source=(answer:string)=>`---\nformatVersion: 4\nprimaryLanguage: en\n---\n## card: stable\n### cardType: question\n### topic: Test\n### provenance\ntype: generated\nsources: []\n### en\n#### question\nCanonical question${answer}`;
+ const source=(answer:string)=>`---\nformatVersion: 5\nprimaryLanguage: en\n---\n## card: stable\n### cardType: question\n### topics\n- Test\n### provenance\ntype: generated\nsources: []\n### en\n#### question\nCanonical question${answer}`;
  const {id}=await browser.import(source('\n#### answer\nOriginal'));
  const [original]=await browser.cards(id);
  for(const [body,expected] of [['','Original'],['\n#### answer',''],['\n#### answer\nReplacement','Replacement']]){
@@ -1154,6 +1154,491 @@ it('executes v4 missing/empty/replaced answers exactly as previewed and exports 
   const [card]=await browser.cards(id);expect(card.id).toBe(original.id);expect(card.translations.en.answer).toBe(expected);
   expect(card).not.toHaveProperty('question');expect(card).not.toHaveProperty('answer');expect(card).not.toHaveProperty('simple_opens');
  }
- const backup=await browser.ok<any>('export');expect(backup.version).toBe(2);
+ const backup=await browser.ok<any>('export');expect(backup.version).toBe(3);
+ const exported = backup.cards.find((c:any)=>c.id===original.id);
+ expect(exported).toMatchObject({priority:3,likelihood:3,creationMode:'UNKNOWN',topics:['TEST'],interviewPriority:null,metadata:{cardType:'question'}});
+ expect(exported).not.toHaveProperty('interview_priority');
+ expect(backup).not.toHaveProperty('settings');
  expect(backup.cards.find((c:any)=>c.id===original.id).translations.en).toEqual({question:'Canonical question',answer:'Replacement'});
+});
+
+it('applies the v5 preview classification payload, preserves progress/raw legacy values and rejects invalid final tasks atomically', async () => {
+  const browser = new Browser(); await browser.login('v5 classification patches');
+  const { id } = await browser.import(v5Fixture);
+  const [original] = await browser.cards(id);
+  await db.prepare('UPDATE cards SET interview_priority=5 WHERE id=?').bind(original.id).run();
+  const session = await browser.ok<Session>('study/start', { decks: [id], settings: defaults, version: 0 });
+  await browser.action(session, 'learn');
+  const omitted = (await browser.cards(id))[1];
+  // Omitted topic lists must retain even pre-existing non-normalized canonical names.
+  await db.prepare("UPDATE card_topics SET topic_name='Java' WHERE card_id=?").bind(original.id).run();
+  await browser.import(`---\nformatVersion: 5\n---\n## card: task\n### en\n#### question\nImplement a counter.\n#### answer\nUpdated answer`, id, { '0:en': 'update' });
+  expect((await db.prepare('SELECT topic_name FROM card_topics WHERE card_id=?').bind(original.id).all()).results).toEqual([{ topic_name: 'Java' }]);
+  const retainedTranslations = (await browser.cards(id))[0].translations;
+  const patch = (metadata: string, details = '') => `---\nformatVersion: 5\nprimaryLanguage: en\n---\n## card: task\n${metadata}\n### en\n#### question\nImplement a counter.${details}`;
+  const preview = await browser.ok<Preview>('import/preview', { source: patch('### topics\n[Java, Concurrency]\n### priority: 1\n### likelihood: 5\n### creationMode: MANUAL\n### difficulty: 4'), target: id });
+  const proposal = preview.rows.find(row => row.classificationChange)!.classificationChange!.after;
+  expect(proposal).toMatchObject({ topics: ['CONCURRENCY', 'JAVA'], priority: 1, likelihood: 5, creation_mode: 'MANUAL', metadata: { cardType: 'task' } });
+  await browser.import(patch('### topics\n[Java, Concurrency]\n### priority: 1\n### likelihood: 5\n### creationMode: MANUAL\n### difficulty: 4'), id);
+  const stored = await db.prepare('SELECT priority,likelihood,creation_mode,metadata,difficulty,interview_priority FROM cards WHERE id=?').bind(original.id).first<any>();
+  expect(stored).toMatchObject({ priority: proposal.priority, likelihood: proposal.likelihood, creation_mode: proposal.creation_mode, difficulty: 4, interview_priority: 5 });
+  expect(JSON.parse(stored.metadata)).toMatchObject({ cardType: 'task', provenance: proposal.metadata.provenance });
+  expect((await db.prepare('SELECT topic_name FROM card_topics WHERE card_id=? ORDER BY topic_name').bind(original.id).all()).results).toEqual(proposal.topics.map(topic_name => ({ topic_name })));
+  const [after, other] = await browser.cards(id);
+  expect(after).toMatchObject({ id: original.id, times_learned: 1, translations: retainedTranslations }); expect(other).toEqual(omitted);
+  const invalidSource = patch('', '\n#### questionDetails');
+  const invalid = await browser.ok<Preview>('import/preview', { source: invalidSource, target: id, choices: { '0:en': 'update' } });
+  expect(invalid.rows.some(row => row.kind === 'invalid')).toBe(true);
+  expect((await browser.request('import/apply', { source: invalidSource, target: id, filename: 'invalid', previewId: id, revision: invalid.deck!.revision, choices: { '0:en': 'update' } })).response.status).toBe(400);
+  expect(await browser.cards(id)).toEqual([after, other]);
+  const keep = await browser.ok<Preview>('import/preview', { source: invalidSource, target: id, choices: { '0:en': 'keep' } });
+  expect(keep.rows.some(row => row.kind === 'invalid')).toBe(false);
+  await browser.import(invalidSource, id, { '0:en': 'keep' });
+  const clear = patch('### cardType: question\n### topics\n[]\n### priority: null\n### likelihood: null\n### creationMode: null\n### difficulty: null\n### provenance\nnull\n### answerReferences\n[]', '\n#### questionDetails\n#### answer');
+  const cleared = await browser.ok<Preview>('import/preview', { source: clear, target: id, choices: { '0:en': 'update' } });
+  expect(cleared.rows.find(row => row.classificationChange)?.classificationChange?.after).toMatchObject({ topics: [], priority: 3, likelihood: 3, creation_mode: 'UNKNOWN', metadata: { cardType: 'question', answerReferences: [] } });
+  await browser.import(clear, id, { '0:en': 'update' });
+  const final = await db.prepare('SELECT priority,likelihood,creation_mode,difficulty,metadata,interview_priority FROM cards WHERE id=?').bind(original.id).first<any>();
+  expect(final).toMatchObject({ priority: 3, likelihood: 3, creation_mode: 'UNKNOWN', difficulty: null, interview_priority: 5 });
+  expect(JSON.parse(final.metadata)).toEqual({ cardType: 'question', answerReferences: [] });
+  expect((await db.prepare('SELECT topic_name FROM card_topics WHERE card_id=?').bind(original.id).all()).results).toEqual([]);
+  expect((await browser.cards(id))[0]).toMatchObject({ id: original.id, times_learned: 1, translations: { en: { answer: '', questionDetails: '' }, bg: original.translations.bg } });
+});
+
+it('F-001 persists explicit empty details through preview/apply and preserves omitted details and progress', async () => {
+  const browser = new Browser(); await browser.login('details presence regression');
+  const source = (details = '') => `---\nformatVersion: 5\nprimaryLanguage: en\n---\n## card: presence\n### en\n#### question\nDetails presence?${details}`;
+  const { id } = await browser.import(source());
+  const [original] = await browser.cards(id);
+  expect(original.translations.en).not.toHaveProperty('questionDetails');
+  const session = await browser.ok<Session>('study/start', { decks: [id], settings: defaults, version: 0 });
+  await browser.action(session, 'learn');
+  const explicit = source('\n#### questionDetails');
+  const preview = await browser.ok<Preview>('import/preview', { source: explicit, target: id });
+  expect(preview.rows.find(row => row.language === 'en')).toMatchObject({ kind: 'conflict', incoming: { questionDetails: '' } });
+  await browser.import(explicit, id, { '0:en': 'keep' });
+  expect((await browser.cards(id))[0].translations.en).not.toHaveProperty('questionDetails');
+  await browser.import(explicit, id, { '0:en': 'update' });
+  const [updated] = await browser.cards(id);
+  expect(updated).toMatchObject({ id: original.id, times_learned: 1, translations: { en: { questionDetails: '' } } });
+  expect((await browser.import(explicit, id)).preview.rows.every(row => row.kind === 'duplicate')).toBe(true);
+  await browser.import(source(), id);
+  expect((await browser.cards(id))[0]).toEqual(updated);
+});
+
+it.each([3, 4])('rejects direct legacy v%s preview and apply with conversion guidance', async version => {
+  const browser = new Browser(); await browser.login('v5 legacy diagnostic ' + version);
+  const before = (await browser.home()).decks;
+  const source = v5Fixture.replace('formatVersion: 5', `formatVersion: ${version}`);
+  for (const route of ['import/preview', 'import/apply']) {
+    const result = await browser.request<{ error: string }>(route, { source, target: 'new', filename: 'legacy', previewId: null, revision: null });
+    expect(result.response.status).toBe(400); expect(result.data.error).toMatch(/requires formatVersion: 5.*Convert legacy/);
+  }
+  expect((await browser.home()).decks).toEqual(before);
+});
+
+it('restores an ambiguous legacy Repeat cycle with history browsing and preserves persisted progress', async () => {
+  const browser = new Browser(); await browser.login('IMP008 restoration');
+  const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Restoration', visibility: 'PRIVATE' });
+  for (const question of ['A', 'B', 'C']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  const cards = await browser.cards(deck); const [a, b, c] = cards.map(card => card.id);
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: { ...defaults, timer: true }, version: 0 });
+  const row = await db.prepare('SELECT user_id, session_state FROM study_sessions WHERE id=?').bind(session.id).first<{ user_id: string; session_state: string }>();
+  const legacy = JSON.parse(row!.session_state);
+  delete legacy.schemaVersion; delete legacy.classification;
+  legacy.cycles = { cards: [c, a, b], pending: [a], repeat: [a, b], history: [c, a, b, c, a, b], cursor: 1, cycle: 2, complete: false };
+  Object.assign(legacy, { queue: [c, a, b].map(id => ({ id })), current: a, history: legacy.cycles.history,
+    cursor: 1, revealed: true, historyRevealed: true, deadline: 12345, remainingMs: 234, answerOverrides: { [a]: true } });
+  await db.prepare('UPDATE study_sessions SET session_state=?,current_card_id=? WHERE id=?').bind(JSON.stringify(legacy), a, session.id).run();
+  const progress = await db.prepare('SELECT * FROM card_progress WHERE user_id=? ORDER BY card_id').bind(row!.user_id).all();
+  const restored = await browser.study();
+  expect(restored).toMatchObject({ status: 'ACTIVE', version: session.version + 1, card: { id: a }, historical: true, deadline: 12345, paused: true });
+  const persisted = JSON.parse((await db.prepare('SELECT session_state FROM study_sessions WHERE id=?').bind(session.id).first<{session_state: string}>())!.session_state);
+  expect(persisted.cycles.live.passed).toEqual([]);
+  expect(persisted.cycles.live.frontier).toBe(b);
+  delete persisted.schemaVersion; delete persisted.classification; delete persisted.cycles.live;
+  expect(persisted).toEqual(legacy);
+  expect((await browser.study()).version).toBe(restored.version);
+  expect((await db.prepare('SELECT * FROM card_progress WHERE user_id=? ORDER BY card_id').bind(row!.user_id).all()).results).toEqual(progress.results);
+  expect((await browser.request('study/action', { id: session.id, version: session.version, action: 'next' })).response.status).toBe(409);
+});
+
+it('projects live additions, No Topics options, access loss and restoration without losing the other deck', async () => {
+  const owner = new Browser(); await owner.login('IMP008 live owner');
+  const guest = new Browser(); await guest.login('IMP008 live guest');
+  const { id: shared } = await owner.ok<{id: string}>('deck', { title: 'Shared scope', visibility: 'SHARED' });
+  const { id: own } = await guest.ok<{id: string}>('deck', { title: 'Own scope', visibility: 'PRIVATE' });
+  await owner.ok('card', { deck: shared, method: 'save', question: 'A', answer: 'A', metadata: { cardType: 'question', topic: 'Only shared', provenance: { type: 'generated', sources: [] } } });
+  await guest.ok('card', { deck: own, method: 'save', question: 'B', answer: 'B' });
+  const initial = await guest.ok<Session>('study/start', { decks: [shared, own], settings: defaults, version: 0 });
+  expect(initial.availableOptions).toMatchObject({ topics: ['ONLY SHARED'], noTopicsAvailable: true });
+  await owner.ok('card', { deck: shared, method: 'save', question: 'C', answer: 'C' });
+  const grown = await guest.study();
+  expect(grown).toMatchObject({ card: { id: initial.card!.id }, remainingInCycle: 3, eligibleTotal: 3 });
+  expect((await guest.study()).version).toBe(grown.version);
+  await owner.ok('deck', { id: shared, title: 'Shared scope', visibility: 'PRIVATE' });
+  const restricted = await guest.study();
+  expect(restricted).toMatchObject({ status: 'ACTIVE', card: { deck_id: own }, eligibleTotal: 1, remainingInCycle: 1 });
+  expect(restricted.availableOptions.topics).toEqual([]);
+  await owner.ok('deck', { id: shared, title: 'Shared scope', visibility: 'SHARED' });
+  const restored = await guest.study();
+  expect(restored).toMatchObject({ card: { deck_id: own }, remainingInCycle: 3 });
+  const learned = await guest.action(restored, 'next');
+  expect(learned.card!.id).toBe(initial.card!.id);
+});
+
+it('guards live reconciliation against source drift without consuming an unseen replacement frontier', async () => {
+  const { studyView, act } = await import('../src/server/sessions');
+  const browser = new Browser(); await browser.login('IMP008 source race');
+  const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Race', visibility: 'PRIVATE' });
+  for (const question of ['A', 'B', 'C']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  const row = (await db.prepare('SELECT user_id FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string}>())!;
+  const cards = await browser.cards(deck);
+  let attempts = 0;
+  const racingDb = {
+    prepare: db.prepare.bind(db),
+    batch: async (statements: D1PreparedStatement[]) => {
+      if (++attempts === 1) await db.prepare('DELETE FROM cards WHERE id=?').bind(cards[0].id).run();
+      return db.batch(statements);
+    },
+  } as D1Database;
+  const result = await act(racingDb, { id: row.user_id, username: 'Race', settings: '{}' }, { id: session.id, version: session.version, action: 'learn' });
+  expect(attempts).toBe(2);
+  expect(result).toMatchObject({ status: 'ACTIVE', card: { id: cards[1].id }, remainingInCycle: 2 });
+  expect((await db.prepare("SELECT count(*) n FROM study_events WHERE user_id=? AND kind='LEARNED'").bind(row.user_id).first<{n: number}>())!.n).toBe(0);
+  expect((await db.prepare("SELECT count(*) n FROM study_events WHERE user_id=? AND card_id=? AND kind='SHOWN'").bind(row.user_id, cards[1].id).first<{n: number}>())!.n).toBe(1);
+  expect((await studyView(db, row.user_id))!.version).toBe(result!.version);
+});
+
+it('enforces start-only limits while allowing active growth beyond 5000 without truncation', async () => {
+  const browser = new Browser(); await browser.login('IMP008 growth');
+  const { id: deck } = await browser.ok<{id: string}>('deck', { title: 'Growth', visibility: 'PRIVATE' });
+  await browser.ok('card', { deck, method: 'save', question: 'Seed', answer: 'Seed' });
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  await db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<5001)
+    INSERT INTO cards(id,deck_id,stable_key,import_key,question_key,position,created_at,updated_at,primary_language,translations,metadata)
+    SELECT ? || i, ?, 'growth-' || i, NULL, 'growth-' || i, i, 0, 0, 'en', json_object('en',json_object('question','Q' || i,'answer','A')), '{"cardType":"question"}' FROM n`)
+    .bind(deck + '-', deck).run();
+  const grown = await browser.study();
+  expect(grown).toMatchObject({ status: 'ACTIVE', card: { id: session.card!.id }, remainingInCycle: 5002, eligibleTotal: 5002 });
+  expect((await browser.request('study/start', { decks: [deck], settings: defaults, version: grown.version })).response.status).toBe(400);
+  expect((await browser.study()).id).toBe(session.id);
+  expect((await browser.study()).remainingInCycle).toBe(5002);
+});
+
+it.each(['next', 'replace'] as const)('retries unchanged read reconciliation after a concurrent session %s', async mutation => {
+  const { studyView } = await import('../src/server/sessions');
+  const browser = new Browser(); await browser.login('IMP008 unchanged ' + mutation);
+  const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Unchanged read', visibility: 'PRIVATE' });
+  for (const question of ['A', 'B']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  const row = (await db.prepare('SELECT user_id FROM study_sessions WHERE id=?').bind(session.id).first<{ user_id: string }>())!;
+  let concurrent: Session | undefined;
+  let injected = false;
+  const racingDb = {
+    prepare(sql: string) {
+      const statement = db.prepare(sql);
+      if (!sql.includes('ORDER BY selection.key, c.position, c.id')) return statement;
+      return {
+        bind(...values: unknown[]) {
+          const bound = statement.bind(...values);
+          return {
+            async all() {
+              const result = await bound.all();
+              if (!injected) {
+                injected = true;
+                concurrent = mutation === 'next'
+                  ? await browser.action(session, 'next')
+                  : await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: session.version });
+              }
+              return result;
+            },
+          };
+        },
+      };
+    },
+    batch: db.batch.bind(db),
+  } as D1Database;
+  const result = await studyView(racingDb, row.user_id);
+  expect(injected).toBe(true);
+  expect(result).toEqual(concurrent);
+  expect((await browser.study()).version).toBe(concurrent!.version);
+});
+
+it('browses exhausted history without phantom learning or reopening when work returns', async () => {
+  const browser = new Browser(); await browser.login('IMP008 empty navigation');
+  const { id: deck } = await browser.ok<{ id: string }>('deck', { title: 'Empty navigation', visibility: 'PRIVATE' });
+  for (const question of ['A', 'B']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  let session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  session = await browser.action(session, 'next');
+  const row = (await db.prepare('SELECT user_id,session_state FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string; session_state: string}>())!;
+  const state = JSON.parse(row.session_state);
+  state.classification.filters.topics.values = ['MISSING'];
+  await db.prepare('UPDATE study_sessions SET session_state=? WHERE id=?').bind(JSON.stringify(state), session.id).run();
+  session = await browser.study();
+  expect(session).toMatchObject({ status: 'COMPLETE', historical: true, hasPrevious: true, remainingInCycle: 0 });
+  const eventsBefore = (await db.prepare('SELECT count(*) n FROM study_events WHERE user_id=?').bind(row.user_id).first<{n: number}>())!.n;
+  session = await browser.action(session, 'previous');
+  expect(session).toMatchObject({ historical: true, card: { translations: { en: { question: 'A' } } }, remainingInCycle: 0 });
+  session = await browser.action(session, 'next');
+  expect(session).toMatchObject({ historical: true, card: { translations: { en: { question: 'B' } } }, remainingInCycle: 0 });
+  session = await browser.action(session, 'next');
+  expect(session).toMatchObject({ status: 'COMPLETE', historical: true, remainingInCycle: 0 });
+  expect((await db.prepare('SELECT count(*) n FROM study_events WHERE user_id=?').bind(row.user_id).first<{n: number}>())!.n).toBe(eventsBefore);
+  // Ordinary classification restoration, without adding an Apply endpoint.
+  const frontier = state.cycles.live.frontier;
+  await db.prepare('INSERT INTO card_topics(card_id,topic_name) VALUES (?,?)').bind(frontier, 'MISSING').run();
+  session = await browser.study();
+  expect(session).toMatchObject({ status: 'COMPLETE', historical: true, remainingInCycle: 0 });
+});
+
+it('bounds retries when the session keeps changing during unchanged read reconciliation', async () => {
+  const { studyView } = await import('../src/server/sessions');
+  const browser = new Browser(); await browser.login('IMP008 read churn');
+  const { id: deck } = await browser.ok<{id: string}>('deck', { title: 'Read churn', visibility: 'PRIVATE' });
+  await browser.ok('card', { deck, method: 'save', question: 'A', answer: 'A' });
+  let session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  const row = (await db.prepare('SELECT user_id FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string}>())!;
+  let attempts = 0;
+  const racingDb = {
+    prepare(sql: string) {
+      const statement = db.prepare(sql);
+      if (!sql.includes('ORDER BY selection.key, c.position, c.id')) return statement;
+      return { bind(...values: unknown[]) {
+        const bound = statement.bind(...values);
+        return { async all() {
+          const result = await bound.all();
+          attempts++;
+          session = await browser.action(session, 'show');
+          return result;
+        } };
+      } };
+    }, batch: db.batch.bind(db),
+  } as D1Database;
+  await expect(studyView(racingDb, row.user_id)).rejects.toMatchObject({ status: 409 });
+  expect(attempts).toBe(3);
+  expect(await browser.study()).toEqual(session);
+});
+
+it('rejects a view if the session changes during final card materialization', async () => {
+  const { studyView } = await import('../src/server/sessions');
+  const browser = new Browser(); await browser.login('IMP008 final read guard');
+  const { id: deck } = await browser.ok<{id: string}>('deck', { title: 'Final read guard', visibility: 'PRIVATE' });
+  await browser.ok('card', { deck, method: 'save', question: 'A', answer: 'A' });
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: defaults, version: 0 });
+  const row = (await db.prepare('SELECT user_id FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string}>())!;
+  let concurrent: Session | undefined;
+  const racingDb = {
+    prepare(sql: string) {
+      const statement = db.prepare(sql);
+      if (!sql.includes('WHERE c.id = ? AND (d.owner_id')) return statement;
+      return { bind(...values: unknown[]) {
+        const bound = statement.bind(...values);
+        return { async first() {
+          const result = await bound.first();
+          concurrent = await browser.action(session, 'show');
+          return result;
+        } };
+      } };
+    }, batch: db.batch.bind(db),
+  } as D1Database;
+  await expect(studyView(racingDb, row.user_id)).rejects.toMatchObject({ status: 409 });
+  expect(concurrent!.version).toBeGreaterThan(session.version);
+  expect(await browser.study()).toEqual(concurrent);
+});
+
+async function imp009Fixture(name: string) {
+  const browser = new Browser(); await browser.login('IMP009 ' + name);
+  const { id: deck } = await browser.ok<{id: string}>('deck', { title: name, visibility: 'PRIVATE' });
+  for (const question of ['A', 'B', 'C', 'D']) await browser.ok('card', { deck, method: 'save', question, answer: question });
+  const cards = await browser.cards(deck);
+  const [a, b, c, d] = cards.map(card => card.id);
+  await db.batch([
+    db.prepare("UPDATE cards SET priority=1,likelihood=2,creation_mode='AI' WHERE id=?").bind(a),
+    db.prepare(`UPDATE cards SET priority=5,likelihood=4,creation_mode='MANUAL',metadata='{"cardType":"task"}',
+      translations=json_set(translations,'$.en.questionDetails','Implement B') WHERE id=?`).bind(b),
+    db.prepare("UPDATE cards SET priority=3,likelihood=2,creation_mode='UNKNOWN' WHERE id=?").bind(c),
+    db.prepare(`UPDATE cards SET priority=2,likelihood=4,creation_mode='AI',metadata='{"cardType":"task"}',
+      translations=json_set(translations,'$.en.questionDetails','Implement D') WHERE id=?`).bind(d),
+    ...[a, c, d].map((id, index) => db.prepare('INSERT INTO card_topics VALUES (?,?)').bind(id, index === 2 ? 'Y' : 'X')),
+  ]);
+  const session = await browser.ok<Session>('study/start', { decks: [deck], settings: { ...defaults, timer: true }, version: 0 });
+  const row = (await db.prepare('SELECT user_id,session_state FROM study_sessions WHERE id=?').bind(session.id).first<{user_id: string; session_state: string}>())!;
+  const classification = JSON.parse(row.session_state).classification;
+  const stored = async () => JSON.parse((await db.prepare('SELECT session_state FROM study_sessions WHERE user_id=?').bind(row.user_id).first<{session_state: string}>())!.session_state);
+  return { browser, deck, a, b, c, d, session, classification, user: row.user_id, stored };
+}
+
+it('atomically applies all five predicates, No Topics and sorting without writing preferences or resetting timer/progress', async () => {
+  const f = await imp009Fixture('Apply predicates');
+  const { browser, a, b, c, d } = f;
+  const preferences = (await browser.home()).settings;
+  const filters = { topics: { values: [' x '], includeNoTopics: true }, priorities: [5], likelihoods: [4], creationModes: ['MANUAL'], cardTypes: ['task'] };
+  let session = await browser.ok<Session>('study/configure', { id: f.session.id, version: f.session.version, filters, sorting: { field: 'priority', direction: 'asc' } });
+  expect(session).toMatchObject({ status: 'ACTIVE', version: f.session.version + 1, card: { id: b }, eligibleTotal: 1, remainingInCycle: 1 });
+  expect(session.applied!.filters.topics).toEqual({ values: ['X'], includeNoTopics: true });
+  expect(session.availableOptions).toMatchObject({ topics: ['X', 'Y'], noTopicsAvailable: true, priorities: [1, 2, 3, 5] });
+  const deadline = session.deadline;
+  const history = (await f.stored()).history;
+  session = await browser.ok<Session>('study/configure', { id: session.id, version: session.version, filters: f.classification.filters, sorting: { field: 'priority', direction: 'asc' } });
+  expect(session.card!.id).toBe(b); expect(session.deadline).toBe(deadline);
+  expect((await f.stored()).cycles.pending).toEqual([a, d, c]);
+  expect((await f.stored()).history).toEqual(history);
+  expect((await browser.home()).settings).toEqual(preferences);
+  const stale = await browser.request('study/configure', { id: session.id, version: session.version - 1, ...f.classification });
+  expect(stale.response.status).toBe(409);
+  const identical = await browser.ok<Session>('study/configure', { id: session.id, version: session.version, ...session.applied });
+  expect(identical.version).toBe(session.version + 1);
+});
+
+it('sorts each pending field in both directions and restores default order without moving frontier', async () => {
+  const f = await imp009Fixture('Sort matrix');
+  const { a, b, c, d } = f;
+  const cases = [
+    ['topics', [c, d, b], [d, c, b]], ['priority', [d, c, b], [b, c, d]],
+    ['likelihood', [c, b, d], [b, d, c]], ['creationMode', [d, b, c], [b, d, c]],
+    ['cardType', [c, b, d], [b, d, c]],
+  ] as const;
+  let session = f.session;
+  for (const [field, asc, desc] of cases) for (const direction of ['asc', 'desc'] as const) {
+    const version = session.version;
+    session = await f.browser.ok<Session>('study/configure', { id: session.id, version, filters: f.classification.filters, sorting: { field, direction } });
+    expect(session).toMatchObject({ version: version + 1, card: { id: a }, deadline: f.session.deadline });
+    expect((await f.stored()).cycles.pending).toEqual(direction === 'asc' ? asc : desc);
+  }
+  session = await f.browser.ok<Session>('study/configure', { id: session.id, version: session.version, ...f.classification });
+  expect((await f.stored()).cycles.pending).toEqual([b, c, d]);
+});
+
+it('keeps accessible history through Apply and only consumes the frontier after forward browsing reaches it', async () => {
+  const f = await imp009Fixture('History Apply');
+  let session = await f.browser.action(f.session, 'next');
+  session = await f.browser.action(session, 'previous');
+  const passed = (await f.stored()).cycles.live.passed;
+  const history = (await f.stored()).history;
+  session = await f.browser.ok<Session>('study/configure', { id: session.id, version: session.version,
+    filters: { ...f.classification.filters, cardTypes: ['task'] }, sorting: { field: 'priority', direction: 'asc' } });
+  expect(session).toMatchObject({ card: { id: f.a }, historical: true });
+  expect((await f.stored()).history).toEqual(history);
+  session = await f.browser.action(session, 'learn');
+  expect(session.card!.id).toBe(f.a); // explicit learn cannot consume a different frontier
+  session = await f.browser.action(session, 'next');
+  expect(session.card!.id).toBe(f.b);
+  expect((await f.stored()).cycles.live.passed).toEqual(passed);
+  session = await f.browser.action(session, 'next');
+  expect(session.card!.id).toBe(f.d);
+  expect((await f.stored()).cycles.live.passed).toEqual([f.a, f.b]);
+});
+
+it('completes terminally, wraps history without events, and restarts with settings/Repeat and persistent progress intact', async () => {
+  const f = await imp009Fixture('Restart lifecycle');
+  let session = await f.browser.action(f.session, 'repeat');
+  session = await f.browser.ok<Session>('study/configure', { id: session.id, version: session.version,
+    filters: { ...f.classification.filters, priorities: [5] }, sorting: { field: 'priority', direction: 'desc' } });
+  session = await f.browser.action(session, 'learn');
+  expect(session).toMatchObject({ status: 'COMPLETE', historical: true, deadline: null, remainingInCycle: 0 });
+  const applied = session.applied;
+  const completed = await f.stored();
+  expect(completed.cycles.repeat).toEqual([f.a]);
+  const progress = (await db.prepare('SELECT * FROM card_progress WHERE user_id=? ORDER BY card_id').bind(f.user).all()).results;
+  const events = (await db.prepare('SELECT * FROM study_events WHERE user_id=? ORDER BY rowid').bind(f.user).all()).results;
+  const first = await f.browser.action(session, 'next');
+  expect(first).toMatchObject({ status: 'COMPLETE', historical: true, card: { id: f.a } });
+  session = await f.browser.action(first, 'previous');
+  expect(session.card!.id).toBe(f.b);
+  expect((await db.prepare('SELECT * FROM study_events WHERE user_id=? ORDER BY rowid').bind(f.user).all()).results).toEqual(events);
+  for (const action of ['resume', 'repeat', 'language', 'show', 'learn'])
+    expect((await f.browser.request('study/action', { id: session.id, version: session.version, action })).response.status).toBe(409);
+  expect((await f.browser.request('study/configure', { id: session.id, version: session.version, ...f.classification })).response.status).toBe(409);
+  await f.browser.ok('card', { deck: f.deck, method: 'save', question: 'New matching', answer: 'A' });
+  expect((await f.browser.study()).status).toBe('COMPLETE');
+  session = await f.browser.study();
+  const restarted = await f.browser.ok<Session>('study/restart', { id: session.id, version: session.version });
+  expect(restarted.id).not.toBe(session.id);
+  expect(restarted).toMatchObject({ status: 'ACTIVE', card: { id: f.b }, applied, historical: false });
+  const state = await f.stored();
+  expect(state.cycles).toMatchObject({ cycle: 0, repeat: [f.a], history: [f.b], live: { passed: [], admittedNew: [] } });
+  expect(state.answerOverrides).toEqual({});
+  const after = (await db.prepare('SELECT * FROM card_progress WHERE user_id=? ORDER BY card_id').bind(f.user).all()).results;
+  expect(after.map(row => ({ ...row, times_shown: 0, last_shown_at: null }))).toEqual(progress.map(row => ({ ...row, times_shown: 0, last_shown_at: null })));
+  expect((await db.prepare("SELECT count(*) n FROM study_events WHERE user_id=? AND kind='RESET'").bind(f.user).first<{n: number}>())!.n).toBe(0);
+});
+
+it('rejects invalid or cross-origin Apply and failed Restart without changing the retained session', async () => {
+  const f = await imp009Fixture('Validation');
+  const base = { id: f.session.id, version: f.session.version, ...f.classification };
+  for (const patch of [{ extra: true }, { filters: { ...f.classification.filters, priorities: [null] } }, { sorting: { field: 'default', direction: 'desc' } }, { filters: {} }])
+    expect((await f.browser.request('study/configure', { ...base, ...patch })).response.status).toBe(400);
+  expect((await f.browser.request('study/configure', base, 'https://other.example')).response.status).toBe(403);
+  expect((await new Browser().request('study/configure', base)).response.status).toBe(401);
+  expect((await f.browser.study()).version).toBe(f.session.version);
+  const complete = await f.browser.ok<Session>('study/configure', { ...base, filters: { ...f.classification.filters, topics: { values: ['MISSING'], includeNoTopics: false } } });
+  expect(complete.status).toBe('COMPLETE');
+  await db.prepare('DELETE FROM decks WHERE id=?').bind(f.deck).run();
+  const retained = await f.browser.study();
+  const before = await f.stored();
+  expect((await f.browser.request('study/restart', { id: retained.id, version: retained.version })).response.status).toBe(404);
+  expect(await f.stored()).toEqual(before);
+});
+
+it.each(['source', 'session'] as const)('guards Apply against concurrent %s changes without stale events or silent overwrite', async race => {
+  const { configure } = await import('../src/server/sessions');
+  const f = await imp009Fixture('Apply race ' + race);
+  let attempts = 0;
+  let winner: Session | undefined;
+  const racingDb = {
+    prepare: db.prepare.bind(db),
+    batch: async (statements: D1PreparedStatement[]) => {
+      if (++attempts === 1) {
+        if (race === 'source') await db.prepare('DELETE FROM cards WHERE id=?').bind(f.a).run();
+        else winner = await f.browser.action(f.session, 'next');
+      }
+      return db.batch(statements);
+    },
+  } as D1Database;
+  const request = { id: f.session.id, version: f.session.version, ...f.classification, sorting: { field: 'priority', direction: 'asc' } };
+  if (race === 'session') {
+    await expect(configure(racingDb, { id: f.user, username: 'Race', settings: '{}' }, request)).rejects.toMatchObject({ status: 409 });
+    expect(await f.browser.study()).toEqual(winner);
+  } else {
+    const result = await configure(racingDb, { id: f.user, username: 'Race', settings: '{}' }, request);
+    expect(attempts).toBe(2);
+    expect(result).toMatchObject({ version: f.session.version + 1, card: { id: f.d } });
+    expect((await db.prepare("SELECT count(*) n FROM study_events WHERE user_id=? AND card_id=? AND kind='SHOWN'").bind(f.user, f.d).first<{n: number}>())!.n).toBe(1);
+  }
+});
+
+it('retains a completed session when Restart exceeds the ordinary 5000-card limit', async () => {
+  const f = await imp009Fixture('Restart limit');
+  let session = await f.browser.ok<Session>('study/configure', { id: f.session.id, version: f.session.version,
+    filters: { ...f.classification.filters, priorities: [4] }, sorting: f.classification.sorting });
+  expect(session.status).toBe('COMPLETE');
+  await db.prepare(`WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i<5001)
+    INSERT INTO cards(id,deck_id,stable_key,question_key,position,created_at,updated_at,primary_language,translations,metadata)
+    SELECT ? || i, ?, 'restart-' || i, 'restart-' || i, i+10, 0, 0, 'en', json_object('en',json_object('question','Q' || i,'answer','A')), '{"cardType":"question"}' FROM n`)
+    .bind(f.deck + '-limit-', f.deck).run();
+  session = await f.browser.study();
+  const before = await f.stored();
+  expect((await f.browser.request('study/restart', { id: session.id, version: session.version })).response.status).toBe(400);
+  expect(await f.stored()).toEqual(before);
+  expect((await f.browser.study()).id).toBe(session.id);
+});
+
+it('applies each classification predicate independently through the browser contract', async () => {
+  const f = await imp009Fixture('Individual predicates');
+  let session = f.session;
+  const cases = [
+    [{ topics: { values: ['X'], includeNoTopics: false } }, f.a, [f.c]],
+    [{ topics: { values: [], includeNoTopics: true } }, f.b, []],
+    [{ priorities: [5] }, f.b, []], [{ likelihoods: [2] }, f.a, [f.c]],
+    [{ creationModes: ['AI'] }, f.a, [f.d]], [{ cardTypes: ['task'] }, f.b, [f.d]],
+  ] as const;
+  for (const [filter, frontier, pending] of cases) {
+    session = await f.browser.ok<Session>('study/start', { decks: [f.deck], settings: defaults, version: session.version });
+    session = await f.browser.ok<Session>('study/configure', { id: session.id, version: session.version,
+      filters: { ...f.classification.filters, ...filter }, sorting: f.classification.sorting });
+    expect(session).toMatchObject({ card: { id: frontier }, eligibleTotal: pending.length + 1 });
+    expect((await f.stored()).cycles.pending).toEqual(pending);
+  }
 });

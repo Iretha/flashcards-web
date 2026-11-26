@@ -5,9 +5,9 @@ description: Senior Java interview preparation — bilingual, structured flashca
 formatVersion: 4
 primaryLanguage: en
 supportedLanguages: [en, bg]
-# For planned v5 drafts see FLASHCARDS-V5-IMPORT-TEMPLATE.md and FLASHCARDS-V5-SPECIFICATION.md.
-# Retain this v4 template until confirmed v5 cutover.
-# Markdown v4 — supported by parser, validation, persistence, API and Study UI.
+# For standard v5 import see FLASHCARDS-V5-IMPORT-TEMPLATE.md and FLASHCARDS-V5-SPECIFICATION.md.
+# Historical v4 conversion reference only; direct legacy import is rejected.
+# Markdown v4 — retained parser for reviewed conversion to v5.
 # One stable card key connects BG and EN variants. One file represents one deck.
 # Required per card: provenance and at least one language with a question. Answers may be omitted or empty.
 # Required: cardType (question | coding_task), topic, provenance.type.
@@ -69,7 +69,7 @@ supportedLanguages: [en, bg]
 # invalid BCP 47 code, unsupported deck language, authored occurrenceCount in v4,
 # invalid URL/date/rating, generated provenance with occurrence IDs, missing task details,
 # or retired explanation headings. v3 compatibility is described in
-# [the historical reference](FLASHCARDS-V3-REFERENCE.md). New files should use v4.
+# [the historical reference](FLASHCARDS-V3-REFERENCE.md). New files should use v5.
 ---
 
 # Markdown heading rules: `#### question`, `#### answer` and `#### questionDetails`

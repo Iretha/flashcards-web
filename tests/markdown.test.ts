@@ -4,7 +4,7 @@ import { parseMarkdown, questionKey } from '../src/lib/markdown';
 import { planImport } from '../src/server/import-plan';
 
 const file = (body: string, version = 4) => `---\nformatVersion: ${version}\nprimaryLanguage: de\n---\n## card: one\n### cardType: question\n### topic: Test\n${version === 3 ? '### occurrenceCount: 0\n' : ''}### provenance\ntype: generated\nsources: []\n### de\n#### question\nFrage?${body}`;
-it.each([1,2,5,undefined])('rejects unsupported/missing version %s', version => {
+it.each([1,2,6,undefined])('rejects unsupported/missing version %s', version => {
  expect(() => parseMarkdown(version === undefined ? '## Question' : `---\nformatVersion: ${version}\n---`)).toThrow(/v3 and v4/);
 });
 it.each([3,4])('parses supported format %s and preserves fences', version => {

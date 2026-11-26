@@ -1,3 +1,5 @@
+import { adaptStudyState } from './study-projection';
+import type { ClassificationFilters, ClassificationSort } from './classification';
 import { startCycles, toggleRepeat, nextCycleCard, previousCycleCard } from './study-cycles';
 import type { CycleState } from './study-cycles';
 import type { Language } from './translations';
@@ -7,6 +9,8 @@ export interface Settings { order: Ordering; timer: boolean; seconds: number; on
 export const defaults: Settings = { order: 'SEQUENTIAL', timer: false, seconds: 30, onlyUnlearned: false, language: 'en', answersOpen: false };
 export interface QueueCard { id: string }
 export interface StudyState {
+  schemaVersion?: 2;
+  classification?: { filters: ClassificationFilters; sorting: ClassificationSort };
   cycles?: CycleState;
   queue: QueueCard[];
   history: string[];
@@ -37,8 +41,8 @@ export function startStudy(queue: QueueCard[], settings: Settings, now: number, 
   state.current = ids[0] ?? null;
   state.history = state.cycles.history;
   state.cursor = 0;
-  state.deadline = state.current && settings.timer && !state.revealed ? now + settings.seconds * 1000 : null;
-  return state;
+  state.deadline = state.current && !state.cycles?.complete && settings.timer && !state.revealed ? now + settings.seconds * 1000 : null;
+  return adaptStudyState(state, false);
 }
 
 export function advance(original: StudyState, settings: Settings, action: StudyAction, now: number, _random = Math.random) {
@@ -46,15 +50,17 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
   const card = state.current;
   let outcome: Outcome | null = null;
   let shown: string | null = null;
-  if (!card) return { state, outcome, shown };
+  if (!card && !['previous', 'next', 'forward'].includes(action)) return { state, outcome, shown };
   if (state.cycles) {
     const cycles = state.cycles;
     if (action === 'repeat') state.cycles = toggleRepeat(cycles);
     else if (action === 'previous') state.cycles = previousCycleCard(cycles);
     else if (action === 'next' || action === 'forward' || action === 'learn') {
-      state.cycles = nextCycleCard(cycles);
-      outcome = action === 'learn' ? 'LEARNED' : 'NEXT';
-    } else if (action === 'show') {
+      const consuming = !cycles.complete && state.cursor === state.history.length - 1 &&
+        (!cycles.live || card === cycles.live.frontier);
+      if (action !== 'learn' || consuming) state.cycles = nextCycleCard(cycles);
+      if (consuming) outcome = action === 'learn' ? 'LEARNED' : 'NEXT';
+    } else if (action === 'show' && card) {
       state.revealed = !state.revealed;
       (state.answerOverrides ??= {})[card] = state.revealed;
       state.deadline = null; state.remainingMs = null;
@@ -72,12 +78,12 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
     const moved = state.cycles.cursor !== cycles.cursor || state.cycles.complete !== cycles.complete;
     state.history = state.cycles.history;
     state.cursor = state.cycles.cursor;
-    state.current = state.cycles.complete ? null : state.history[state.cursor] ?? null;
     if (moved) {
+      state.current = state.history[state.cursor] ?? null;
       state.revealed = state.current ? state.answerOverrides?.[state.current] ?? state.answersOpen ?? false : false;
       state.historyRevealed = state.revealed;
       state.remainingMs = null;
-      state.deadline = state.current && settings.timer && !state.revealed ? now + settings.seconds * 1000 : null;
+      state.deadline = state.current && !state.cycles?.complete && settings.timer && !state.revealed ? now + settings.seconds * 1000 : null;
       if (state.history.length > cycles.history.length) shown = state.current;
     }
     state.historyRevealed = state.revealed;
@@ -90,5 +96,5 @@ export function advance(original: StudyState, settings: Settings, action: StudyA
 /** Drop retired extras while preserving valid cycle/history/progress state. */
 export function normalizeStudyState(value: StudyState & { explanation?: unknown }): StudyState {
   const { explanation: _retired, ...state } = value;
-  return { ...state, queue: state.queue.map(card => ({ id: card.id })) };
+  return adaptStudyState({ ...state, queue: state.queue.map(card => ({ id: card.id })) });
 }

@@ -1,4 +1,4 @@
-import { parse } from 'yaml';
+import { parseMarkdownYaml } from './markdown-yaml';
 import { parseLanguages } from './markdown-languages';
 import type { ImportDraft } from './markdown-languages';
 import { isLanguage } from './translations';
@@ -33,9 +33,10 @@ export function parseStructured(lines: string[], version: 3 | 4): ImportDraft[] 
         if (version === 4 && field === 'occurrenceCount') throw new Error('occurrenceCount: derived automatically in v4');
         if (field in metadata) throw new Error(field + ': duplicate field');
         if (field === 'provenance' || field === 'answerReferences') {
+          if (scalar !== undefined) throw new Error(field + ': expected a YAML body');
           const body: string[] = [];
           while (index + 1 < chunk.length && !/^### /.test(chunk[index + 1])) body.push(chunk[++index]);
-          metadata[field] = parse(body.join('\n'), { maxAliasCount: 0 });
+          metadata[field] = parseMarkdownYaml(body.join('\n'));
         } else {
           metadata[field] = ['occurrenceCount', 'interviewPriority', 'difficulty'].includes(field) ? Number(scalar) : scalar;
           if (['interviewPriority', 'difficulty'].includes(field)) {
@@ -61,6 +62,7 @@ export function parseStructured(lines: string[], version: 3 | 4): ImportDraft[] 
       if (legacy) error ??= legacy[1] + ': examples and explanations belong in answer';
       if (/^### (cardType|topic|occurrenceCount|interviewPriority|difficulty|provenance|answerReferences)(:|\s*$)/.test(line)) error ??= 'metadata: must precede language sections';
     }
+    card.legacyMetadata = metadata;
     const { interviewPriority: _priority, difficulty: _difficulty, ...fields } = metadata;
     try { card.metadata = validateMetadata(fields, version === 3); }
     catch (reason) { error ??= reason instanceof Error ? reason.message : 'metadata: invalid'; }

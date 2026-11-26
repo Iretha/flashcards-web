@@ -70,6 +70,7 @@ try {
   apply(guarded, 1);
   const list = run(['d1', 'migrations', 'list', 'DB', '--local', '--persist-to', resolve(guarded, 'state'), '--config', resolve(guarded, 'wrangler.jsonc')]);
   if (!list.includes('0021_card_classification.sql')) throw new Error('Failed migration was not left pending');
+  execute(guarded, 'tests/fixtures/imp003-rollback-verify.sql');
 
   succeeded = true;
   console.log('IMP-003 Wrangler rehearsal passed: populated migration, preservation guards, and failed-migration rollback.');
