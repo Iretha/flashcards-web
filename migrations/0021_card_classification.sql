@@ -14,7 +14,7 @@ CREATE TABLE card_topics (
 );
 CREATE INDEX card_topics_by_topic ON card_topics(topic_name, card_id);
 
--- This reviewed mapping covers the repository's representative legacy fixtures.
+-- This reviewed mapping covers inspected legacy data and representative fixtures.
 -- New values must be normalized with src/lib/classification.ts and added explicitly.
 CREATE TABLE imp003_topic_map (
   raw_value TEXT PRIMARY KEY,
@@ -30,6 +30,22 @@ INSERT INTO imp003_topic_map(raw_value, canonical_value) VALUES
   ('Regional', 'REGIONAL'),
   ('Test', 'TEST'),
   ('Testing', 'TESTING'),
+  ('Coding Tasks, Streams, Algorithms', 'CODING TASKS, STREAMS, ALGORITHMS'),
+  ('Computing', 'COMPUTING'),
+  ('Concurrency, Java Memory Model, Multithreading', 'CONCURRENCY, JAVA MEMORY MODEL, MULTITHREADING'),
+  ('Core Java, Collections, JVM', 'CORE JAVA, COLLECTIONS, JVM'),
+  ('Design Patterns, Architecture', 'DESIGN PATTERNS, ARCHITECTURE'),
+  ('Geography', 'GEOGRAPHY'),
+  ('Human body', 'HUMAN BODY'),
+  ('Languages', 'LANGUAGES'),
+  ('Mathematics', 'MATHEMATICS'),
+  ('Microservices, Kafka, Distributed Systems', 'MICROSERVICES, KAFKA, DISTRIBUTED SYSTEMS'),
+  ('Photosynthesis', 'PHOTOSYNTHESIS'),
+  ('SQL, JPA, Hibernate, Transactions', 'SQL, JPA, HIBERNATE, TRANSACTIONS'),
+  ('Solar system', 'SOLAR SYSTEM'),
+  ('Spring, Spring Boot, Spring Security', 'SPRING, SPRING BOOT, SPRING SECURITY'),
+  ('Testing, CI/CD, Docker, Cloud', 'TESTING, CI/CD, DOCKER, CLOUD'),
+  ('Water', 'WATER'),
   ('ΐ', 'Ϊ́');
 
 CREATE TABLE imp003_guard(valid INTEGER NOT NULL CHECK(valid = 1));

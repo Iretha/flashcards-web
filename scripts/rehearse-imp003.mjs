@@ -4,12 +4,12 @@ import { basename, resolve } from 'node:path';
 import { spawnSync } from 'node:child_process';
 
 const root = resolve(import.meta.dirname, '..');
-const wrangler = resolve(root, 'node_modules/.bin/wrangler');
+const wrangler = resolve(root, 'node_modules/wrangler/bin/wrangler.js');
 const temporary = await mkdtemp(resolve(tmpdir(), 'flashcards-imp003-'));
 let succeeded = false;
 
 function run(args, expected = 0) {
-  const result = spawnSync(wrangler, args, {
+  const result = spawnSync(process.execPath, [wrangler, ...args], {
     cwd: temporary,
     encoding: 'utf8',
     env: { ...process.env, WRANGLER_LOG_PATH: resolve(temporary, 'wrangler.log') },
